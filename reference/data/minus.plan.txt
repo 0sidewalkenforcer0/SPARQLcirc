@@ -1,0 +1,64 @@
+# ---- circuit construction plan: 4 CONSTRUCT(s) ----
+# --- step 1 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?t a c:Times ; c:in ?a0 ; c:feeds ?pg .
+  ?pg a c:Plus .
+}
+WHERE {
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", STR(?a0))))) AS ?t)
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1", "|x=", STR(?x))))) AS ?pg)
+}
+
+# --- step 2 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?t a c:Times ; c:in ?b0 ; c:feeds ?pg .
+  ?pg a c:Plus .
+}
+WHERE {
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:Italy> . 
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", STR(?b0))))) AS ?t)
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2", "|x=", STR(?x))))) AS ?pg)
+}
+
+# --- step 3 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?p2 c:feeds ?sub .
+}
+WHERE {
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:Italy> . 
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2", "|x=", STR(?x))))) AS ?p2)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB", "|x=", STR(?x))))) AS ?sub)
+}
+
+# --- step 4 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?ans .
+  ?sub a c:Plus .
+  ?ans a c:Plus ; c:answer ?anskey .
+}
+WHERE {
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1", "|x=", STR(?x))))) AS ?p1)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB", "|x=", STR(?x))))) AS ?sub)
+  BIND(IRI(CONCAT("urn:g:m:", SHA256(CONCAT("M", "|x=", STR(?x))))) AS ?m)
+  BIND(CONCAT("A", "|x=", STR(?x)) AS ?anskey)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(?anskey))) AS ?ans)
+}
+
+# circuit triples: 30

@@ -1,0 +1,7 @@
+WatDiv Basic: 189 files, 139 pure-BGP
+
+=== scheme=Standard: MATCH 138/139, mismatch 0, error 1 ===
+  [issue] L3/10.sparql: orig-no-output: Exception in thread "main" org.eclipse.rdf4j.query.MalformedQueryException: Enco
+
+=== scheme=SPARQL_Star: MATCH 138/139, mismatch 0, error 1 ===
+  [issue] L3/10.sparql: orig-no-output: Exception in thread "main" org.eclipse.rdf4j.query.MalformedQueryException: Enco

@@ -1,0 +1,9 @@
+# NON-MONOTONIC — difference (needs the monus operator ⊖; not expressible in a
+# plain commutative semiring — this is why NPCS uses the spm-semiring).
+# Expected provenance:  Bob   -> (u4 ⊖ ∅) = u4      (likes pasta, not in Italy: survives)
+#                       Alice -> ((u1⊕u2) ⊖ u3)     (in Italy: monus non-empty -> evaluates to 0)
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x WHERE {
+  ?x ex:likes ex:pasta .
+  MINUS { ?x ex:livesIn ex:Italy . }
+}

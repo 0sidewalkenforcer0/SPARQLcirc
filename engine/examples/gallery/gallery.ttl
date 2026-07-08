@@ -1,0 +1,8 @@
+@prefix : <http://example.org/paper#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+:t1 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object :Bob .
+:t2 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object :Carol .
+:t3 rdf:subject :Bob   ; rdf:predicate :knows ; rdf:object :Carol .
+:t4 rdf:subject :Alice ; rdf:predicate :likes ; rdf:object :Bob .
+:t5 rdf:subject :Alice ; rdf:predicate :blocks; rdf:object :Carol .
+:t6 rdf:subject :Bob   ; rdf:predicate :city  ; rdf:object :Rome .

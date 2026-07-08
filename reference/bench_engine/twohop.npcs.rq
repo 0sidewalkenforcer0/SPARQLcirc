@@ -1,0 +1,11 @@
+SELECT ?x ?z (CONCAT("⊕(", GROUP_CONCAT(?fjoin0), ")") AS ?finalprovennacevariable) 
+WHERE { 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:e> . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:e> . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?z . 
+	BIND (CONCAT("(⊗", STR(?fprov0), ",", STR(?fprov1), ",", ")") AS ?fjoin0) . 
+ }
+ GROUP BY ?x ?z

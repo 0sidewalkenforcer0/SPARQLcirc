@@ -1,0 +1,2 @@
+PREFIX d: <urn:d:>
+SELECT ?x ?z WHERE { ?x d:e ?y . ?y d:e ?z . }

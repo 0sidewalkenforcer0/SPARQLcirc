@@ -1,0 +1,39 @@
+SPARQL_circ
+Copyright 2026 Jingcheng Wu
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Attribution
+--------------------------------------------------------------------------------
+
+engine/ contains an INDEPENDENT, CLEAN-ROOM reimplementation of the SPARQL
+provenance query-rewriting introduced by NPCS:
+
+  Zubaria Asma, Daniel Hernández, Luis Galárraga, Giorgos Flouris,
+  Irini Fundulaki, and Katja Hose.
+  "NPCS: Native Provenance Computation for SPARQL."
+  Proceedings of the ACM Web Conference 2024 (WWW), pp. 2085–2093.
+  https://doi.org/10.1145/3589334.3645557
+
+This reimplementation was written from the published algorithm (rewriting rules
+in the paper). It does NOT include, copy, or derive from the original NPCS source
+code or the `ReifySparqlByte.jar` binary. The BGP rewriting was verified to match
+the original's output by black-box differential testing on the WatDiv query set;
+non-monotone operators (OPTIONAL/MINUS) follow the paper's semantics.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+engine/ (Java, see engine/pom.xml):
+  Eclipse RDF4J          BSD-3-Clause / Eclipse Distribution License 1.0
+  SLF4J                  MIT License
+
+reference/ (Python):
+  PySDD (optional)       Apache-2.0     — SDD compilation
+  Standard library only otherwise.
+
+Benchmarks reference, but do not bundle, the WatDiv benchmark data generator
+(http://dsg.uwaterloo.ca/watdiv/) and the GraphDB triplestore
+(https://graphdb.ontotext.com/); both must be obtained separately.

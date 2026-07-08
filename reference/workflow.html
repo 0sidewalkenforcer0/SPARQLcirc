@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared Provenance Circuits — how the method works</title>
+<style>
+  :root{
+    --bg:#f5f7f9; --panel:#ffffff; --panel2:#f0f3f6; --ink:#161c24; --muted:#5c6774;
+    --line:#e3e8ee; --line2:#d3dae2;
+    --accent:#0d7d8a; --accent-ink:#0a5c66;
+    --prod:#a76a09; --sum:#0d7d8a; --monus:#b0374f;
+    --ok:#1c854f; --warn:#a76a09;
+    --code:#0f151c; --code-ink:#cdd6e2; --code-line:#222c38;
+    --shadow:0 1px 2px rgba(20,30,40,.06), 0 8px 24px rgba(20,30,40,.05);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0d1116; --panel:#151b22; --panel2:#11161c; --ink:#e7ecf2; --muted:#93a0b0;
+      --line:#232c37; --line2:#2d3742;
+      --accent:#3bb6c3; --accent-ink:#8fe0e9;
+      --prod:#d69436; --sum:#3bb6c3; --monus:#e0687f;
+      --ok:#43c98a; --warn:#d69436;
+      --code:#0a0e13; --code-ink:#c6d1de; --code-line:#1c2530;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1116; --panel:#151b22; --panel2:#11161c; --ink:#e7ecf2; --muted:#93a0b0;
+    --line:#232c37; --line2:#2d3742; --accent:#3bb6c3; --accent-ink:#8fe0e9;
+    --prod:#d69436; --sum:#3bb6c3; --monus:#e0687f; --ok:#43c98a; --warn:#d69436;
+    --code:#0a0e13; --code-ink:#c6d1de; --code-line:#1c2530;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f7f9; --panel:#ffffff; --panel2:#f0f3f6; --ink:#161c24; --muted:#5c6774;
+    --line:#e3e8ee; --line2:#d3dae2; --accent:#0d7d8a; --accent-ink:#0a5c66;
+    --prod:#a76a09; --sum:#0d7d8a; --monus:#b0374f; --ok:#1c854f; --warn:#a76a09;
+    --code:#0f151c; --code-ink:#cdd6e2; --code-line:#222c38;
+    --shadow:0 1px 2px rgba(20,30,40,.06), 0 8px 24px rgba(20,30,40,.05);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16.5px; line-height:1.62; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace}
+  .wrap{max-width:940px; margin:0 auto; padding:0 22px}
+  a{color:var(--accent-ink)}
+  h1,h2,h3{text-wrap:balance; line-height:1.2; letter-spacing:-.01em}
+  h2{font-size:1.5rem; margin:0 0 .2em}
+  h3{font-size:1.08rem; margin:1.4em 0 .3em}
+  p{margin:.6em 0}
+  .eyebrow{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--accent-ink); font-weight:600}
+
+  /* header */
+  header.hero{border-bottom:1px solid var(--line); background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, var(--bg)), var(--bg));}
+  .hero .wrap{padding-top:52px; padding-bottom:40px}
+  .hero h1{font-size:2.15rem; margin:.25em 0 .35em; font-weight:750}
+  .hero .lede{font-size:1.16rem; color:var(--muted); max-width:70ch; margin:.2em 0 0}
+  .kit{display:flex; flex-wrap:wrap; gap:8px; margin-top:22px}
+  .chip{font-family:ui-monospace,Menlo,monospace; font-size:.74rem; border:1px solid var(--line2);
+    background:var(--panel); border-radius:999px; padding:5px 11px; color:var(--muted)}
+  .chip b{color:var(--ink); font-weight:600}
+
+  section{padding:34px 0; border-bottom:1px solid var(--line)}
+  .sec-num{font-family:ui-monospace,Menlo,monospace; color:var(--accent); font-weight:600}
+
+  /* op tokens */
+  .op{font-family:ui-monospace,Menlo,monospace; font-weight:700; padding:0 .28em; border-radius:5px;
+    border:1px solid transparent}
+  .prod{color:var(--prod); background:color-mix(in srgb,var(--prod) 12%,transparent); border-color:color-mix(in srgb,var(--prod) 30%,transparent)}
+  .sum{color:var(--sum); background:color-mix(in srgb,var(--sum) 12%,transparent); border-color:color-mix(in srgb,var(--sum) 30%,transparent)}
+  .monus{color:var(--monus); background:color-mix(in srgb,var(--monus) 12%,transparent); border-color:color-mix(in srgb,var(--monus) 30%,transparent)}
+
+  /* io stage */
+  .stage{display:grid; grid-template-columns:1fr; gap:14px; margin-top:16px}
+  @media(min-width:760px){ .stage.io{grid-template-columns:1fr 1fr} }
+  .box{background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); overflow:hidden}
+  .box > .bhead{display:flex; align-items:center; gap:8px; padding:9px 13px; border-bottom:1px solid var(--line);
+    background:var(--panel2); font-family:ui-monospace,Menlo,monospace; font-size:.73rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+  .bhead .dot{width:8px;height:8px;border-radius:50%}
+  .in .dot{background:var(--muted)} .out .dot{background:var(--accent)}
+  .box .body{padding:13px}
+
+  pre{margin:0; background:var(--code); color:var(--code-ink); border-radius:10px; border:1px solid var(--code-line);
+    padding:13px 14px; overflow-x:auto; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    font-size:.82rem; line-height:1.55; tab-size:2}
+  pre .c{color:#7f8ea3} pre .k{color:var(--accent)} pre .v{color:#d9a85f} pre .hl{color:var(--ink); background:color-mix(in srgb,var(--warn) 26%,transparent); border-radius:3px}
+  :root[data-theme="dark"] pre .v{color:#e0b877}
+  code.inl{font-family:ui-monospace,Menlo,monospace; font-size:.86em; background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:.05em .35em}
+
+  .arrow{display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:1.3rem; padding:2px}
+  @media(min-width:760px){ .arrow{writing-mode:vertical-lr; display:none} }
+
+  /* callout */
+  .note{border-left:3px solid var(--accent); background:var(--panel2); border-radius:0 10px 10px 0; padding:11px 15px; margin:14px 0; color:var(--ink)}
+  .note.warn{border-left-color:var(--warn)}
+  .note .lbl{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:2px}
+
+  /* challenge cards */
+  .cards{display:grid; grid-template-columns:1fr; gap:14px; margin-top:18px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:16px 18px}
+  .card .tag{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; color:var(--accent); font-weight:600; letter-spacing:.06em}
+  .card h3{margin:.2em 0 .4em; font-size:1.12rem}
+  .card .prob{color:var(--muted); margin:.3em 0}
+  .card .sol{margin:.5em 0 0}
+  .card .sol b{color:var(--accent-ink)}
+  .verified{display:inline-flex; align-items:center; gap:6px; font-family:ui-monospace,Menlo,monospace;
+    font-size:.72rem; color:var(--ok); margin-top:10px; font-weight:600}
+  .verified::before{content:"✓"; font-weight:700}
+
+  /* status table */
+  table{border-collapse:collapse; width:100%; font-size:.9rem; margin-top:8px}
+  th,td{text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  td .st{font-family:ui-monospace,Menlo,monospace; font-size:.78rem; font-weight:600}
+  .done{color:var(--ok)} .pending{color:var(--warn)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* circuit figure */
+  figure{margin:18px 0 6px}
+  .figbox{background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:14px; overflow-x:auto}
+  figcaption{color:var(--muted); font-size:.86rem; margin-top:10px; text-wrap:balance}
+  svg text{font-family:ui-monospace,Menlo,monospace}
+  footer{padding:30px 0 60px; color:var(--muted); font-size:.86rem}
+  ::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Probabilistic query evaluation over knowledge graphs</div>
+    <h1>Shared provenance circuits, built by the query engine itself</h1>
+    <p class="lede">How a SPARQL query is rewritten so that an <em>unmodified</em> engine
+    materializes one shared, content-addressed provenance circuit for all answers — which we
+    then compile and weighted-model-count into exact answer probabilities. A walkthrough on the
+    paper's drug-interaction running example, with the real input and output at every stage.</p>
+    <div class="kit">
+      <span class="chip">reification: <b>RDF-standard / SPARQL-star</b></span>
+      <span class="chip">fragment: <b>BGP · UNION · OPTIONAL · MINUS</b></span>
+      <span class="chip">semiring: <b>spm (<span class="op sum">⊕</span> <span class="op prod">⊗</span> <span class="op monus">⊖</span>)</b></span>
+      <span class="chip">verified vs <b>possible-world enumeration</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ the example & the trap ============ -->
+<section id="example">
+  <div class="eyebrow">The running example</div>
+  <h2>One shared triple is the whole problem</h2>
+  <p>A drug-interaction KG where every <code class="inl">interactsWith</code> edge is an extracted
+  fact holding with a calibrated probability. We ask which drugs Aspirin reaches in exactly three
+  hops:</p>
+
+  <div class="stage io">
+    <div class="box in"><div class="bhead"><span class="dot"></span>input · probabilistic KG (reified)</div><div class="body">
+<pre><span class="c"># each edge is a triple with an identity (token) and a probability</span>
+<span class="k">d:p1</span> Aspirin  →<span class="v">iw</span>→ Warfarin    <span class="c">Pr = .92</span>
+<span class="k">d:p2</span> Warfarin →<span class="v">iw</span>→ Metformin   <span class="c">.87</span>
+<span class="k">d:p3</span> Metformin→<span class="v">iw</span>→ Omeprazole  <span class="c">.85</span>   <span class="hl">← shared</span>
+<span class="k">d:p4</span> Aspirin  →<span class="v">iw</span>→ Ibuprofen   <span class="c">.78</span>
+<span class="k">d:p5</span> Ibuprofen→<span class="v">iw</span>→ Metformin   <span class="c">.71</span>
+<span class="k">d:p6</span> Warfarin →<span class="v">iw</span>→ Lisinopril  <span class="c">.65</span>
+<span class="k">d:p7</span> Lisinopril→<span class="v">iw</span>→Clopidogrel <span class="c">.60</span></pre>
+    </div></div>
+    <div class="box in"><div class="bhead"><span class="dot"></span>input · query</div><div class="body">
+<pre>PREFIX d: &lt;urn:d:&gt;
+SELECT ?z WHERE {
+  d:Aspirin d:iw ?x .
+  ?x        d:iw ?y .
+  ?y        d:iw ?z .
+}</pre>
+      <p style="margin:.7em 0 0; font-size:.92rem; color:var(--muted)">Two answers. <b style="color:var(--ink)">Clopidogrel</b>
+      comes from one path; <b style="color:var(--ink)">Omeprazole</b> from two paths that
+      <em>share the edge&nbsp;p3</em>.</p>
+    </div></div>
+  </div>
+
+  <div class="note warn">
+    <span class="lbl">why you can't just multiply and add</span>
+    Omeprazole's provenance is <span class="mono">(p1<span class="op prod">⊗</span>p2<span class="op prod">⊗</span>p3) <span class="op sum">⊕</span> (p3<span class="op prod">⊗</span>p4<span class="op prod">⊗</span>p5)</span>.
+    Treating the two paths as independent gives
+    <span class="mono num">1−(1−.92·.87·.85)(1−.78·.71·.85) = 0.8308</span> — but the shared p3 makes them
+    dependent, so the correct value is <span class="mono num">0.85·[1−(1−.92·.87)(1−.78·.71)] = 0.7743</span>.
+    Naive independence <b>over-counts by 7.3%</b>. Recovering the correct number means keeping the
+    sharing explicit and compiling it — which is exactly what the pipeline below does.
+  </div>
+</section>
+
+<!-- ============ pipeline overview ============ -->
+<section id="pipeline">
+  <div class="eyebrow">The workflow, end to end</div>
+  <h2>Five stages: query → circuit → probability</h2>
+  <p>The engine never changes. The rewriting turns provenance <em>annotation</em> (a string per
+  answer, as in NPCS/SPARQLprov) into provenance <em>compilation</em> (one shared circuit for all
+  answers), which the client then compiles and counts.</p>
+<pre class="mono" style="background:var(--panel2); color:var(--ink); border-color:var(--line)">
+ query + reified KG
+      │  <span class="c">A. rewrite</span>
+      ▼
+ NPCS-style string  ──►  <span class="c">B. gate constructors instead of string ops</span>
+      │
+      ▼  <span class="c">C. emit ONE construct (or a plan of INSERTs)</span>
+ CONSTRUCT query ──► [ unmodified SPARQL engine ] ──► <span class="c">D.</span> shared circuit as RDF (a DAG)
+                                                          │  <span class="c">E. compile + weighted model count</span>
+                                                          ▼
+                                                    exact Pr(answer)
+</pre>
+</section>
+
+<!-- ============ stage B: NPCS string ============ -->
+<section id="stageB">
+  <p><span class="sec-num">Stage A–B</span> &nbsp;<span class="eyebrow" style="color:var(--muted)">rewrite → per-answer polynomial</span></p>
+  <h2>Start from NPCS: reify each triple, name every match</h2>
+  <p>Each triple pattern <span class="mono">s p o</span> is rewritten to bind a fresh <em>statement
+  token</em> <code class="inl">?fprovN</code> — the identity of the matching triple. A join becomes a
+  product <span class="op prod">⊗</span>; grouping the answers becomes a sum <span class="op sum">⊕</span>.
+  NPCS emits this as a <b>string</b>:</p>
+  <div class="box out"><div class="bhead"><span class="dot"></span>output · NPCS rewriting (verbatim, reproduced Java — 139/139 identical to the original)</div><div class="body">
+<pre>SELECT ?z (CONCAT(<span class="v">"⊕("</span>, GROUP_CONCAT(?fjoin0), <span class="v">")"</span>) AS ?finalprovennacevariable)
+WHERE {
+  ?fprov0 rdf:subject d:Aspirin ; rdf:predicate d:iw ; rdf:object ?x .
+  ?fprov1 rdf:subject ?x        ; rdf:predicate d:iw ; rdf:object ?y .
+  ?fprov2 rdf:subject ?y        ; rdf:predicate d:iw ; rdf:object ?z .
+  BIND(CONCAT(<span class="v">"(⊗"</span>, STR(?fprov0), <span class="v">","</span>, STR(?fprov1), <span class="v">","</span>, STR(?fprov2), <span class="v">")"</span>) AS ?fjoin0)
+} GROUP BY ?z</pre>
+  </div></div>
+  <div class="note"><span class="lbl">the limitation we remove</span>
+  The output is a <b>string per answer</b>. The shared p3 is spelled out twice; sharing across
+  answers (p1) is invisible; and the factored structure a probability computation needs must be
+  <em>re-parsed</em> back out of the text. So we keep NPCS's rewriting skeleton but change what the
+  operators <em>emit</em>.</div>
+</section>
+
+<!-- ============ stage C: our construct ============ -->
+<section id="stageC">
+  <p><span class="sec-num">Stage C</span> &nbsp;<span class="eyebrow" style="color:var(--muted)">γ: gate constructors → a CONSTRUCT the engine runs</span></p>
+  <h2>Emit gates, not text — as a CONSTRUCT query</h2>
+  <p>We replace <span class="mono">ProvProd / ProvAggSum / ProvDiff</span> with gate constructors and
+  emit a <b>CONSTRUCT</b>. Run on the engine, it produces the circuit as RDF triples. The key trick:
+  each gate gets a <b>content-addressed IRI</b> — a deterministic hash of its operator and children —
+  computed <em>inside SPARQL</em>. Equal gates get equal IRIs, so the engine's set semantics
+  <b>share them automatically</b>.</p>
+  <div class="box out"><div class="bhead"><span class="dot"></span>output · emitted CONSTRUCT (real; the ⊗-gate id is content-addressed in SPARQL)</div><div class="body">
+<pre>CONSTRUCT {
+  ?t <span class="v">a</span> c:Times ; c:in ?a0 ; c:in ?a1 ; c:in ?a2 ; c:feeds ?ans .
+  ?ans <span class="v">a</span> c:Plus ; c:answer ?anskey .
+} WHERE {
+  ?a0 rdf:subject d:Aspirin ; rdf:predicate d:iw ; rdf:object ?x .
+  ?a1 rdf:subject ?x ; rdf:predicate d:iw ; rdf:object ?y .
+  ?a2 rdf:subject ?y ; rdf:predicate d:iw ; rdf:object ?z .
+<span class="hl">  # content-addressed ⊗ id: hash each token, SORT the hashes, hash the tuple</span>
+  BIND(SHA256(STR(?a0)) AS ?srt0)  BIND(SHA256(STR(?a1)) AS ?srt1)  BIND(SHA256(STR(?a2)) AS ?srt2)
+  BIND(IF(?srt0 &lt;= ?srt1, ?srt0, ?srt1) AS ?srt3)   <span class="c"># comparator</span>
+  BIND(IF(?srt0 &lt;= ?srt1, ?srt1, ?srt0) AS ?srt4)   <span class="c"># network</span>
+  BIND(IF(?srt4 &lt;= ?srt2, ?srt4, ?srt2) AS ?srt5)   <span class="c"># (pure SPARQL 1.1)</span>
+  BIND(IF(?srt3 &lt;= ?srt5, ?srt3, ?srt5) AS ?srt7) ...
+  BIND(IRI(CONCAT(<span class="v">"urn:g:t:"</span>, SHA256(CONCAT(<span class="v">"T|"</span>,?srt7,<span class="v">"|"</span>,?srt8,<span class="v">"|"</span>,?srt6)))) AS ?t)
+  BIND(IRI(CONCAT(<span class="v">"urn:g:a:"</span>, SHA256(CONCAT(<span class="v">"A|z="</span>,STR(?z))))) AS ?ans)
+}</pre>
+  </div></div>
+  <p style="font-size:.92rem;color:var(--muted)">Leaves need no work: <code class="inl">?fprov</code>
+  binds to the triple's statement-node IRI, so a token <em>is</em> its own leaf node — every gate that
+  references p3 emits <code class="inl">c:in d:p3</code>, and RDF merges them into one shared leaf.</p>
+</section>
+
+<!-- ============ stage D: circuit ============ -->
+<section id="stageD">
+  <p><span class="sec-num">Stage D</span> &nbsp;<span class="eyebrow" style="color:var(--muted)">the engine materializes the circuit</span></p>
+  <h2>One shared DAG, emitted by the engine as RDF</h2>
+  <div class="box out"><div class="bhead"><span class="dot"></span>output · circuit triples (abbreviated; 19 triples total)</div><div class="body">
+<pre><span class="k">g:t:a977…</span> a c:Times ; c:in <span class="hl">d:p1</span> ; c:in d:p2 ; c:in <span class="hl">d:p3</span> ; c:feeds g:a:e357…   <span class="c"># ⊗(p1,p2,p3)</span>
+<span class="k">g:t:73f8…</span> a c:Times ; c:in <span class="hl">d:p3</span> ; c:in d:p4 ; c:in d:p5 ; c:feeds g:a:e357…   <span class="c"># ⊗(p3,p4,p5)</span>
+<span class="k">g:t:7124…</span> a c:Times ; c:in <span class="hl">d:p1</span> ; c:in d:p6 ; c:in d:p7 ; c:feeds g:a:8c73…   <span class="c"># ⊗(p1,p6,p7)</span>
+<span class="k">g:a:e357…</span> a c:Plus  ; c:answer <span class="v">"A|z=d:Omeprazole"</span>
+<span class="k">g:a:8c73…</span> a c:Plus  ; c:answer <span class="v">"A|z=d:Clopidogrel"</span>
+<span class="c"># p1 appears in 2 Times gates; p3 appears in 2 Times gates  → shared, stored once</span></pre>
+  </div></div>
+
+  <figure>
+    <div class="figbox">
+      <svg viewBox="0 0 760 336" width="100%" height="auto" role="img" aria-label="Shared provenance circuit: two answer roots over plus and times gates that share leaves p1 and p3.">
+        <defs>
+          <style>
+            .wire{stroke:var(--line2); stroke-width:1.5; fill:none}
+            .wireS{stroke:var(--accent); stroke-width:2; fill:none}
+            .gate{fill:var(--panel); stroke:var(--line2); stroke-width:1.5}
+            .glyph{fill:var(--ink); font-size:15px; font-weight:700; text-anchor:middle}
+            .lf{fill:var(--panel2); stroke:var(--line2); stroke-width:1.5}
+            .lfS{fill:color-mix(in srgb,var(--accent) 16%,var(--panel)); stroke:var(--accent); stroke-width:2}
+            .lbl{fill:var(--ink); font-size:12.5px; text-anchor:middle}
+            .ans{fill:color-mix(in srgb,var(--accent) 10%,var(--panel)); stroke:var(--accent); stroke-width:1.5}
+            .ansT{fill:var(--accent-ink); font-size:12px; font-weight:700; text-anchor:middle; font-family:system-ui}
+          </style>
+        </defs>
+        <!-- edges root->plus -->
+        <path class="wire" d="M220,52 V78"/><path class="wire" d="M560,52 V78"/>
+        <!-- plus -> times -->
+        <path class="wire" d="M212,112 L150,150"/><path class="wire" d="M228,112 L300,150"/>
+        <path class="wire" d="M560,112 V150"/>
+        <!-- times(p1,p2,p3)=A @150 -> p1(440),p2(300),p3(220) -->
+        <path class="wireS" d="M150,186 L430,266"/><path class="wire" d="M150,186 L300,266"/><path class="wireS" d="M150,186 L222,266"/>
+        <!-- times(p3,p4,p5)=B @300 -> p3(220),p4(60),p5(140) -->
+        <path class="wireS" d="M300,186 L224,266"/><path class="wire" d="M300,186 L64,266"/><path class="wire" d="M300,186 L140,266"/>
+        <!-- times(p1,p6,p7)=C @560 -> p1(440),p6(560),p7(660) -->
+        <path class="wireS" d="M560,186 L444,266"/><path class="wire" d="M560,186 L560,266"/><path class="wire" d="M560,186 L660,266"/>
+        <!-- answers -->
+        <rect class="ans" x="176" y="26" rx="9" width="88" height="26"/><text class="ansT" x="220" y="43">Omeprazole</text>
+        <rect class="ans" x="518" y="26" rx="9" width="84" height="26"/><text class="ansT" x="560" y="43">Clopidogrel</text>
+        <!-- plus gates -->
+        <circle class="gate" cx="220" cy="95" r="17"/><text class="glyph" x="220" y="100">⊕</text>
+        <circle class="gate" cx="560" cy="95" r="17"/><text class="glyph" x="560" y="100">⊕</text>
+        <!-- times gates -->
+        <circle class="gate" cx="150" cy="168" r="17"/><text class="glyph" x="150" y="173">⊗</text>
+        <circle class="gate" cx="300" cy="168" r="17"/><text class="glyph" x="300" y="173">⊗</text>
+        <circle class="gate" cx="560" cy="168" r="17"/><text class="glyph" x="560" y="173">⊗</text>
+        <!-- leaves -->
+        <g>
+          <rect class="lf"  x="44"  y="268" rx="6" width="40" height="26"/><text class="lbl" x="64"  y="285">p4</text>
+          <rect class="lf"  x="120" y="268" rx="6" width="40" height="26"/><text class="lbl" x="140" y="285">p5</text>
+          <rect class="lfS" x="202" y="268" rx="6" width="40" height="26"/><text class="lbl" x="222" y="285">p3</text>
+          <rect class="lf"  x="280" y="268" rx="6" width="40" height="26"/><text class="lbl" x="300" y="285">p2</text>
+          <rect class="lfS" x="424" y="268" rx="6" width="40" height="26"/><text class="lbl" x="444" y="285">p1</text>
+          <rect class="lf"  x="540" y="268" rx="6" width="40" height="26"/><text class="lbl" x="560" y="285">p6</text>
+          <rect class="lf"  x="640" y="268" rx="6" width="40" height="26"/><text class="lbl" x="660" y="285">p7</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>The materialized circuit. Orange leaves <b>p1</b> and <b>p3</b> are each stored once and
+    referenced by two gates — a DAG, not a tree. This shared structure is what makes the subsequent
+    probability computation correct <em>and</em> compact.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ stage E: WMC ============ -->
+<section id="stageE">
+  <p><span class="sec-num">Stage E</span> &nbsp;<span class="eyebrow" style="color:var(--muted)">compile + weighted model count</span></p>
+  <h2>Compile the circuit, count, get the exact probability</h2>
+  <p>The client reads the circuit, compiles it to a d-DNNF-family target (an OBDD or SDD), and runs
+  weighted model counting — linear in the compiled size. Because p3 is one shared leaf, the count
+  handles the dependency correctly instead of double-counting it.</p>
+  <div class="box out"><div class="bhead"><span class="dot"></span>output · answer probabilities (checked against possible-world enumeration)</div><div class="body">
+<pre>answer          provenance                        WMC        possible-worlds
+Clopidogrel     p1<span class="op prod">⊗</span>p6<span class="op prod">⊗</span>p7                       <span class="num">0.358800</span>   <span class="num">0.358800</span>  ✓
+Omeprazole      (p1<span class="op prod">⊗</span>p2<span class="op prod">⊗</span>p3) <span class="op sum">⊕</span> (p3<span class="op prod">⊗</span>p4<span class="op prod">⊗</span>p5)     <span class="num">0.774298</span>   <span class="num">0.774298</span>  ✓
+                                                  <span class="c">↑ not 0.8308 — the shared p3 is counted once</span></pre>
+  </div></div>
+  <div class="verified">Omeprazole &amp; Clopidogrel match possible-world enumeration to float precision</div>
+</section>
+
+<!-- ============ operator gallery ============ -->
+<section id="gallery">
+  <p><span class="sec-num">Gallery</span> &nbsp;<span class="eyebrow" style="color:var(--muted)">every minimal operator, side by side</span></p>
+  <h2>The same rewriting, one operator at a time</h2>
+  <p>The drug example was a single BGP. Here is the whole ABox fragment —
+  <span class="op prod">⊗</span> (join), <span class="op sum">⊕</span> (union),
+  <span class="op monus">⊖</span> (minus), and OPTIONAL (which combines all three) — on one tiny
+  social graph. For each operator: the <b>original query</b>, what <b>NPCS emits</b> (a string per
+  answer), and what <b>we emit</b> (shared gates). Every output below is produced by the real tools;
+  the probabilities are checked by <code class="inl">reference/verify_gallery.py</code>
+  (<span class="mono">circuit WMC == possible-world enumeration</span>) on all five.</p>
+
+  <div class="box in"><div class="bhead"><span class="dot"></span>the reified KG (6 triples, each with a token)</div><div class="body">
+<pre><span class="k">t1</span> :Alice :knows :Bob      <span class="k">t4</span> :Alice :likes  :Bob
+<span class="k">t2</span> :Alice :knows :Carol    <span class="k">t5</span> :Alice :blocks :Carol
+<span class="k">t3</span> :Bob   :knows :Carol    <span class="k">t6</span> :Bob   :city   :Rome</pre>
+  </div></div>
+
+  <!-- atom -->
+  <h3>1 · Single pattern <span style="color:var(--muted);font-weight:400">— reification → leaf</span></h3>
+  <pre>SELECT ?y WHERE { :Alice :knows ?y }</pre>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>NPCS · string per answer</div><div class="body">
+<pre>y=Bob    | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t1)
+y=Carol  | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t2)</pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>ours · shared circuit (1 CONSTRUCT)</div><div class="body">
+<pre>Bob    ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>t1 )
+Carol  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>t2 )</pre></div></div>
+  </div>
+  <details><summary>the rewritten queries</summary>
+<pre><span class="c"># NPCS — a SELECT that CONCATs the provenance string</span>
+SELECT ?y (CONCAT(<span class="v">"⊕("</span>, GROUP_CONCAT(?j0), <span class="v">")"</span>) AS ?prov) WHERE {
+  ?f0 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object ?y .
+  BIND(CONCAT(<span class="v">"(⊗"</span>, STR(?f0), <span class="v">")"</span>) AS ?j0) } GROUP BY ?y
+
+<span class="c"># ours — a CONSTRUCT that builds gates (answer id = hash of "A|y=…")</span>
+CONSTRUCT { ?t <span class="v">a</span> c:Times ; c:in ?f0 ; c:feeds ?ans .  ?ans <span class="v">a</span> c:Plus ; c:answer ?k } WHERE {
+  ?f0 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object ?y .
+  BIND(CONCAT(<span class="v">"A|y="</span>,STR(?y)) AS ?k)
+  BIND(IRI(CONCAT(<span class="v">"urn:g:t:"</span>,SHA256(STR(?f0)))) AS ?t)
+  BIND(IRI(CONCAT(<span class="v">"urn:g:a:"</span>,SHA256(?k))) AS ?ans) }</pre></details>
+
+  <!-- join -->
+  <h3>2 · Join / AND <span class="op prod">⊗</span> <span style="color:var(--muted);font-weight:400">— product of the matched triples</span></h3>
+  <pre>SELECT ?z WHERE { :Alice :knows ?y . ?y :knows ?z }</pre>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>NPCS · string per answer</div><div class="body">
+<pre>z=Carol  | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t1,t3)   <span class="c"># Alice→Bob, Bob→Carol</span></pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>ours · shared circuit (1 CONSTRUCT)</div><div class="body">
+<pre>Carol  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>(t1,t3) )</pre></div></div>
+  </div>
+  <details><summary>the rewritten queries</summary>
+<pre><span class="c"># NPCS — two reified patterns, one product string over both tokens</span>
+SELECT ?z (CONCAT(<span class="v">"⊕("</span>, GROUP_CONCAT(?j0), <span class="v">")"</span>) AS ?prov) WHERE {
+  ?f0 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object ?y .
+  ?f1 rdf:subject ?y     ; rdf:predicate :knows ; rdf:object ?z .
+  BIND(CONCAT(<span class="v">"(⊗"</span>, STR(?f0), <span class="v">","</span>, STR(?f1), <span class="v">")"</span>) AS ?j0) } GROUP BY ?z
+
+<span class="c"># ours — a Times over BOTH tokens; its id is the hash of the SORTED child hashes</span>
+CONSTRUCT { ?t <span class="v">a</span> c:Times ; c:in ?f0 ; c:in ?f1 ; c:feeds ?ans .  ?ans <span class="v">a</span> c:Plus ; c:answer ?k } WHERE {
+  ?f0 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object ?y .
+  ?f1 rdf:subject ?y     ; rdf:predicate :knows ; rdf:object ?z .
+  BIND(IF(SHA256(STR(?f0))&lt;=SHA256(STR(?f1)), …, …) AS ?lo) …   <span class="c"># comparator network</span>
+  BIND(IRI(CONCAT(<span class="v">"urn:g:t:"</span>,SHA256(CONCAT(<span class="v">"T|"</span>,?lo,<span class="v">"|"</span>,?hi)))) AS ?t) … }</pre></details>
+
+  <!-- union -->
+  <h3>3 · Union <span class="op sum">⊕</span> <span style="color:var(--muted);font-weight:400">— branches feed one shared answer gate</span></h3>
+  <pre>SELECT ?y WHERE { { :Alice :knows ?y } UNION { :Alice :likes ?y } }</pre>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>NPCS · string per answer</div><div class="body">
+<pre>y=Bob    | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t1, <span class="op prod">⊗</span>t4)   <span class="c"># knows AND likes</span>
+y=Carol  | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t2)</pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>ours · shared circuit (2 CONSTRUCTs)</div><div class="body">
+<pre>Bob    ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>t1, <span class="op prod">⊗</span>t4 )   <span class="c"># one ⊕, two branches</span>
+Carol  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>t2 )</pre></div></div>
+  </div>
+  <div class="note"><span class="lbl">how the union happens</span>
+  Each branch is its own CONSTRUCT, but both compute the <em>same</em> answer-gate id
+  <code class="inl">hash("A|y=Bob")</code>. So the <span class="op prod">⊗</span>t1 gate (knows) and the
+  <span class="op prod">⊗</span>t4 gate (likes) both <code class="inl">c:feeds</code> the one shared
+  <span class="op sum">⊕</span> node — content-addressing turns "two branches" into "one ⊕" with no
+  coordination.</div>
+  <details><summary>the rewritten queries</summary>
+<pre><span class="c"># NPCS — a UNION of two grouped sub-selects, each building its branch string</span>
+SELECT ?y (CONCAT(<span class="v">"⊕("</span>, GROUP_CONCAT(?u0), <span class="v">")"</span>) AS ?prov) WHERE {
+  { SELECT ?y (CONCAT(<span class="v">"⊕("</span>,GROUP_CONCAT(?j0),<span class="v">")"</span>) AS ?u0) WHERE {
+      ?f0 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object ?y .
+      BIND(CONCAT(<span class="v">"(⊗"</span>,STR(?f0),<span class="v">")"</span>) AS ?j0) } GROUP BY ?y }
+  UNION
+  { SELECT ?y (CONCAT(<span class="v">"⊕("</span>,GROUP_CONCAT(?j1),<span class="v">")"</span>) AS ?u0) WHERE {
+      ?f1 rdf:subject :Alice ; rdf:predicate :likes ; rdf:object ?y .
+      BIND(CONCAT(<span class="v">"(⊗"</span>,STR(?f1),<span class="v">")"</span>) AS ?j1) } GROUP BY ?y }
+} GROUP BY ?y
+
+<span class="c"># ours — two CONSTRUCTs, ONE per branch; identical ?ans id ⇒ shared ⊕</span>
+CONSTRUCT { ?t <span class="v">a</span> c:Times ; c:in ?f0 ; c:feeds ?ans .  ?ans <span class="v">a</span> c:Plus ; c:answer ?k } WHERE {
+  ?f0 rdf:subject :Alice ; rdf:predicate <span class="hl">:knows</span> ; rdf:object ?y .
+  BIND(CONCAT(<span class="v">"A|y="</span>,STR(?y)) AS ?k)  BIND(IRI(CONCAT(<span class="v">"urn:g:a:"</span>,SHA256(?k))) AS ?ans) … }
+CONSTRUCT { … c:in ?f1 … } WHERE {
+  ?f1 rdf:subject :Alice ; rdf:predicate <span class="hl">:likes</span> ; rdf:object ?y .
+  BIND(CONCAT(<span class="v">"A|y="</span>,STR(?y)) AS ?k) … }   <span class="c"># same ?k ⇒ same ?ans</span></pre></details>
+
+  <!-- minus -->
+  <h3>4 · Minus <span class="op monus">⊖</span> <span style="color:var(--muted);font-weight:400">— keep the left, subtract the matching right</span></h3>
+  <pre>SELECT ?y WHERE { :Alice :knows ?y  MINUS { :Alice :blocks ?y } }</pre>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>NPCS · string per answer</div><div class="body">
+<pre>y=Bob    | <span class="op monus">⊖</span>(<span class="op sum">⊕</span><span class="op prod">⊗</span>t1, ∅)          <span class="c"># not blocked</span>
+y=Carol  | <span class="op monus">⊖</span>(<span class="op sum">⊕</span><span class="op prod">⊗</span>t2, <span class="op sum">⊕</span><span class="op prod">⊗</span>t5)   <span class="c"># blocked by t5</span></pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>ours · shared circuit (4 CONSTRUCTs)</div><div class="body">
+<pre>Bob    ← <span class="op monus">⊖</span>( <span class="op sum">⊕</span>⊗t1 , ∅ )
+Carol  ← <span class="op monus">⊖</span>( <span class="op sum">⊕</span>⊗t2 , <span class="op sum">⊕</span>⊗t5 )</pre></div></div>
+  </div>
+  <details><summary>the plan (4 CONSTRUCTs)</summary>
+<pre><span class="c"># ours — the ⊖ needs the left sum, the right sum, and their join:</span>
+<span class="k">C1</span>  left  products → ⊕<sub>P1</sub>(?y)          <span class="c"># :knows matches</span>
+<span class="k">C2</span>  right products → ⊕<sub>P2</sub>(?y)          <span class="c"># :blocks matches</span>
+<span class="k">C3</span>  for each compatible ?y: ⊕<sub>P2</sub> c:feeds ⊕<sub>sub</sub>(?y)   <span class="c"># the part to subtract</span>
+<span class="k">C4</span>  ?m <span class="v">a</span> c:Minus ; c:minuend ⊕<sub>P1</sub> ; c:subtrahend ⊕<sub>sub</sub> ; c:feeds ?answer
+<span class="c"># Bob: no :blocks match ⇒ ⊕_sub empty ⇒ ⊖(⊕⊗t1, ∅). Carol: ⊖(⊕⊗t2, ⊕⊗t5).</span>
+<span class="c"># NPCS emits the same structure as a nested SELECT … OPTIONAL … CONCAT("(⊖",…) string.</span></pre></details>
+
+  <!-- optional -->
+  <h3>5 · Optional <span class="op prod">⊗</span> <span class="op sum">⊕</span> <span class="op monus">⊖</span> <span style="color:var(--muted);font-weight:400">— (matched: join) ⊕ (unmatched: minus)</span></h3>
+  <pre>SELECT ?y ?c WHERE { :Alice :knows ?y  OPTIONAL { ?y :city ?c } }</pre>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>NPCS · string per answer</div><div class="body">
+<pre>y=Bob  c=Rome | <span class="op sum">⊕</span>(<span class="op prod">⊗</span>t1,t6)            <span class="c"># matched</span>
+y=Bob  c=∅    | <span class="op monus">⊖</span>(<span class="op sum">⊕</span><span class="op prod">⊗</span>t1, <span class="op sum">⊕</span><span class="op prod">⊗</span>t6)     <span class="c"># the "unmatched" part</span>
+y=Carol c=∅   | <span class="op monus">⊖</span>(<span class="op sum">⊕</span><span class="op prod">⊗</span>t2, ∅)          <span class="c"># no city at all</span></pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>ours · shared circuit (5 CONSTRUCTs)</div><div class="body">
+<pre>(Bob,Rome)  ← <span class="op prod">⊗</span>(t1,t6)              <span class="c"># AND-branch</span>
+(Bob,NULL)  ← <span class="op monus">⊖</span>(<span class="op sum">⊕</span>⊗t1, <span class="op sum">⊕</span>⊗t6)      <span class="c"># DIFF-branch</span>
+(Carol,NULL)← <span class="op monus">⊖</span>(<span class="op sum">⊕</span>⊗t2, ∅)</pre></div></div>
+  </div>
+  <p style="font-size:.92rem;color:var(--muted)">OPTIONAL is exactly
+  <span class="mono">(P1 AND P2)</span> <span class="op sum">⊕</span> <span class="mono">(P1 MINUS P2)</span>:
+  the join branch (5th CONSTRUCT) handles matched rows, the 4-CONSTRUCT minus plan handles the
+  <span class="mono">c=NULL</span> rows. Same non-monotone <span class="op monus">⊖</span> as above.</p>
+
+  <!-- verified probabilities -->
+  <h3>… and the probabilities agree</h3>
+  <p>Assigning each token a probability (t1=.9, t2=.8, t3=.7, t4=.6, t5=.5, t6=.4), weighted model
+  counting over each circuit matches possible-world enumeration to float precision:</p>
+  <div class="box out"><div class="bhead"><span class="dot"></span>reference/verify_gallery.py · circuit WMC vs possible-world enumeration</div><div class="body">
+<pre>operator   answer            WMC        PWE
+atom       Bob               <span class="num">0.900000</span>   <span class="num">0.900000</span>  ✓
+join       Carol             <span class="num">0.630000</span>   <span class="num">0.630000</span>  ✓   <span class="c"># .9·.7</span>
+union      Bob               <span class="num">0.960000</span>   <span class="num">0.960000</span>  ✓   <span class="c"># 1−(1−.9)(1−.6)</span>
+minus      Carol             <span class="num">0.400000</span>   <span class="num">0.400000</span>  ✓   <span class="c"># .8·(1−.5)</span>
+optional   (Bob,Rome)        <span class="num">0.360000</span>   <span class="num">0.360000</span>  ✓   <span class="c"># .9·.4</span>
+optional   (Bob,NULL)        <span class="num">0.540000</span>   <span class="num">0.540000</span>  ✓   <span class="c"># .9·(1−.4)</span></pre>
+  </div></div>
+  <div class="verified">All five operators: circuit WMC == possible-world enumeration</div>
+</section>
+
+<!-- ============ challenges ============ -->
+<section id="challenges">
+  <div class="eyebrow">Technical challenges &amp; how we solved them</div>
+  <h2>The six problems on the path from strings to probabilities</h2>
+  <div class="cards">
+
+    <div class="card">
+      <span class="tag">01 · representation</span>
+      <h3>Per-answer strings can't be shared or compiled</h3>
+      <p class="prob">NPCS/SPARQLprov emit one serialized polynomial per answer; shared subterms are rewritten at every occurrence and the factored structure must be re-parsed.</p>
+      <p class="sol"><b>Solution.</b> Keep NPCS's rewriting skeleton but make the operators emit <b>gates as RDF</b> via a CONSTRUCT. The engine builds one graph for all answers — no decoding pass.</p>
+    </div>
+
+    <div class="card">
+      <span class="tag">02 · sharing</span>
+      <h3>How does the engine know two gates are the same?</h3>
+      <p class="prob">An engine has no notion of "the same gate". Without it, every derivation makes fresh nodes and nothing is shared.</p>
+      <p class="sol"><b>Solution.</b> <b>Content-addressed gate IRIs</b>: <code class="inl">IRI(hash(op, children))</code> computed in SPARQL with <code class="inl">SHA256</code>+<code class="inl">CONCAT</code>. Equal gates → equal IRI → RDF set-semantics dedupes. Leaves share for free (a token <em>is</em> its statement node).</p>
+      <span class="verified">Reproduces Fig. 2: p1, p3 each referenced by two gates</span>
+    </div>
+
+    <div class="card">
+      <span class="tag">03 · canonicalization</span>
+      <h3>A product's children are an <em>unordered set</em></h3>
+      <p class="prob">A self-join yields <span class="mono">⊗(t1,t2)</span> and <span class="mono">⊗(t2,t1)</span> — the same gate in two orders. They must collapse to one. But an order-invariant multiset hash from <span class="mono">SUM+COUNT</span> is <b>not injective</b> (<span class="mono">{1,4}</span> vs <span class="mono">{2,3}</span> collide) — wrong merges give wrong probabilities.</p>
+      <p class="sol"><b>Solution.</b> A <b>comparator network in pure SPARQL 1.1</b>: hash each child to fixed-width hex, <b>sort the hashes</b>, concatenate (delimiter-safe), hash again. The id is a canonical, order-independent, collision-free function of the child multiset.</p>
+      <span class="verified">#Times-gates == #distinct child-multisets on every test (no congruent duplicates)</span>
+    </div>
+
+    <div class="card">
+      <span class="tag">04 · non-monotonicity</span>
+      <h3>OPTIONAL and MINUS need a monus <span class="op monus">⊖</span></h3>
+      <p class="prob">SPARQL's OPTIONAL/MINUS are non-monotone; commutative semirings can't express them. And the monus gate's subtrahend is an aggregate — it doesn't fit one CONSTRUCT.</p>
+      <p class="sol"><b>Solution.</b> A short <b>plan of CONSTRUCT/INSERT passes</b> realizing <span class="mono">P1 OPTIONAL P2 = (P1 AND P2) <span class="op sum">⊕</span> (P1 DIFF P2)</span>: build the per-side sums, then <span class="mono">⊖(minuend, Σ subtrahend)</span>; an empty subtrahend keeps the row.</p>
+      <span class="verified">MINUS &amp; OPTIONAL: WMC == possible-world enumeration</span>
+    </div>
+
+    <div class="card">
+      <span class="tag">05 · size</span>
+      <h3>A flat circuit is exponential for many-path queries</h3>
+      <p class="prob">Building one <span class="op prod">⊗</span> per full derivation makes the circuit as large as the number of derivations — <span class="mono">|data|<sup>#patterns</sup></span>.</p>
+      <p class="sol"><b>Solution.</b> <b>Factored construction by variable elimination</b>, run as multi-pass INSERTs: join the relations mentioning a variable (<span class="op prod">⊗</span>), then marginalize it (<span class="op sum">⊕</span>), sharing intermediates. Circuit size drops to fixed degree <span class="mono">treewidth+1</span>.</p>
+      <span class="verified">chain query: flat W⁴ (38,416) → factored 3W² (588) at W=14; same result</span>
+    </div>
+
+    <div class="card">
+      <span class="tag">06 · exact probability</span>
+      <h3>Counting is #P-hard — where is it tractable?</h3>
+      <p class="prob">The shared structure makes derivations dependent; exact probability is #P-hard in general.</p>
+      <p class="sol"><b>Solution.</b> Compile the circuit to a <b>d-DNNF-family</b> target and weighted-model-count in <em>linear</em> time in the compiled size. This is polynomial for lineage of <b>bounded treewidth</b> — the tractable island; the compiler realizes the <span class="mono">n·2<sup>O(tw)</sup></span> bound.</p>
+      <span class="verified">OBDD &amp; SDD both == possible-world enumeration on every circuit</span>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ status ============ -->
+<section id="status">
+  <div class="eyebrow">Where the implementation stands</div>
+  <h2>Verified on this machine · pending at scale</h2>
+  <table>
+    <thead><tr><th>Component</th><th>State</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>NPCS rewriting (reproduced, Java)</td><td class="st done">done</td><td>139/139 BGP identical to the original JAR, both reification schemes</td></tr>
+      <tr><td>Engine-native circuit — BGP</td><td class="st done">done</td><td>reproduces Fig. 2; WMC == PWE</td></tr>
+      <tr><td>Engine-native circuit — OPTIONAL / MINUS</td><td class="st done">done</td><td>CONSTRUCT/INSERT plan; WMC == PWE</td></tr>
+      <tr><td>Content-addressed, canonical <span class="op prod">⊗</span> gates</td><td class="st done">done</td><td>sorted-hash in SPARQL; no congruent duplicates</td></tr>
+      <tr><td>Factored (multi-pass) construction</td><td class="st done">done</td><td>polynomial vs flat; functionally ≡ reference</td></tr>
+      <tr><td>Compilation + WMC (OBDD / SDD)</td><td class="st done">done</td><td>both == PWE; tractability governed by treewidth</td></tr>
+      <tr><td>Real triple store (GraphDB) + scale study</td><td class="st pending">pending</td><td>move SPARQL from in-memory to GraphDB; vs NPCS / SPARQLprov / ProvSQL</td></tr>
+      <tr><td>d4 compiler-scaling figure</td><td class="st pending">pending</td><td>Linux/x86 only (d4's PATOH has no arm64 build)</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="lbl">honest scope</span>
+  Everything above the line runs on an unmodified in-memory SPARQL engine and is checked answer-by-answer
+  against possible-world enumeration. The d-DNNF advantage over OBDD is <b>asymptotic</b> (large n, higher
+  treewidth) and needs d4's partitioner to exhibit — so the crisp compiler comparison is deferred to a
+  Linux box, not claimed here.</div>
+</section>
+
+<footer class="wrap">
+  Running example: Asma et&nbsp;al., <em>NPCS: Native Provenance Computation for SPARQL</em> (WWW&nbsp;2024), Fig.&nbsp;1.
+  Provenance algebra: spm-semirings (Geerts et&nbsp;al.). Compilation: knowledge compilation to d-DNNF / SDD.
+  All figures in this page are real output from the implementation, verified against possible-world enumeration.
+</footer>
+
+</main>
+</body>
+</html>

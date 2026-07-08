@@ -1,0 +1,32 @@
+# ---- circuit construction plan: 1 CONSTRUCT(s) ----
+# --- step 1 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?t a c:Times ; c:in ?a0 ; c:in ?a1 ; c:in ?a2 ; c:feeds ?ans .
+  ?ans a c:Plus ; c:answer ?anskey .
+}
+WHERE {
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:d:Aspirin> . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?x . 
+	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?z . 
+  BIND(SHA256(STR(?a0)) AS ?srt0)
+  BIND(SHA256(STR(?a1)) AS ?srt1)
+  BIND(SHA256(STR(?a2)) AS ?srt2)
+  BIND(IF(?srt0 <= ?srt1, ?srt0, ?srt1) AS ?srt3)
+  BIND(IF(?srt0 <= ?srt1, ?srt1, ?srt0) AS ?srt4)
+  BIND(IF(?srt4 <= ?srt2, ?srt4, ?srt2) AS ?srt5)
+  BIND(IF(?srt4 <= ?srt2, ?srt2, ?srt4) AS ?srt6)
+  BIND(IF(?srt3 <= ?srt5, ?srt3, ?srt5) AS ?srt7)
+  BIND(IF(?srt3 <= ?srt5, ?srt5, ?srt3) AS ?srt8)
+  BIND(CONCAT("A", "|z=", STR(?z)) AS ?anskey)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?srt7, "|", ?srt8, "|", ?srt6)))) AS ?t)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(?anskey))) AS ?ans)
+}
+
+# circuit triples: 19

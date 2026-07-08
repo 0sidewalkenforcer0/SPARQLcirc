@@ -1,0 +1,2 @@
+PREFIX : <http://example.org/paper#>
+SELECT ?y WHERE { :Alice :knows ?y MINUS { :Alice :blocks ?y } }

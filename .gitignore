@@ -1,0 +1,24 @@
+# Java / Maven
+engine/target/
+engine/dependency-reduced-pom.xml
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS / editors
+.DS_Store
+.vscode/
+.claude/
+
+# large, regenerable data (rebuilt by reference/watdiv/reify.py)
+*.reified.nt
+
+# generated DIMACS CNFs (rebuilt by reference/export_cnf.py; see D4_ON_LINUX.md)
+reference/cnf/
+
+# logs / local scratch
+*.log
+
+# generated treewidth-controlled families (rebuilt by reference/gen_families.py)
+reference/families/

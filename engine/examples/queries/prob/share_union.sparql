@@ -1,0 +1,6 @@
+PREFIX ex: <http://example.org/paper#>
+SELECT ?a ?d WHERE {
+  { ?a ex:p ?b . ?b ex:q ?d . }
+  UNION
+  { ?a ex:p ?b . ?b ex:r ?d . }
+}

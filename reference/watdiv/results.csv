@@ -1,0 +1,4 @@
+query,answers,derivations,flat_gates_engine,build_ms_engine,wmc_ms_client,T_string_struct,T_circuit_flat,sharing_struct,flat_gates_binary,factored_gates,factored_reduction,wmc_equals_flat
+S-star,2415,49375,72856,3564,741,148125,270356,0.55,92561,31615,2.9,yes
+L-path,15224,16856,45024,786,124,50568,112448,0.45,37313,34583,1.1,yes
+F-snow,5659,16856,36037,981,214,67424,120317,0.56,46299,26372,1.8,yes

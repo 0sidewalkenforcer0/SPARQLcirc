@@ -1,0 +1,3 @@
+50 OPTIONAL query files
+=== Standard: PARSE_OK 50/50, parse-fail 0, rewrite-err 0 ===
+=== SPARQL_Star: PARSE_OK 50/50, parse-fail 0, rewrite-err 0 ===

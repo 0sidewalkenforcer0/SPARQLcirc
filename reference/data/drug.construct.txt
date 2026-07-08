@@ -1,0 +1,22 @@
+# ---- emitted CONSTRUCT ----
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?prod a c:Times ; c:in ?fprov0 ; c:in ?fprov1 ; c:in ?fprov2 ; c:feeds ?sum .
+  ?sum a c:Plus ; c:answer ?anskey .
+}
+WHERE {
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:d:Aspirin> . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?x . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?z . 
+  BIND(CONCAT("A", "|", STR(?z)) AS ?anskey)
+  BIND(IRI(CONCAT("urn:g:s:", SHA256(?anskey))) AS ?sum)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", STR(?fprov0), "|", STR(?fprov1), "|", STR(?fprov2))))) AS ?prod)
+}
+
+# circuit triples: 19
