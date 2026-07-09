@@ -19,13 +19,17 @@ automatically.
 work). Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
 `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
 when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
-MINUS operands may be **BGPs or UNIONs of BGPs**, on either side and nested: the circuit
-distributes `(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)` and branches a UNION right operand
-into per-branch subtrahends, reducing to the verified BGP-operand plan. An **OPTIONAL as a
-MINUS operand** is handled by the string rewriter and safely rejected (not silently
-mis-handled) by the circuit — a rare shape left as future work. All MINUS cases are
-verified by `reference/verify_gallery.py` (`minus`, `minus_disjoint`, `minus_union`,
-`minus_p2union`) as `circuit WMC == possible-world enumeration`.
+MINUS operands may be **BGPs, UNIONs, or OPTIONALs**, on either side and nested: a
+`normalize()` pass reduces each composite operand algebraically to the verified BGP plan —
+`(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)`; a UNION right operand branches into per-branch
+subtrahends; `(A OPT B) MINUS P → (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))`; and
+`P1 MINUS (C OPT D) → P1 MINUS C` (the optional part washes out). Verified by
+`reference/verify_gallery.py` (`minus`, `minus_disjoint`, `minus_union`, `minus_p2union`,
+`opt_left`, `opt_right`) as `circuit WMC == possible-world enumeration` — the OPTIONAL cases
+checked against rdflib's own W3C evaluation. Two pathological residuals — a cross-product
+OPTIONAL operand (its two sides share no variable) and a MINUS operand that shares an
+OPTIONAL's *inner* variable — are safely rejected by the circuit (never mis-answered) and
+handled by the string rewriter.
 
 ## Repository layout
 
