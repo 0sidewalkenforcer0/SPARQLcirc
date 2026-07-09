@@ -1,0 +1,3 @@
+PREFIX : <http://example.org/paper#>
+# closure over an ALTERNATIVE: (p|q)+ = reachability on the 4-cycle -> all 16 pairs
+SELECT ?x ?y WHERE { ?x (:p|:q)+ ?y }

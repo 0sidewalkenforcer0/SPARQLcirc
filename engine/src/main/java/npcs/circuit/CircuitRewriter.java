@@ -470,33 +470,69 @@ public class CircuitRewriter {
         if (found[0] == null) return null;                       // not a path query
         if (scheme != Reification.STANDARD)
             throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
-        ArbitraryLengthPath alp = found[0];
-        if (!(alp.getPathExpression() instanceof StatementPattern))
-            throw new UnsupportedOperationException("Property path: only a single constant predicate is supported (no nested path expression yet).");
-        Var pv = ((StatementPattern) alp.getPathExpression()).getPredicateVar();
-        if (pv == null || !pv.hasValue())
-            throw new UnsupportedOperationException("Property path: predicate must be a constant IRI.");
         if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath))
             throw new UnsupportedOperationException("Property path must be the whole pattern for now (no join/union/minus with a path yet).");
+        ArbitraryLengthPath alp = found[0];
+        Var s = alp.getSubjectVar(), o = alp.getObjectVar();
+        String subjName = s.getName(), objName = o.getName();
+        if (subjName.equals(objName))
+            throw new UnsupportedOperationException("Property path: identical subject/object variable not supported.");
+        // Decompose the (compound) sub-path into BGP branches, endpoints substituted to ?u/?v so the
+        // base relation is all-pairs. unionBranches -> collect asserts pure BGP, so a NESTED closure or
+        // zero-length path inside the sub-path is rejected fail-fast.
+        List<List<StatementPattern>> branches = new ArrayList<>();
+        for (List<StatementPattern> br : unionBranches(alp.getPathExpression())) {
+            List<StatementPattern> nb = new ArrayList<>();
+            for (StatementPattern sp : br) nb.add(subst(sp, subjName, objName));
+            branches.add(nb);
+        }
         List<String> W = new ArrayList<>();
         for (ProjectionElem pe : outerProjection(te).getProjectionElemList().getElements())
             if (!W.contains(pe.getName())) W.add(pe.getName());
-        return new PathQuery(pv.getValue().stringValue(), end(alp.getSubjectVar()),
-                             end(alp.getObjectVar()), alp.getMinLength() == 0, W);
+        boolean star = alp.getMinLength() == 0;
+        // Materialize the all-pairs base relation reach^0 here (reify needs the instance): one CONSTRUCT
+        // per UNION alternative, each a ⊗ over the branch's reified patterns.
+        List<String> initC = new ArrayList<>();
+        for (List<StatementPattern> br : branches) {
+            List<String> toks = new ArrayList<>();
+            StringBuilder where = reify(br, "a", toks);          // binds ?u,?v (+ intermediates) and the tokens
+            String tkey = emitSortedProdKey(where, toks);
+            StringBuilder q = new StringBuilder(PRE);
+            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("0")).append(" .\n  ?t a c:Times ;");
+            for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
+            q.append(" c:feeds ?rg .\n}\nWHERE {\n").append(where)
+             .append(PathQuery.reachIri("?u", "?v", "0")).append(bindIri("?t", "urn:g:t:", tkey)).append("}\n");
+            initC.add(q.toString());
+        }
+        if (star) initC.add(PathQuery.zeroLenConstruct());
+        return new PathQuery(initC, endOf(s, subjName), endOf(o, objName), star, W);
     }
 
-    private static PathQuery.End end(Var v) {
-        return (v != null && v.hasValue())
-            ? new PathQuery.End(false, "<" + v.getValue().stringValue() + ">", null)
-            : new PathQuery.End(true, null, v.getName());
+    private static PathQuery.End endOf(Var v, String name) {
+        return v.hasValue() ? new PathQuery.End(false, "<" + v.getValue().stringValue() + ">", name)
+                            : new PathQuery.End(true, null, name);
+    }
+    // Substitute a path sub-pattern's endpoints (the ALP subject/object vars) with fresh ?u/?v so the
+    // base relation is computed all-pairs; internal (intermediate) vars are kept.
+    private static StatementPattern subst(StatementPattern sp, String subjName, String objName) {
+        return new StatementPattern(sv(sp.getSubjectVar(), subjName, objName),
+                                    (Var) sp.getPredicateVar().clone(),
+                                    sv(sp.getObjectVar(), subjName, objName));
+    }
+    private static Var sv(Var v, String subjName, String objName) {
+        if (v == null) return null;
+        if (v.getName().equals(subjName)) return new Var("u");
+        if (v.getName().equals(objName)) return new Var("v");
+        return (Var) v.clone();
     }
 
     /**
-     * An arbitrary-length path plan (all endpoint combinations) generating the iterative
-     * CONSTRUCTs. reach is ALL-PAIRS keyed by (level, from, to); a bound endpoint is matched
-     * as a constant in the reach patterns (a bound source could be specialized to single-source
-     * O(|V_s|·|E_s|) — here it is all-pairs, still polynomial). Single constant predicate,
-     * Standard reification; :p+ (minLength 1) and :p* (minLength 0, adds zero-length).
+     * An arbitrary-length path plan generating the iterative CONSTRUCTs. The (possibly compound)
+     * sub-path `e` is materialized ONCE as an all-pairs base relation reach^0(u,v) — one branch per
+     * UNION alternative, each a ⊗ over the branch's reified patterns (reusing reify/emitSortedProdKey).
+     * `e+` is then the level-indexed closure reach^{k+1} = reach^k ⊕ (reach^k ∘ reach^0); `e*` adds the
+     * zero-length pairs. reach gates are keyed by (level, from, to) — the level keeps the DAG acyclic on
+     * cyclic data. All endpoint modes (a bound endpoint is filtered in FINAL). Standard reification.
      */
     public static final class PathQuery {
         static final class End {                                 // a path endpoint: variable or constant
@@ -504,67 +540,58 @@ public class CircuitRewriter {
             End(boolean isVar, String iri, String var) { this.isVar = isVar; this.iri = iri; this.var = var; }
             String pat(String v) { return isVar ? v : iri; }     // SPARQL term to match this endpoint
         }
-        private final String pred; private final End subj, obj; private final boolean star;
+        private final List<String> initConstructs;               // reach^0 = all-pairs base relation (precomputed)
+        private final End subj, obj; private final boolean star;
         private final List<String> W;
-        PathQuery(String pred, End subj, End obj, boolean star, List<String> W) {
-            this.pred = pred; this.subj = subj; this.obj = obj; this.star = star; this.W = W;
+        PathQuery(List<String> initConstructs, End subj, End obj, boolean star, List<String> W) {
+            this.initConstructs = initConstructs; this.subj = subj; this.obj = obj; this.star = star; this.W = W;
         }
-        private String edge(String tok, String sv, String ov) { // reified P-edge sv -> ov (Standard)
-            return "  ?" + tok + " <" + RDF_S + "> " + sv + " .\n"
-                 + "  ?" + tok + " <" + RDF_P + "> <" + pred + "> .\n"
-                 + "  ?" + tok + " <" + RDF_O + "> " + ov + " .\n";
-        }
-        private static String reachIri(String from, String to, String lvl) {   // reach gate IRI = f(level, from, to)
+        static String reachIri(String from, String to, String lvl) {   // reach gate IRI = f(level, from, to)
             return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|" + lvl + "|\", STR(" + from
                  + "), \"|\", STR(" + to + "))))) AS ?rg)\n";
         }
-        private static String timesIri(String tok) {            // single-token Times gate
-            return "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(STR(?" + tok + ")))) AS ?tg)\n";
-        }
-        private static String reachHead(String lvl) {
+        static String reachHead(String lvl) {
             return "?rg a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rfrom ?u ; c:rto ?v";
         }
-        /** Distinct-node count over P-edges, to size the loop (rounds = N-1 simple-path bound). */
+        static String comp2(String c0, String c1, String out) {  // content-addressed 2-child ⊗ gate
+            return "  BIND(SHA256(STR(" + c0 + ")) AS ?h0)\n  BIND(SHA256(STR(" + c1 + ")) AS ?h1)\n"
+                 + "  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n"
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS " + out + ")\n";
+        }
+        static String zeroLenConstruct() {                       // reach^0(u,u) = OR of tokens mentioning u
+            return PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?tg a c:Times ; c:in ?z ; c:feeds ?rg .\n}\nWHERE {\n"
+                 + "  { ?z <" + RDF_S + "> ?u . } UNION { ?z <" + RDF_O + "> ?u . }\n"
+                 + "  BIND(?u AS ?v)\n" + reachIri("?u", "?u", "0")
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?z)))))) AS ?tg)\n}\n";
+        }
+        /** Distinct-node count over the reified data, to size the loop (rounds = N-1 simple-path bound). */
         public String nodeCountQuery() {
             return PRE + "SELECT (COUNT(DISTINCT ?n) AS ?c) WHERE {\n"
-                 + "  { ?t <" + RDF_P + "> <" + pred + "> ; <" + RDF_S + "> ?n . }\n"
-                 + "  UNION { ?t <" + RDF_P + "> <" + pred + "> ; <" + RDF_O + "> ?n . }\n}\n";
+                 + "  { ?t <" + RDF_S + "> ?n . } UNION { ?t <" + RDF_O + "> ?n . }\n}\n";
         }
-        /** reach^0: every direct P-edge (+ zero-length (u,u) for :p*). */
-        public List<String> init() {
-            List<String> out = new ArrayList<>();
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?tg a c:Times ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n"
-                  + edge("t", "?u", "?v") + reachIri("?u", "?v", "0") + timesIri("t") + "}\n");
-            if (star)                                            // reach^0(u,u) = OR of tokens mentioning u
-                out.add(PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?tg a c:Times ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n"
-                      + "  { ?t <" + RDF_S + "> ?u . } UNION { ?t <" + RDF_O + "> ?u . }\n"
-                      + "  BIND(?u AS ?v)\n" + reachIri("?u", "?u", "0") + timesIri("t") + "}\n");
-            return out;
-        }
-        /** reach^{k+1} from reach^k: (A) extend by one edge, (B) carry forward. */
+        /** reach^0 = the all-pairs base relation for the sub-path (+ zero-length (u,u) for :p*). */
+        public List<String> init() { return initConstructs; }
+        /** reach^{k+1} from reach^k: (A) compose reach^k(u,w) ⊗ reach^0(w,v), (B) carry forward. */
         public List<String> step(int k) {
             String kL = "\"" + k + "\"", k1 = Integer.toString(k + 1);
             List<String> out = new ArrayList<>();
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n"       // (A) reach^k(u,w) (*) edge(w,v)
-                  + "  ?comp a c:Times ; c:in ?rk ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n"
+            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
+                  + "  ?comp a c:Times ; c:in ?rk ; c:in ?rb ; c:feeds ?rg .\n}\nWHERE {\n"
                   + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?w .\n"
-                  + edge("t", "?w", "?v") + reachIri("?u", "?v", k1)
-                  + "  BIND(SHA256(STR(?rk)) AS ?h0)\n  BIND(SHA256(STR(?t)) AS ?h1)\n"
-                  + "  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n"
-                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS ?comp)\n}\n");
+                  + "  ?rb a c:Plus ; c:rlvl \"0\" ; c:rfrom ?w ; c:rto ?v .\n"
+                  + reachIri("?u", "?v", k1) + comp2("?rk", "?rb", "?comp") + "}\n");
             out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n  ?rk c:feeds ?rg .\n}\nWHERE {\n"  // (B) carry
                   + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?v .\n"
                   + reachIri("?u", "?v", k1) + "}\n");
             return out;
         }
         /** Project reach^{lastLevel} to answer gates, filtering bound endpoints and keying by the free ones. */
-        public List<String> finalize(int lastLevel) {
-            // match: ?rg from <subj-or-?u> to <obj-or-?v>; if both endpoints are the SAME variable, unify on ?u.
-            boolean sameVar = subj.isVar && obj.isVar && subj.var.equals(obj.var);
-            String fromPat = subj.pat("?u"), toPat = obj.pat(sameVar ? "?u" : "?v");
+        public List<String> projectAnswers(int lastLevel) {
+            String fromPat = subj.pat("?u"), toPat = obj.pat("?v");
             StringBuilder key = new StringBuilder("CONCAT(\"A\"");
             for (String w : W) {
-                String term = w.equals(subj.var) ? "?u" : (w.equals(obj.var) ? (sameVar ? "?u" : "?v") : null);
+                String term = subj.isVar && w.equals(subj.var) ? "?u"
+                            : (obj.isVar && w.equals(obj.var) ? "?v" : null);
                 if (term != null) key.append(", \"|").append(w).append("=\", STR(").append(term).append(")");
             }
             key.append(")");

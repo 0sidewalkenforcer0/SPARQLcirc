@@ -62,7 +62,7 @@ public final class CircuitRun {
                 System.err.println("# ---- property-path plan: nodes=" + n + ", rounds=" + rounds + " ----");
                 java.util.List<String> constructs = new java.util.ArrayList<>(pathq.init());
                 for (int k = 0; k < rounds; k++) constructs.addAll(pathq.step(k));
-                constructs.addAll(pathq.finalize(rounds));
+                constructs.addAll(pathq.projectAnswers(rounds));
                 int i = 0;
                 for (String c : constructs) {
                     System.err.println("# --- path CONSTRUCT " + (++i) + " ---\n" + c);
