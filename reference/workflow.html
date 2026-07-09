@@ -514,6 +514,31 @@ optional   (Bob,Rome)        <span class="num">0.360000</span>   <span class="nu
 optional   (Bob,NULL)        <span class="num">0.540000</span>   <span class="num">0.540000</span>  ✓   <span class="c"># .9·(1−.4)</span></pre>
   </div></div>
   <div class="verified">All five operators: circuit WMC == possible-world enumeration</div>
+
+  <!-- property paths -->
+  <h3 style="margin-top:2.4rem">6 · Property paths <span class="op sum">⊕</span><span class="op prod">⊗</span> <span style="color:var(--muted);font-weight:400">— recursive reachability, finite on cyclic graphs</span></h3>
+  <p><code class="inl">?x :p+ ?y</code> asks for reachability — recursive, and
+  <b style="color:var(--ink)">infinite to enumerate</b> on a cyclic graph. We build a finite circuit in
+  the absorptive semiring PosBool (idempotent <span class="op sum">⊕</span>/<span class="op prod">⊗</span>:
+  a pair is reachable once, however many paths witness it) by a <b>level-indexed fixpoint</b>:</p>
+<pre>reach⁰(u,v)      = edge u→v
+reach^k+1(u,v) = reach^k(u,v) <span class="op sum">⊕</span> <span class="op sum">⊕</span>_w [ reach^k(u,w) <span class="op prod">⊗</span> edge(w,v) ]</pre>
+  <p>The level <span class="mono">k</span> is baked into each reach gate's id, so a level-(k+1) gate
+  points only at level-≤k gates — <b style="color:var(--ink)">the circuit is an acyclic DAG even though
+  the data has a cycle</b>. Recursive sharing (pointing at the single gate <span class="mono">reach^k(u,w)</span>,
+  not an expanded path list) keeps it <b>polynomial</b>: a ring of n nodes → ≈n² gates; a clique stays
+  polynomial while #simple-paths ~ e·(n−2)!.</p>
+  <div class="stage io">
+    <div class="box out"><div class="bhead"><span class="dot"></span>cyclic A→B→C→A, shortcut A→C · <code class="inl">A :p+ ?y</code></div><div class="body">
+<pre>y=B  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>e1 )
+y=C  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>e3, <span class="op prod">⊗</span>(e1,e2) )
+y=A  ← <span class="op sum">⊕</span>( <span class="op prod">⊗</span>(e4,e3), <span class="op prod">⊗</span>(e4,e1,e2) )</pre></div></div>
+    <div class="box out"><div class="bhead"><span class="dot"></span>WMC (e1..e4 = .9,.8,.5,.7) == possible-world enum</div><div class="body">
+<pre>A→B  <span class="num">0.900000</span>   <span class="c"># only edge into B</span>
+A→C  <span class="num">0.860000</span>   <span class="c"># e3 ∨ e1·e2</span>
+A→A  <span class="num">0.602000</span>   <span class="c"># e4·(e3 ∨ e1·e2)</span></pre></div></div>
+  </div>
+  <div class="verified">Unmodified engine (client-driven iteration) · circuit WMC == possible-world enumeration · reference/verify_engine_paths.py</div>
 </section>
 
 <!-- ============ challenges ============ -->

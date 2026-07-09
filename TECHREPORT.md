@@ -50,9 +50,10 @@ deduplicates shared gates automatically.
 ## 2. Scope
 
 - **Data:** ABox only (no TBox/reasoning).
-- **Queries:** `SELECT`; the algebra fragment **BGP/AND, UNION, OPTIONAL, MINUS** + projection.
-- **Excluded (by design):** property paths (deferred to a recursive follow-up); `FILTER`, `BIND`,
-  in-query aggregation, sub-`SELECT`, `VALUES` — **rejected** (fail-fast, never silently mis-handled).
+- **Queries:** `SELECT`; the algebra fragment **BGP/AND, UNION, OPTIONAL, MINUS**, **property paths**
+  (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6).
+- **Excluded (by design):** `FILTER`, `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
+  property sets `!(...)` — **rejected** (fail-fast, never silently mis-handled).
 - **Solution modifiers:** `LIMIT`/`OFFSET`/`ORDER BY` are **rejected** (they do not apply to a
   materialized circuit of all answers); `DISTINCT` is an **implicit no-op** (answer gates are a set).
 - **Input/output form:** input is a `SELECT`; the rewritten query is a **`CONSTRUCT`** that builds
@@ -161,6 +162,52 @@ The CONSTRUCT output is an RDF graph, but the SELECT table is not lost: it is a 
 The client (a) finds every gate with a `c:answer` property, (b) parses the literal
 `"A|v=val|…"` → the binding, (c) compiles the sub-circuit rooted there and WMCs it → that row's
 probability. Result = the ordinary SELECT result table + a probability column. **[impl]**
+
+### 4.6 Recursive provenance for property paths
+
+Property paths need the provenance of *reachability*, which is recursive — a pair `(u,v)` may be
+connected by unboundedly many walks (infinitely many on a cyclic graph). SPARQL_circ evaluates paths
+in the **absorptive semiring PosBool(X)** (⊕, ⊗ idempotent, absorption `a ⊕ (a⊗b) = a`), so paths have
+**set semantics**: a reachable pair appears once regardless of the number of paths, and alternative-path
+duplicates (`:p|:q`) collapse. Idempotence/absorption are legal **only** inside path subcircuits; the
+non-path fragment keeps bag-valued ⊕ (`g⊕g = 2g`). **[impl, verified]**
+
+**Level-indexed fixpoint.** An arbitrary-length path `e+` is the transitive closure computed by a
+level-indexed iteration
+```
+reach^0(u,v)     = edge_e(u,v)
+reach^{k+1}(u,v) = reach^k(u,v)  ⊕  ⊕_w [ reach^k(u,w) ⊗ edge_e(w,v) ]
+```
+The level `k` is baked into each reach gate's identity, so a level-(k+1) gate references only level-≤k
+gates: the emitted circuit is an **acyclic DAG even when the data graph has cycles** (where naive walk
+enumeration is infinite). **Recursive sharing** — `reach^{k+1}(u,v)` references the single gate
+`reach^k(u,w)`, never an expanded sum of paths — keeps the circuit **polynomial**: for a bound source
+`O(|V_s|·|E_s|)` gates (≤ `|V_s|` levels, `O(|E_s|)` work per level; all-pairs multiplies by `|V|`).
+Simple-path collapse (a simple path has ≤ `|V|-1` edges) bounds the iteration to `|V|-1` rounds; longer,
+non-simple walks add no probability mass under the Boolean/PosBool reading. **[impl, verified]**
+
+**Operators** (compositional on pair-relations): `e1/e2` = relational compose; `e1|e2` = union
+(absorptive ⊕ dedups); `^e` = swap endpoints; `e+` = the closure above; `e* = e+ ⊕` zero-length;
+`e? = e ⊕` zero-length. Zero-length uses the **terms-in-graph** reading (a node relates to itself iff it
+occurs in the graph); engines differ here, so the correctness statement is *qualified to this reading*.
+The path circuit is Boolean/PosBool and compiles + WMCs through the **same** backend as the rest; shared
+edge tokens are counted once (correlation), exactly as for BGP sharing.
+
+**Two realizations.**
+- *Python reference* (`reference/gamma.py`, DSL node `('path', subj, pathexpr, obj)`): all operators
+  `/ | ^ + * ?`, all endpoint modes. Verified circuit-WMC == possible-world enumeration on cyclic graphs
+  and across probability assignments (`reference/tests.py`, `reference/path_demo.py`).
+- *Engine* (`CircuitRewriter`/`CircuitRun`): SPARQL 1.1 has no provenance-exposing recursion, so a
+  **client-driven iterative protocol** issues one CONSTRUCT per level, feeds each round's reach gates
+  back into the store, and loops to the simple-path bound. reach gates are keyed by `(level, from, to)`;
+  composition ⊗ gates are content-addressed by sorted child hashes. Current engine scope: a single
+  constant predicate, `+`/`*`, all endpoint combinations, Standard reification — verified byte-for-byte
+  against the Python reference on a cyclic graph (`reference/verify_engine_paths.py`). Compound operators
+  inside the engine, and single-source specialization, are future work. **[impl, verified]**
+
+**Size, empirically** (`reference/path_demo.py`): on a cyclic ring the `?x p+ ?y` circuit has `≈|V|²`
+gates (`gates/|V|² → 1`); on a clique it stays polynomial while the number of simple paths is
+`~e·(|V|-2)!`.
 
 ---
 
@@ -385,7 +432,11 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 7. **Content-addressing** relies on SHA256 collision-resistance (a standard assumption).
 8. **Two rewriters** — the *string* rewriter (NpcsRewriter) reproduces NPCS and handles the full
    fragment (incl. all nested MINUS); the *circuit* rewriter (the contribution) covers
-   BGP/UNION/OPTIONAL/chained-MINUS operands and rejects the three residuals.
+   BGP/UNION/OPTIONAL/chained-MINUS operands, property paths, and rejects the three residuals.
+9. **Property-path scope** — the Python reference covers all operators `/ | ^ + * ?`; the *engine*
+   currently emits `+`/`*` for a single constant predicate (all endpoint modes, Standard reification).
+   Compound operators inside the engine's iterative protocol, and a single-source specialization of the
+   all-pairs reach, are future work. Zero-length semantics are qualified to the terms-in-graph reading.
 
 ---
 

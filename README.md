@@ -15,8 +15,11 @@ with ProvSQL, which requires a **modified** database engine. Here the engine is 
 the circuit is a normal RDF graph, so RDF set-semantics deduplicates shared gates
 automatically.
 
-**Scope.** ABox only (no TBox); property paths are out of scope (deferred to follow-up
-work). Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
+**Scope.** ABox only (no TBox). **Property paths** are supported via recursive provenance in the
+absorptive semiring PosBool (arbitrary-length `+`/`*` and `/ | ^ ?`); reachability is a level-indexed
+fixpoint whose gates stay an acyclic, polynomial DAG even on cyclic graphs (Python reference: all
+operators; engine: `+`/`*` single predicate, all endpoints — see `TECHREPORT.md` §4.6). Negated
+property sets `!(...)` are out of scope. Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
 `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
 when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
 MINUS operands may be **BGPs, UNIONs, or OPTIONALs**, on either side, nested, and **chained**

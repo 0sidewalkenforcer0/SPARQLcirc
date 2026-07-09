@@ -250,6 +250,35 @@ W3C evaluation).
 
 ---
 
+## 6b. Property paths: recursive provenance on a cyclic graph
+
+A property path like `?x :p+ ?y` asks for *reachability*, which is recursive — and on a **cyclic**
+graph there are infinitely many walks, so you cannot enumerate them. SPARQL_circ instead builds a
+finite circuit for reachability in the **absorptive semiring PosBool** (idempotent ⊕/⊗: a pair is
+reachable "once", however many paths witness it).
+
+Take the cycle `A→B→C→A` with a shortcut `A→C` (tokens `e1,e2,e3,e4`, `TECHREPORT` §4.6 /
+`reference/pathcyc.ttl`). Reachability is a **level-indexed fixpoint**:
+
+```
+reach^0(u,v)     = the direct edge u→v
+reach^{k+1}(u,v) = reach^k(u,v)  ⊕  ⊕_w [ reach^k(u,w) ⊗ edge(w,v) ]
+```
+
+The level `k` is part of each `reach` gate's identity, so a level-(k+1) gate only ever points at
+level-≤k gates — **the circuit is an acyclic DAG even though the data has a cycle.** And because
+`reach^{k+1}(u,v)` points at the *single shared gate* `reach^k(u,w)` (not an expanded list of paths),
+the whole thing stays **polynomial**: a cyclic ring of `n` nodes gives `≈n²` gates, and a clique stays
+polynomial while the number of simple paths is `~e·(n−2)!` (`reference/path_demo.py`).
+
+WMC then reads it like any other circuit. For `A p+ ?y` with `P(e1..e4)=.9,.8,.5,.7`:
+`P(A→B)=0.90` (only edge into B), `P(A→C)=P(e3 ∨ e1e2)=0.86`, `P(A→A)=P(e4 ∧ (e3 ∨ e1e2))=0.602`.
+Verified engine-side (unmodified RDF4J, client-driven iteration) and against possible-world
+enumeration in `reference/verify_engine_paths.py`. Operators `/ | ^ ? *` build on the same pair-relations;
+`e*`/`e?` add the zero-length `(u,u)` pair under the terms-in-graph reading.
+
+---
+
 ## 7. Why this design (the two decisions that make it work)
 
 **Content-addressing = automatic sharing.** Because a gate's identity *is* the hash of its meaning,
