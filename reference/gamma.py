@@ -75,9 +75,17 @@ def eval_union(circ, qa, qb, data):
     return {k: circ.plus(v) for k, v in g.items()}
 
 
-def eval_minus(circ, qa, qb, data):
+def eval_minus(circ, qa, qb, data, guard=True):
     """q1 DIFF q2: keep each q1 binding, subtract the summed provenance of the
-    q2 bindings that share a bound variable and are compatible."""
+    compatible q2 bindings.
+
+    guard=True  -> W3C MINUS: only subtract when the two bindings also share a
+                   variable (the domain-intersection guard); disjoint operands
+                   are a no-op. This is user-level MINUS.
+    guard=False -> the raw (unguarded) anti-join used as OPTIONAL's negative
+                   branch: subtract every compatible q2, even domain-disjoint
+                   ones. (For shared-variable operands the two agree, since
+                   compatible bindings then always share the bound variable.)"""
     A, B = eval_q(circ, qa, data), eval_q(circ, qb, data)
     out = {}
     for ka, ga in A.items():
@@ -85,16 +93,16 @@ def eval_minus(circ, qa, qb, data):
         subs = []
         for kb, gb in B.items():
             db = dict(kb)
-            if (set(da) & set(db)) and _compatible(da, db):
+            if (not guard or (set(da) & set(db))) and _compatible(da, db):
                 subs.append(gb)
         out[ka] = circ.minus(ga, circ.plus(subs) if subs else circ.CONST0)
     return out
 
 
 def eval_optional(circ, qa, qb, data):
-    """q1 OPTIONAL q2  =  (q1 AND q2)  UNION  (q1 DIFF q2)."""
-    joined = eval_join(circ, qa, qb, data)   # extended bindings (q2 matched)
-    diffed = eval_minus(circ, qa, qb, data)  # q1-only bindings (q2 unmatched)
+    """q1 OPTIONAL q2  =  (q1 AND q2)  UNION  (q1 DIFF q2), the DIFF being UNGUARDED."""
+    joined = eval_join(circ, qa, qb, data)                # extended bindings (q2 matched)
+    diffed = eval_minus(circ, qa, qb, data, guard=False)  # q1-only bindings (q2 unmatched)
     g = defaultdict(list)
     for k, gate in joined.items():
         g[k].append(gate)

@@ -32,6 +32,8 @@ TESTS = [
      ("minus", ("bgp", [("?x", "p", "?y")]), ("bgp", [("?y", "q", "?z")]))),
   ("optional2", DS_chain, ["?x", "?y", "?z"],
      ("optional", ("bgp", [("?x", "p", "?y")]), ("bgp", [("?y", "q", "?z")]))),
+  ("opt_disjoint", DS_chain, ["?x", "?y", "?a", "?e"],   # OPTIONAL operands share NO variable
+     ("optional", ("bgp", [("?x", "p", "?y")]), ("bgp", [("?a", "r", "?e")]))),
   ("minus_union", DS_chain, ["?x"],
      ("minus", ("bgp", [("?x", "p", "?y")]),
                ("union", ("bgp", [("?y", "q", "?z")]), ("bgp", [("?y", "r", "?w")])))),

@@ -74,7 +74,8 @@ public class CircuitRewriter {
      *   P MINUS (C OPT D)    ≡ P MINUS C                                 [P shares no D-only var]
      *   (A MINUS P) MINUS Q  ≡ A MINUS (P∪Q)                             [(A∖P)∖Q = A∖(P∪Q)]
      * Residuals left for minusPlan/collect to reject safely: right-nested MINUS
-     * A MINUS (P MINUS Q) (introduces a join), and the two pathological OPTIONAL shapes.
+     * A MINUS (P MINUS Q) (introduces a join), and the two pathological OPTIONAL-as-MINUS-operand
+     * shapes. (A bare cross-product OPTIONAL is NOT a residual — optionalPlan handles it correctly.)
      */
     private static TupleExpr normalize(TupleExpr node) {
         if (node instanceof Union) {
@@ -273,12 +274,15 @@ public class CircuitRewriter {
 
         List<String> plan = new ArrayList<>();
         plan.add(bgp(both, W));                                          // AND-branch: ⊗ over P1∪P2 -> answer
-        // DIFF-branch (same as MINUS): P1-only answers with ⊖
+        // DIFF-branch: P1-only answers with ⊖. UNLIKE MINUS this is UNGUARDED — OPTIONAL's negative
+        // branch must subtract even when the operands share no variable. subFeeds reifies P1 and P2
+        // in one WHERE, so disjoint operands cross-product and every P2 feeds every P1 subtrahend
+        // (⊖(⊕_{P1}, ⊕ all P2)); a shared variable instead makes it a natural join. Guarding this on
+        // shared variables (as MINUS does) would leave a bare P1 present even when P2 matches — wrong.
         LinkedHashSet<String> V1 = vars(L), V2 = vars(R);
-        Set<String> S = intersect(V1, V2);
         plan.add(productPlus(L, "a", "urn:g:p1:", "P1", V1));
         plan.add(productPlus(R, "b", "urn:g:p2:", "P2", V2));
-        if (!S.isEmpty()) plan.add(subFeeds(L, R, V1, V2));
+        plan.add(subFeeds(L, R, V1, V2));
         plan.add(minusRoot(L, V1, W));
         return plan;
     }

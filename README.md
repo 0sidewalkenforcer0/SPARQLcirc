@@ -28,8 +28,9 @@ P MINUS C`; `(A MINUS P) MINUS Q → A MINUS (P∪Q)`. Verified by `reference/ve
 `opt_right`, `distinct`) as `circuit WMC == possible-world enumeration`, the composite cases
 checked against rdflib's own W3C evaluation. **Safely rejected** (loud error, never mis-answered;
 the string rewriter handles them): **right-nested MINUS** `A MINUS (P MINUS Q)` (introduces a
-join), a cross-product OPTIONAL operand, and a MINUS operand sharing an OPTIONAL's *inner*
-variable. Solution-sequence modifiers **LIMIT/OFFSET/ORDER BY are rejected**; **DISTINCT is an
+join), a cross-product OPTIONAL **as a MINUS operand** (`(A OPT B) MINUS P` with `A`,`B` sharing no
+variable — a *bare* cross-product OPTIONAL is fully supported, via the unguarded DIFF in `optionalPlan`),
+and a MINUS operand sharing an OPTIONAL's *inner* variable. Solution-sequence modifiers **LIMIT/OFFSET/ORDER BY are rejected**; **DISTINCT is an
 implicit no-op** (answer gates are already a set).
 
 ## Repository layout

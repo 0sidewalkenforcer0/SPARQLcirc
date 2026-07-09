@@ -1,0 +1,10 @@
+PREFIX : <http://example.org/paper#>
+# Bare cross-product OPTIONAL: (A OPTIONAL B) with A,B sharing NO variable
+# (knows binds ?y; city binds ?w,?e). A OPT B's negative branch is UNGUARDED DIFF, so a bare
+# A-binding must survive only when NO compatible B exists (i.e. no city triple in that world),
+# with provenance P1 ∧ ¬(⊕ P2) — NOT unconditionally. Distinct from opt_xprod.sparql, which is
+# the same shape nested inside MINUS (rejected via normalize); this bare form reaches optionalPlan.
+SELECT ?y ?e WHERE {
+  :Alice :knows ?y
+  OPTIONAL { ?w :city ?e }
+}

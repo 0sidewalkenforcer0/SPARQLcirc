@@ -214,8 +214,9 @@ answer set: the optional D-part washes out because, per C-solution, `matched ⊕
 
 **Residuals** — safely **rejected** by the circuit (loud error, never mis-answered; the string path
 handles them): right-nested `A MINUS (P MINUS Q)` (which is `A∖(P∖Q) = (A∖P)∪(A∩Q)`, introducing a
-join — not a pure MINUS reduction); a **cross-product OPTIONAL** operand (its two sides share no
-variable); a MINUS operand sharing an OPTIONAL's **inner** variable. These are pathological and
+join — not a pure MINUS reduction); a **cross-product OPTIONAL as a MINUS operand** (`(A OPT B) MINUS P`
+with `A`,`B` sharing no variable — a *bare* cross-product OPTIONAL is fully supported via the unguarded
+DIFF in `optionalPlan`, not rejected); a MINUS operand sharing an OPTIONAL's **inner** variable. These are pathological and
 essentially never occur in real queries.
 
 **Correctness abstraction.** `⊖(a,b) ↦ a∧¬b`, giving "μ present iff its P1-derivation holds and no

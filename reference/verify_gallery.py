@@ -81,7 +81,7 @@ def answers_rdflib(op, T):
                 if row[rdflib.Variable(v)] is not None else "NULL") for v in pvars))
     return out
 
-RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct"}  # complex shapes: oracle via rdflib
+RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct", "opt_disjoint"}  # complex shapes: oracle via rdflib
 
 def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
     if op in RDFLIB_OPS:
@@ -160,7 +160,7 @@ def canon_key(k):
 if __name__ == "__main__":
     allok = True
     for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
-               "minus_chain", "opt_left", "opt_right", "distinct", "optional"]:
+               "minus_chain", "opt_left", "opt_right", "distinct", "optional", "opt_disjoint"]:
         cw = {canon_key(k): v for k, v in circuit_wmc(op).items()}
         tw = {canon_key(k): v for k, v in pwe(op).items()}
         keys = sorted(set(cw) | set(tw))
