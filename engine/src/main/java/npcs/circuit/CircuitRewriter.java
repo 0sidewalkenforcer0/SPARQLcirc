@@ -8,9 +8,11 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -33,9 +35,11 @@ import npcs.rewrite.Reification;
  *   - BGP:      1 CONSTRUCT  (⊗ per derivation -> ⊕ per answer)
  *   - UNION:    one plan per branch, all keyed by the projection W, so the
  *               branches feed one shared answer ⊕ (that shared ⊕ IS the union)
- *   - MINUS:    4 CONSTRUCTs (P1 products -> ⊕_{P1}; P2 products -> ⊕_{P2};
- *                             compatible ⊕_{P2} -> ⊕_{sub}; ⊖(⊕_{P1},⊕_{sub}) -> answer)
- *   - OPTIONAL: the DIFF plan (via minusPlan, which computes DIFF) + one AND-branch CONSTRUCT over P1∪P2
+ *   - MINUS:    guarded DIFF — ⊕_{P1}; per right branch overlapping P1: ⊕_{P2} and
+ *               ⊕_{P2} -> ⊕_{sub}; then ⊖(⊕_{P1},⊕_{sub}) -> answer. No shared variable
+ *               ⇒ no-op. Composite operands (UNION/OPTIONAL/chained MINUS) are reduced to
+ *               this form by {@link #normalize}.
+ *   - OPTIONAL: one AND-branch CONSTRUCT over P1∪P2 + the DIFF plan (unguarded, via minusPlan pieces)
  *
  * Gate ids are content-addressed in SPARQL: IRI(prefix + SHA256(key)).
  * Vocabulary (urn:circuit:):  Times/Plus/Minus, in/feeds/minuend/subtrahend/answer.
@@ -52,6 +56,7 @@ public class CircuitRewriter {
     public List<String> plan(String query) {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
         TupleExpr te = pq.getTupleExpr();
+        rejectSequenceModifiers(te);                 // LIMIT/OFFSET/ORDER BY don't apply to a circuit
         Projection projection = outerProjection(te);
         List<String> W = new ArrayList<>();
         for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
@@ -62,10 +67,14 @@ public class CircuitRewriter {
 
     /**
      * Normalize the algebra so every {@code Difference} (MINUS) has operands {@link
-     * #branchPlan} can build. Currently: distribute UNION out of a MINUS left operand —
-     * (A UNION B) MINUS P ≡ (A MINUS P) UNION (B MINUS P). Valid for probabilistic
-     * evaluation (Boolean: (a∨b)∧¬s = (a∧¬s)∨(b∧¬s)); reduces UNION-left MINUS to the
-     * verified BGP-operand plan. (P2-side UNION and OPTIONAL operands: TODO.)
+     * #branchPlan}/{@link #minusPlan} can build, by algebraically reducing composite MINUS
+     * operands to the verified BGP/UNION-operand plan (all PQE-valid):
+     *   (A∪B) MINUS P        ≡ (A MINUS P) ∪ (B MINUS P)
+     *   (A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))     [A,B share a var]
+     *   P MINUS (C OPT D)    ≡ P MINUS C                                 [P shares no D-only var]
+     *   (A MINUS P) MINUS Q  ≡ A MINUS (P∪Q)                             [(A∖P)∖Q = A∖(P∪Q)]
+     * Residuals left for minusPlan/collect to reject safely: right-nested MINUS
+     * A MINUS (P MINUS Q) (introduces a join), and the two pathological OPTIONAL shapes.
      */
     private static TupleExpr normalize(TupleExpr node) {
         if (node instanceof Union) {
@@ -108,6 +117,11 @@ public class CircuitRewriter {
                         new Difference(u.getLeftArg().clone(), nr.clone()),
                         new Difference(u.getRightArg().clone(), nr.clone())));
             }
+            if (nl instanceof Difference) {     // (A MINUS P) MINUS Q → A MINUS (P ∪ Q)  [(A∖P)∖Q=A∖(P∪Q)]
+                Difference inner = (Difference) nl;
+                return normalize(new Difference(inner.getLeftArg().clone(),
+                        new Union(inner.getRightArg().clone(), nr.clone())));
+            }
             return new Difference(nl, nr);
         }
         return node;   // BGP / Join / StatementPattern
@@ -119,7 +133,8 @@ public class CircuitRewriter {
      * (content-addressed by the binding) — that shared Plus IS the union. Recurses,
      * so UNION may nest and its branches may themselves be MINUS/OPTIONAL/BGP.
      *   - UNION:    branchPlan(left) ++ branchPlan(right)  (shared W-keyed answer ⊕)
-     *   - MINUS:    4 CONSTRUCTs   - OPTIONAL: AND-branch + the DIFF plan
+     *   - MINUS:    minusPlan (guarded DIFF; UNION right operand -> per-branch subtrahend)
+     *   - OPTIONAL: optionalPlan (AND-branch + unguarded DIFF)
      *   - BGP:      1 CONSTRUCT    (⊗ per derivation -> ⊕ per answer)
      */
     private List<String> branchPlan(TupleExpr body, List<String> W) {
@@ -403,5 +418,25 @@ public class CircuitRewriter {
         });
         if (found[0] == null) throw new IllegalArgumentException("Only SELECT queries supported.");
         return found[0];
+    }
+
+    /** Reject solution-sequence modifiers we cannot honor on a materialized circuit
+     *  (LIMIT/OFFSET/ORDER BY). DISTINCT is allowed — an implicit no-op, since the circuit's
+     *  content-addressed answer gates already give set semantics. */
+    private static void rejectSequenceModifiers(TupleExpr te) {
+        String[] bad = {null};
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override protected void meetNode(QueryModelNode node) {
+                if (bad[0] != null) return;
+                if (node instanceof Slice) bad[0] = "LIMIT/OFFSET";
+                else if (node instanceof Order) bad[0] = "ORDER BY";
+                super.meetNode(node);
+            }
+        });
+        if (bad[0] != null) {
+            throw new UnsupportedOperationException("Unsupported solution modifier: " + bad[0]
+                + ". SPARQL_circ computes the full set of answer probabilities; sequence modifiers "
+                + "do not apply. (DISTINCT is implicit — answers are a set.)");
+        }
     }
 }

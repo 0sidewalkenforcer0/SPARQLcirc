@@ -118,7 +118,7 @@ compilation.
 ## E6 — Non-monotone operators  *(status: piloted — `verify_gallery.py`, `verify_nonmono.py`)*
 
 - **Proves:** C + separates us from monotone-only provenance.
-- **Setup:** MINUS/OPTIONAL-heavy queries on real + synthetic; WMC vs PWE; report plan cost (MINUS=4, OPTIONAL=5 CONSTRUCTs) and circuit size.
+- **Setup:** MINUS/OPTIONAL-heavy queries on real + synthetic; WMC vs PWE; report plan cost (MINUS: guarded DIFF, one sub-plan per overlapping UNION branch; OPTIONAL: AND-branch + DIFF; composite operands reduced by normalize) and circuit size.
 - **Prediction:** exact; ⊖/sub gates add cost linear in operand sizes; tractability class unchanged (⊖→a∧¬b compiles like any Boolean). **Qualitative:** SPARQLprov (monotone semiring) and NPCS (strings, no PQE) can't produce these probabilities — a "we can, they can't" result.
 
 ## E7 — End-to-end vs baselines  *(status: NEW — needs `provsql/` harness)*

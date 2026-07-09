@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
  * </ul>
  * The provenance polynomial is emitted as {@code CONCAT(...)} expressions and
  * computed natively by the SPARQL endpoint.
+ *
+ * <p><b>Not thread-safe:</b> uses mutable gensym counters — use one instance per rewrite().
  */
 public class NpcsRewriter {
 

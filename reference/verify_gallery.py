@@ -81,7 +81,7 @@ def answers_rdflib(op, T):
                 if row[rdflib.Variable(v)] is not None else "NULL") for v in pvars))
     return out
 
-RDFLIB_OPS = {"opt_left", "opt_right"}   # OPTIONAL-as-MINUS-operand: oracle via rdflib
+RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct"}  # complex shapes: oracle via rdflib
 
 def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
     if op in RDFLIB_OPS:
@@ -138,19 +138,30 @@ def rejects(cmd):
     return r.returncode != 0 and "Unsupported" in (r.stderr + r.stdout)
 
 def check_guard():
-    fq = f"{G}/filter_unsupported.sparql"
-    npcs = rejects(["java", "-jar", JAR, "Standard", "path", fq])                    # NpcsRewriter
-    circ = rejects(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
-                    f"{G}/gallery.ttl", fq])                                          # CircuitRewriter
-    print(f"[guard   ] FILTER rejected — NpcsRewriter? {'OK' if npcs else 'FAIL'}   "
-          f"CircuitRewriter? {'OK' if circ else 'FAIL'}")
-    return npcs and circ
+    """Out-of-fragment queries must be REJECTED (loud 'Unsupported'), not silently mis-handled."""
+    def circ(f): return rejects(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
+                                 f"{G}/gallery.ttl", f"{G}/{f}"])
+    def npcs(f): return rejects(["java", "-jar", JAR, "Standard", "path", f"{G}/{f}"])
+    r = {"FILTER (NpcsRewriter)":        npcs("filter_unsupported.sparql"),
+         "FILTER (CircuitRewriter)":     circ("filter_unsupported.sparql"),
+         "LIMIT (CircuitRewriter)":      circ("limit.sparql"),
+         "right-nested MINUS (Circuit)": circ("minus_rnested.sparql")}
+    for name, ok in r.items():
+        print(f"[reject  ] {name}: {'OK' if ok else 'FAIL'}")
+    return all(r.values())
+
+def canon_key(k):
+    """Order-independent answer key: sort the |var=val components, so circuit W order and
+    rdflib res.vars order need not match."""
+    parts = k.split("|")
+    return parts[0] + ("|" + "|".join(sorted(parts[1:])) if len(parts) > 1 else "")
 
 if __name__ == "__main__":
     allok = True
     for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
-               "opt_left", "opt_right", "optional"]:
-        cw, tw = circuit_wmc(op), pwe(op)
+               "minus_chain", "opt_left", "opt_right", "distinct", "optional"]:
+        cw = {canon_key(k): v for k, v in circuit_wmc(op).items()}
+        tw = {canon_key(k): v for k, v in pwe(op).items()}
         keys = sorted(set(cw) | set(tw))
         ok = all(abs(cw.get(k, 0.0) - tw.get(k, 0.0)) < 1e-9 for k in keys)
         allok &= ok

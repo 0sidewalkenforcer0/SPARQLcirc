@@ -19,17 +19,18 @@ automatically.
 work). Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
 `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
 when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
-MINUS operands may be **BGPs, UNIONs, or OPTIONALs**, on either side and nested: a
-`normalize()` pass reduces each composite operand algebraically to the verified BGP plan —
-`(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)`; a UNION right operand branches into per-branch
-subtrahends; `(A OPT B) MINUS P → (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))`; and
-`P1 MINUS (C OPT D) → P1 MINUS C` (the optional part washes out). Verified by
-`reference/verify_gallery.py` (`minus`, `minus_disjoint`, `minus_union`, `minus_p2union`,
-`opt_left`, `opt_right`) as `circuit WMC == possible-world enumeration` — the OPTIONAL cases
-checked against rdflib's own W3C evaluation. Two pathological residuals — a cross-product
-OPTIONAL operand (its two sides share no variable) and a MINUS operand that shares an
-OPTIONAL's *inner* variable — are safely rejected by the circuit (never mis-answered) and
-handled by the string rewriter.
+MINUS operands may be **BGPs, UNIONs, or OPTIONALs**, on either side, nested, and **chained**
+(`A MINUS P MINUS Q`): a `normalize()` pass reduces each composite operand algebraically to the
+verified BGP plan — `(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)`; a UNION right operand → per-branch
+subtrahends; `(A OPT B) MINUS P → (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))`; `P MINUS (C OPT D) →
+P MINUS C`; `(A MINUS P) MINUS Q → A MINUS (P∪Q)`. Verified by `reference/verify_gallery.py`
+(`minus`, `minus_disjoint`, `minus_union`, `minus_p2union`, `minus_chain`, `opt_left`,
+`opt_right`, `distinct`) as `circuit WMC == possible-world enumeration`, the composite cases
+checked against rdflib's own W3C evaluation. **Safely rejected** (loud error, never mis-answered;
+the string rewriter handles them): **right-nested MINUS** `A MINUS (P MINUS Q)` (introduces a
+join), a cross-product OPTIONAL operand, and a MINUS operand sharing an OPTIONAL's *inner*
+variable. Solution-sequence modifiers **LIMIT/OFFSET/ORDER BY are rejected**; **DISTINCT is an
+implicit no-op** (answer gates are already a set).
 
 ## Repository layout
 

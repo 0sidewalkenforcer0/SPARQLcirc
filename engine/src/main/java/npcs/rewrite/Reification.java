@@ -39,6 +39,7 @@ public enum Reification {
     static final String RDF_SUBJECT   = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
     static final String RDF_PREDICATE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
     static final String RDF_OBJECT    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
+    // Placeholder predicate for the SPARQL-star occurrence link; must match the reified data's convention.
     static final String OCCURRENCE_OF = "http://example.org/occurrenceOf";
 
     /** Encode one triple pattern, binding the statement to {@code ?provVar}. */

@@ -1,0 +1,3 @@
+PREFIX : <http://example.org/paper#>
+# LIMIT is a solution-sequence modifier the circuit cannot honor -> must be rejected.
+SELECT ?y WHERE { :Alice :knows ?y } LIMIT 1

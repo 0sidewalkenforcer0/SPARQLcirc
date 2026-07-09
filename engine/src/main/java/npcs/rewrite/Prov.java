@@ -11,10 +11,9 @@ import java.util.List;
  * {@code CONCAT(...)} expression that the SPARQL endpoint evaluates natively.
  * The symbols used are:
  *   <ul>
- *     <li>{@code (⊕ ...)}  — sum   (UNION)          {@link #sum}</li>
- *     <li>{@code (⊗ ...)}  — product (AND / join)   {@link #prod}</li>
- *     <li>{@code (⊖ ...)}  — monus  (DIFF / MINUS)  {@link #diff}</li>
- *     <li>{@code ⊕( ... )} — aggregate-sum over a GROUP (duplicate answers) {@link #aggSum}</li>
+ *     <li>{@code (⊗ ...)}  — product (AND / join)                        {@link #prod}</li>
+ *     <li>{@code ⊕( ... )} — aggregate-sum over a GROUP (⊕ of duplicates) {@link #aggSum}</li>
+ *     <li>{@code (⊖ x,⊕(..))} — monus of a minuend vs an aggregated subtrahend (DIFF/MINUS) {@link #diffAgg}</li>
  *   </ul>
  */
 public final class Prov {
@@ -34,21 +33,6 @@ public final class Prov {
         }
         sb.append(", \")\")");
         return sb.toString();
-    }
-
-    /** ProvSum(?x1,...,?xn) = concat("(⊕", ?x1, ",", ..., ?xn, ",", ")")  — union. */
-    public static String sum(List<String> vars) {
-        StringBuilder sb = new StringBuilder("CONCAT(\"(⊕\"");
-        for (String v : vars) {
-            sb.append(", ?").append(v).append(", \",\"");
-        }
-        sb.append(", \")\")");
-        return sb.toString();
-    }
-
-    /** ProvDiff(?x1,?x2) = concat("(⊖", ?x1, ",", ?x2, ",", ")")  — monus. */
-    public static String diff(String left, String right) {
-        return "CONCAT(\"(⊖\", ?" + left + ", \",\", ?" + right + ", \",\", \")\")";
     }
 
     /**

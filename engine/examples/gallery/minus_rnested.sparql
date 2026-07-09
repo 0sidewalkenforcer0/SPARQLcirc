@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# Right-nested MINUS: A MINUS (P MINUS Q). A∖(P∖Q) introduces a join (A∩Q), not a pure
+# MINUS reduction -> the circuit rejects it (documented residual; the string path handles it).
+SELECT ?y WHERE {
+  :Alice :knows ?y
+  MINUS { ?z :knows ?y  MINUS { ?y :city ?c } }
+}
