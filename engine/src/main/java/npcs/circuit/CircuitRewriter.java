@@ -35,7 +35,7 @@ import npcs.rewrite.Reification;
  *               branches feed one shared answer ⊕ (that shared ⊕ IS the union)
  *   - MINUS:    4 CONSTRUCTs (P1 products -> ⊕_{P1}; P2 products -> ⊕_{P2};
  *                             compatible ⊕_{P2} -> ⊕_{sub}; ⊖(⊕_{P1},⊕_{sub}) -> answer)
- *   - OPTIONAL: the MINUS plan + one AND-branch CONSTRUCT over P1∪P2
+ *   - OPTIONAL: the DIFF plan (via minusPlan, which computes DIFF) + one AND-branch CONSTRUCT over P1∪P2
  *
  * Gate ids are content-addressed in SPARQL: IRI(prefix + SHA256(key)).
  * Vocabulary (urn:circuit:):  Times/Plus/Minus, in/feeds/minuend/subtrahend/answer.
@@ -66,7 +66,7 @@ public class CircuitRewriter {
      * (content-addressed by the binding) — that shared Plus IS the union. Recurses,
      * so UNION may nest and its branches may themselves be MINUS/OPTIONAL/BGP.
      *   - UNION:    branchPlan(left) ++ branchPlan(right)  (shared W-keyed answer ⊕)
-     *   - MINUS:    4 CONSTRUCTs   - OPTIONAL: AND-branch + the MINUS plan
+     *   - MINUS:    4 CONSTRUCTs   - OPTIONAL: AND-branch + the DIFF plan
      *   - BGP:      1 CONSTRUCT    (⊗ per derivation -> ⊕ per answer)
      */
     private List<String> branchPlan(TupleExpr body, List<String> W) {

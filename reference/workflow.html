@@ -493,9 +493,12 @@ y=Carol c=∅   | <span class="op monus">⊖</span>(<span class="op sum">⊕</sp
 (Carol,NULL)← <span class="op monus">⊖</span>(<span class="op sum">⊕</span>⊗t2, ∅)</pre></div></div>
   </div>
   <p style="font-size:.92rem;color:var(--muted)">OPTIONAL is exactly
-  <span class="mono">(P1 AND P2)</span> <span class="op sum">⊕</span> <span class="mono">(P1 MINUS P2)</span>:
-  the join branch (5th CONSTRUCT) handles matched rows, the 4-CONSTRUCT minus plan handles the
-  <span class="mono">c=NULL</span> rows. Same non-monotone <span class="op monus">⊖</span> as above.</p>
+  <span class="mono">(P1 AND P2)</span> <span class="op sum">⊕</span> <span class="mono">(P1 DIFF P2)</span>:
+  the join branch (5th CONSTRUCT) handles matched rows, the 4-CONSTRUCT DIFF plan handles the
+  <span class="mono">c=NULL</span> rows. Same non-monotone <span class="op monus">⊖</span> as above.
+  Here <span class="mono">DIFF</span> is the algebra's anti-join (the negative half of OPTIONAL),
+  <em>not</em> the user keyword <span class="mono">MINUS</span> — they differ when the operands
+  share no variable (DIFF removes, MINUS is a no-op).</p>
 
   <!-- verified probabilities -->
   <h3>… and the probabilities agree</h3>
