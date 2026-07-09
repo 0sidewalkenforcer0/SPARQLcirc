@@ -57,7 +57,38 @@ public class CircuitRewriter {
         for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
             if (!W.contains(pe.getName())) W.add(pe.getName());
         }
-        return branchPlan(projection.getArg(), W);
+        return branchPlan(normalize(projection.getArg()), W);
+    }
+
+    /**
+     * Normalize the algebra so every {@code Difference} (MINUS) has operands {@link
+     * #branchPlan} can build. Currently: distribute UNION out of a MINUS left operand —
+     * (A UNION B) MINUS P ≡ (A MINUS P) UNION (B MINUS P). Valid for probabilistic
+     * evaluation (Boolean: (a∨b)∧¬s = (a∧¬s)∨(b∧¬s)); reduces UNION-left MINUS to the
+     * verified BGP-operand plan. (P2-side UNION and OPTIONAL operands: TODO.)
+     */
+    private static TupleExpr normalize(TupleExpr node) {
+        if (node instanceof Union) {
+            Union u = (Union) node;
+            return new Union(normalize(u.getLeftArg().clone()), normalize(u.getRightArg().clone()));
+        }
+        if (node instanceof LeftJoin) {
+            LeftJoin lj = (LeftJoin) node;
+            return new LeftJoin(normalize(lj.getLeftArg().clone()), normalize(lj.getRightArg().clone()));
+        }
+        if (node instanceof Difference) {
+            Difference d = (Difference) node;
+            TupleExpr nl = normalize(d.getLeftArg().clone());
+            TupleExpr nr = normalize(d.getRightArg().clone());
+            if (nl instanceof Union) {          // (A∪B) MINUS P → (A MINUS P) ∪ (B MINUS P)
+                Union u = (Union) nl;
+                return normalize(new Union(
+                        new Difference(u.getLeftArg().clone(), nr.clone()),
+                        new Difference(u.getRightArg().clone(), nr.clone())));
+            }
+            return new Difference(nl, nr);
+        }
+        return node;   // BGP / Join / StatementPattern
     }
 
     /**

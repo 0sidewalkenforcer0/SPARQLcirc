@@ -81,6 +81,11 @@ def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
         return {key(y=EX + o) for (s, o) in kn if s == "Alice" and ("Alice", o) not in bl}
     if op == "minus_disjoint":                 # MINUS, no shared variable => no-op => P1
         return {key(y=EX + o) for (s, o) in kn if s == "Alice"}
+    if op == "minus_union":                    # (knows ∪ likes) MINUS blocks  (UNION left operand)
+        lk = {(s, o) for (s, pr, o) in T if pr == "likes"}
+        bl = {(s, o) for (s, pr, o) in T if pr == "blocks"}
+        p1 = {o for (s, o) in kn | lk if s == "Alice"}
+        return {key(y=EX + o) for o in p1 if ("Alice", o) not in bl}
     if op == "optional":
         city = {(s, o) for (s, pr, o) in T if pr == "city"}
         out = set()
@@ -119,7 +124,7 @@ def check_guard():
 
 if __name__ == "__main__":
     allok = True
-    for op in ["atom", "join", "union", "minus", "minus_disjoint", "optional"]:
+    for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "optional"]:
         cw, tw = circuit_wmc(op), pwe(op)
         keys = sorted(set(cw) | set(tw))
         ok = all(abs(cw.get(k, 0.0) - tw.get(k, 0.0)) < 1e-9 for k in keys)
