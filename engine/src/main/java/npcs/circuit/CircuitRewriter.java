@@ -108,17 +108,7 @@ public class CircuitRewriter {
             return plan;
         }
         if (body instanceof Difference) {
-            Difference d = (Difference) body;
-            // W3C MINUS = DIFF only when the operands share a variable; if they share
-            // none, MINUS is a no-op (= P1). (OPTIONAL builds its DIFF via optionalPlan
-            // and never reaches here, so it is not guarded.) Assumes BGP operands.
-            List<StatementPattern> L = collect(d.getLeftArg());
-            if (intersect(vars(L), vars(collect(d.getRightArg()))).isEmpty()) {
-                List<String> p = new ArrayList<>();
-                p.add(bgp(L, W));                        // no shared var ⇒ MINUS no-op ⇒ just P1
-                return p;
-            }
-            return minusPlan(d, W);
+            return minusPlan((Difference) body, W);      // handles the shared-var guard + UNION right operand
         }
         if (body instanceof LeftJoin) {
             return optionalPlan((LeftJoin) body, W);
@@ -145,18 +135,46 @@ public class CircuitRewriter {
     }
 
     // --------------------------- MINUS ---------------------------
+    /**
+     * MINUS plan. The left operand is a BGP (normalize() has distributed any UNION out
+     * of the left). The right operand may be a BGP or a UNION of BGPs: every right
+     * branch that shares a variable with P1 contributes to the subtrahend ⊕_{sub}(V1) —
+     * since ⊕_{sub} is content-addressed by V1, all branches feed one gate (μ is removed
+     * iff it matches SOME branch). A branch sharing no variable with P1 is a no-op and
+     * is skipped; if no branch overlaps, MINUS is a no-op (= P1).
+     */
     private List<String> minusPlan(Difference diff, List<String> W) {
         List<StatementPattern> L = collect(diff.getLeftArg());
-        List<StatementPattern> R = collect(diff.getRightArg());
-        LinkedHashSet<String> V1 = vars(L), V2 = vars(R);
-        Set<String> S = intersect(V1, V2);
-
+        LinkedHashSet<String> V1 = vars(L);
+        List<List<StatementPattern>> removing = new ArrayList<>();
+        for (List<StatementPattern> Rb : unionBranches(diff.getRightArg())) {
+            if (!intersect(V1, vars(Rb)).isEmpty()) removing.add(Rb);   // overlap ⇒ can remove
+        }
         List<String> plan = new ArrayList<>();
-        plan.add(productPlus(L, "a", "urn:g:p1:", "P1", V1));           // C1: ⊗ -> ⊕_{P1}(V1)
-        plan.add(productPlus(R, "b", "urn:g:p2:", "P2", V2));           // C2: ⊗ -> ⊕_{P2}(V2)
-        if (!S.isEmpty()) plan.add(subFeeds(L, R, V1, V2));             // C3: ⊕_{P2} -> ⊕_{sub}(V1)
-        plan.add(minusRoot(L, V1, W));                                  // C4: ⊖ -> answer
+        if (removing.isEmpty()) {                                      // no overlap ⇒ MINUS is a no-op
+            plan.add(bgp(L, W));
+            return plan;
+        }
+        plan.add(productPlus(L, "a", "urn:g:p1:", "P1", V1));          // ⊗ -> ⊕_{P1}(V1)
+        for (List<StatementPattern> Rb : removing) {
+            LinkedHashSet<String> V2 = vars(Rb);
+            plan.add(productPlus(Rb, "b", "urn:g:p2:", "P2", V2));     // ⊗ -> ⊕_{P2}(V2)
+            plan.add(subFeeds(L, Rb, V1, V2));                        // ⊕_{P2} -> ⊕_{sub}(V1)
+        }
+        plan.add(minusRoot(L, V1, W));                                 // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
         return plan;
+    }
+
+    /** Flatten a UNION of BGPs into its branch pattern-lists (a plain BGP -> one branch). */
+    private static List<List<StatementPattern>> unionBranches(TupleExpr node) {
+        List<List<StatementPattern>> out = new ArrayList<>();
+        if (node instanceof Union) {
+            out.addAll(unionBranches(((Union) node).getLeftArg()));
+            out.addAll(unionBranches(((Union) node).getRightArg()));
+        } else {
+            out.add(collect(node));    // asserts pure BGP (an OPTIONAL branch would throw)
+        }
+        return out;
     }
 
     /** ⊗ per derivation feeding a ⊕ gate keyed by {@code groupVars}. */
