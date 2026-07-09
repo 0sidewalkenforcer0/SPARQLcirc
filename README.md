@@ -19,8 +19,13 @@ automatically.
 work). Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
 `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
 when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
-MINUS operands are assumed to be BGPs (binding patterns); the disjoint-domain no-op is
-verified by `reference/verify_gallery.py` (`minus_disjoint`).
+MINUS operands may be **BGPs or UNIONs of BGPs**, on either side and nested: the circuit
+distributes `(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)` and branches a UNION right operand
+into per-branch subtrahends, reducing to the verified BGP-operand plan. An **OPTIONAL as a
+MINUS operand** is handled by the string rewriter and safely rejected (not silently
+mis-handled) by the circuit — a rare shape left as future work. All MINUS cases are
+verified by `reference/verify_gallery.py` (`minus`, `minus_disjoint`, `minus_union`,
+`minus_p2union`) as `circuit WMC == possible-world enumeration`.
 
 ## Repository layout
 
