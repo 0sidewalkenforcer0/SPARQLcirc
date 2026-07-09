@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -33,22 +34,43 @@ import npcs.rewrite.Reification;
 public final class CircuitRun {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
-            System.err.println("Usage: CircuitRun <Standard|SPARQL_Star> <dataFile> <queryFile>");
+        if (args.length != 3 && args.length != 4) {
+            System.err.println("Usage: CircuitRun <Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
+            System.err.println("  With an endpoint URL, the circuit is built on that engine (e.g. GraphDB) instead");
+            System.err.println("  of in-memory RDF4J -- the SAME standard-SPARQL-1.1 CONSTRUCTs, so the circuit is");
+            System.err.println("  byte-identical across engines. The endpoint must be WRITABLE (the iterative path");
+            System.err.println("  protocol INSERTs each round's gates back).");
             System.exit(2);
             return;
         }
         Reification scheme = Reification.fromName(args[0]);
         File dataFile = new File(args[1]);
         String query = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
+        String endpoint = args.length == 4 ? args[3] : null;
         RDFFormat fmt = args[1].endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
 
         CircuitRewriter rw = new CircuitRewriter(scheme);
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
 
-        Repository repo = new SailRepository(new MemoryStore());
+        Repository repo;
+        if (endpoint != null) {
+            SPARQLRepository sparql = new SPARQLRepository(endpoint);   // GraphDB / Fuseki / any SPARQL 1.1 endpoint
+            sparql.init();
+            repo = sparql;
+            System.err.println("# building the circuit on remote endpoint: " + endpoint);
+        } else {
+            repo = new SailRepository(new MemoryStore());
+        }
         try (RepositoryConnection con = repo.getConnection()) {
-            con.add(dataFile, "urn:base:", fmt);
+            try {
+                con.add(dataFile, "urn:base:", fmt);                   // in-memory: load; endpoint: INSERT (needs write access)
+            } catch (RuntimeException e) {
+                if (endpoint != null) {
+                    System.err.println("# ERROR: could not write data to the endpoint (needs a WRITABLE repo for the "
+                        + "iterative protocol): " + e.getMessage());
+                }
+                throw e;
+            }
             Model circuit = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
             if (pathq != null) {
                 // property paths: CLIENT-DRIVEN ITERATIVE fixpoint. Count nodes to bound the
