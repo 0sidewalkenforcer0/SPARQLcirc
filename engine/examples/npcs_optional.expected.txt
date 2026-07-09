@@ -1,0 +1,76 @@
+===== INPUT · query =====
+PREFIX : <http://example.org/paper#>
+SELECT ?y ?c WHERE { :Alice :knows ?y OPTIONAL { ?y :city ?c } }
+
+===== INPUT · data (reified; relevant triples) =====
+:t1 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object :Bob .
+:t2 rdf:subject :Alice ; rdf:predicate :knows ; rdf:object :Carol .
+:t3 rdf:subject :Bob   ; rdf:predicate :knows ; rdf:object :Carol .
+:t6 rdf:subject :Bob   ; rdf:predicate :city  ; rdf:object :Rome .
+
+===== NPCS rewrite + result (Standard reification) =====
+# scheme=Standard  data=gallery.ttl  query=optional.sparql
+# --- rewritten query ---
+SELECT ?y ?c (CONCAT("⊕(", GROUP_CONCAT(?funion0), ")") AS ?finalprovennacevariable) 
+WHERE { 
+{
+{ SELECT ?y ?c (CONCAT("⊕(", GROUP_CONCAT(?fjoin0), ")") AS ?funion0) 
+WHERE { 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://example.org/paper#Alice> . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://example.org/paper#knows> . 
+	?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://example.org/paper#city> . 
+	?fprov1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?c . 
+	BIND (CONCAT("(⊗", STR(?fprov0), ",", STR(?fprov1), ",", ")") AS ?fjoin0) . 
+ }
+ GROUP BY ?y ?c }
+}
+ UNION 
+{
+{ SELECT ?y (CONCAT("⊕(", GROUP_CONCAT(?fdiff0), ")") AS ?funion0) 
+WHERE { 
+{ SELECT ?y ?fdl0 (CONCAT("(⊖", ?fdl0, ",", GROUP_CONCAT(?fdr0), ",", ")") AS ?fdiff0) 
+WHERE { 
+{ SELECT ?y (CONCAT("⊕(", GROUP_CONCAT(?fjoin1), ")") AS ?fdl0) 
+WHERE { 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://example.org/paper#Alice> . 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://example.org/paper#knows> . 
+	?fprov2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	BIND (CONCAT("(⊗", STR(?fprov2), ",", ")") AS ?fjoin1) . 
+ }
+ GROUP BY ?y }
+ OPTIONAL { 
+{ SELECT ?y ?c_nu0 (CONCAT("⊕(", GROUP_CONCAT(?fjoin2), ")") AS ?fdr0) 
+WHERE { 
+	?fprov3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?fprov3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://example.org/paper#city> . 
+	?fprov3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?c_nu0 . 
+	BIND (CONCAT("(⊗", STR(?fprov3), ",", ")") AS ?fjoin2) . 
+ }
+ GROUP BY ?y ?c_nu0 }
+ }
+ }
+ GROUP BY ?y ?fdl0 } }
+ GROUP BY ?y }
+}
+ }
+ GROUP BY ?y ?c
+# --- results (answer  |  provenance) ---
+  y=Carol  |  ⊕(⊕((⊖⊕((⊗t2,)),,)))
+  y=Bob  c=Rome  |  ⊕(⊕((⊗t1,t6,)))
+  y=Bob  |  ⊕(⊕((⊖⊕((⊗t1,)),⊕((⊗t6,)),)))
+
+===== reading the result =====
+OPTIONAL  ≡  (P1 AND P2)  UNION  (P1 MINUS P2)  — so every answer is a ⊕ of a matched
+(⊗) term and/or an unmatched (⊖) term. On this data (Alice knows Bob,Carol; only Bob
+has a city, Rome):
+
+  y=Bob  c=Rome | ⊕((⊗t1,t6))              matched branch: knows(Alice,Bob)=t1 ⊗ city(Bob,Rome)=t6
+  y=Bob         | ⊕((⊖ ⊕(⊗t1), ⊕(⊗t6)))    unmatched branch: t1 minus the (existing) city t6
+  y=Carol       | ⊕((⊖ ⊕(⊗t2), ∅))         unmatched branch: t2 minus ∅ (Carol has no city)
+
+Each ?fprovN binds a matching triple's statement id (t1..t6); ProvProd=(⊗ ...),
+ProvAggSum=⊕(...), ProvDiff=(⊖ ...). The doubled ⊕(⊕(...)) is the inner per-branch
+aggregation nested inside the outer final aggregation. The whole provenance is emitted
+as CONCAT strings and computed by the stock engine — no engine modification.
