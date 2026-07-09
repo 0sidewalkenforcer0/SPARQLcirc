@@ -195,10 +195,19 @@ PQE-valid; Boolean identities in brackets):
 ```
 (A∪B) MINUS P        ≡ (A MINUS P) ∪ (B MINUS P)                 [(a∨b)∧¬s = (a∧¬s)∨(b∧¬s)]
 P MINUS (C∪D)        →  per-branch subtrahends into one ⊕_sub    [remove iff matches C or D]
-(A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))     [A,B share a var]
+(A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P)   [DIFF on B, not MINUS — see below]
 P MINUS (C OPT D)    ≡ P MINUS C                                 [P shares no D-only var; matched⊕unmatched=always]
 (A MINUS P) MINUS Q  ≡ A MINUS (P∪Q)                             [(A∖P)∖Q = A∖(P∪Q)]
 ```
+The `(A OPT B) MINUS P` line uses **DIFF, not MINUS, on B**. `A OPT B`'s negative branch is the
+*unguarded* `A DIFF B` (it removes a match even when the operands' domains are disjoint), so folding
+B into a **guarded** MINUS would be wrong when A,B share no variable — take A={?x↦1}, B={?w↦2}, P=∅:
+the correct answer is {?x↦1,?w↦2}, but `A MINUS B` is a no-op on disjoint domains and would leave a
+spurious {?x↦1}. `normalize()` therefore realizes the second disjunct as `A MINUS (B∪P)` **only under
+a shared-variable guard** — where `A DIFF B = A MINUS B`, so the two forms coincide — and **rejects**
+the no-shared-var case (the cross-product OPTIONAL residual below). The emitted plan is thus always
+the DIFF form; `A MINUS (B∪P)` is merely how the shared-var case reuses the verified MINUS machinery.
+
 The `P MINUS (C OPT D) ≡ P MINUS C` identity is verified **at the provenance level**, not just the
 answer set: the optional D-part washes out because, per C-solution, `matched ⊕ unmatched = always`.
 **[impl, verified]**

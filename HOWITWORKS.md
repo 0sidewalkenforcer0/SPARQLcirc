@@ -239,8 +239,10 @@ unmatched `⊖` term.
 **Composite operands** (a UNION/OPTIONAL/chained MINUS *inside* a MINUS) are reduced algebraically to
 the BGP/UNION-operand forms above by a `normalize()` pass before construction — e.g.
 `(A∪B) MINUS P ≡ (A MINUS P)∪(B MINUS P)`, `(A MINUS P) MINUS Q ≡ A MINUS (P∪Q)`,
-`(A OPT B) MINUS P ≡ (Join(A,B) MINUS P)∪(A MINUS (B∪P))`. All are provenance-correct; the identities
-are in `TECHREPORT.md` §5.
+`(A OPT B) MINUS P ≡ (Join(A,B) MINUS P)∪((A DIFF B) MINUS P)` — note **DIFF, not MINUS, on B**, because
+`A OPT B`'s negative branch is unguarded; the code realizes this as `A MINUS (B∪P)` only when A,B share a
+variable (where `A DIFF B = A MINUS B`) and rejects the cross-product case otherwise. All are
+provenance-correct; the identities and the DIFF-vs-MINUS subtlety are in `TECHREPORT.md` §5.
 
 Every operator shape is checked as **circuit-WMC == possible-world-enumeration** in
 `reference/verify_gallery.py` (12 shapes; the non-monotone ones cross-checked against rdflib's own

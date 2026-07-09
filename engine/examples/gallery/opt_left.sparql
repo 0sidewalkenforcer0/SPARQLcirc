@@ -1,6 +1,8 @@
 PREFIX : <http://example.org/paper#>
 # OPTIONAL as the LEFT operand of MINUS: (A OPTIONAL B) MINUS P.
-# Normalizes to (Join(A,B) MINUS P) UNION (A MINUS (B UNION P)).
+# Normalizes to (Join(A,B) MINUS P) UNION ((A DIFF B) MINUS P). Here A (knows) and B (city) share
+# ?y, so A DIFF B = A MINUS B and the second disjunct is realized as A MINUS (B UNION P). The
+# no-shared-var case is opt_xprod.sparql (rejected). See TECHREPORT.md §5.
 SELECT ?y ?c WHERE {
   { :Alice :knows ?y  OPTIONAL { ?y :city ?c } }
   MINUS { ?w :blocks ?y }

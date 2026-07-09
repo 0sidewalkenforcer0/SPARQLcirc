@@ -145,7 +145,8 @@ def check_guard():
     r = {"FILTER (NpcsRewriter)":        npcs("filter_unsupported.sparql"),
          "FILTER (CircuitRewriter)":     circ("filter_unsupported.sparql"),
          "LIMIT (CircuitRewriter)":      circ("limit.sparql"),
-         "right-nested MINUS (Circuit)": circ("minus_rnested.sparql")}
+         "right-nested MINUS (Circuit)": circ("minus_rnested.sparql"),
+         "x-product OPT-in-MINUS (Circ)": circ("opt_xprod.sparql")}
     for name, ok in r.items():
         print(f"[reject  ] {name}: {'OK' if ok else 'FAIL'}")
     return all(r.values())

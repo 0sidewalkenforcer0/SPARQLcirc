@@ -22,7 +22,7 @@ when the operands share a variable, else a no-op (W3C MINUS's domain-intersectio
 MINUS operands may be **BGPs, UNIONs, or OPTIONALs**, on either side, nested, and **chained**
 (`A MINUS P MINUS Q`): a `normalize()` pass reduces each composite operand algebraically to the
 verified BGP plan — `(A∪B) MINUS P → (A MINUS P)∪(B MINUS P)`; a UNION right operand → per-branch
-subtrahends; `(A OPT B) MINUS P → (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))`; `P MINUS (C OPT D) →
+subtrahends; `(A OPT B) MINUS P → (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P)`; `P MINUS (C OPT D) →
 P MINUS C`; `(A MINUS P) MINUS Q → A MINUS (P∪Q)`. Verified by `reference/verify_gallery.py`
 (`minus`, `minus_disjoint`, `minus_union`, `minus_p2union`, `minus_chain`, `opt_left`,
 `opt_right`, `distinct`) as `circuit WMC == possible-world enumeration`, the composite cases

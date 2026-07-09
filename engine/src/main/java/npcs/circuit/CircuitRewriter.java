@@ -70,7 +70,7 @@ public class CircuitRewriter {
      * #branchPlan}/{@link #minusPlan} can build, by algebraically reducing composite MINUS
      * operands to the verified BGP/UNION-operand plan (all PQE-valid):
      *   (A∪B) MINUS P        ≡ (A MINUS P) ∪ (B MINUS P)
-     *   (A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ (A MINUS (B∪P))     [A,B share a var]
+     *   (A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P)  [B: DIFF, not MINUS]
      *   P MINUS (C OPT D)    ≡ P MINUS C                                 [P shares no D-only var]
      *   (A MINUS P) MINUS Q  ≡ A MINUS (P∪Q)                             [(A∖P)∖Q = A∖(P∪Q)]
      * Residuals left for minusPlan/collect to reject safely: right-nested MINUS
@@ -89,8 +89,11 @@ public class CircuitRewriter {
             Difference d = (Difference) node;
             TupleExpr nl = normalize(d.getLeftArg().clone());
             TupleExpr nr = normalize(d.getRightArg().clone());
-            // OPTIONAL left operand: (A OPT B) MINUS P ≡ (Join(A,B) MINUS P) ∪ (A MINUS (B ∪ P)).
-            // Valid when A,B share a variable (then A DIFF B = A MINUS B, and (A∖B)∖P = A∖(B∪P)).
+            // OPTIONAL left operand: (A OPT B) MINUS P ≡ (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P).
+            // A OPT B's negative branch is UNGUARDED DIFF, so B needs DIFF, not MINUS. We realize the
+            // second disjunct as A MINUS (B∪P) — equal to (A DIFF B) MINUS P ONLY when A,B share a
+            // variable (then A DIFF B = A MINUS B, and (A∖B)∖P = A∖(B∪P)). Hence the guard below; the
+            // no-shared-var case (cross-product OPTIONAL) falls through and is safely rejected.
             if (nl instanceof LeftJoin) {
                 LeftJoin lj = (LeftJoin) nl;
                 if (!intersect(varsOf(lj.getLeftArg()), varsOf(lj.getRightArg())).isEmpty()) {
