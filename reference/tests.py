@@ -14,6 +14,12 @@ DS_chain = {
 }
 DS_share = {"t1": ("A", "p", "B"), "t2": ("B", "q", "D"), "t3": ("B", "r", "D")}
 DS_self  = {"s1": ("A", "p", "B"), "s2": ("C", "p", "B")}
+# Property-path datasets. DS_cyc has a CYCLE (A->C->A and A->B->C->A): naive walk
+# enumeration is infinite, but the level-indexed circuit is finite/polynomial.
+DS_cyc   = {"e1": ("A", "p", "B"), "e2": ("B", "p", "C"),
+            "e3": ("A", "p", "C"), "e4": ("C", "p", "A")}
+DS_pth   = {"a": ("X", "p", "Y"), "b": ("Y", "q", "Z"),
+            "c": ("X", "r", "Z"), "d": ("Z", "q", "Y")}
 
 TESTS = [
   ("and",       DS_paper, ["?x"],
@@ -42,6 +48,24 @@ TESTS = [
                ("bgp", [("?a", "p", "?b"), ("?b", "r", "?d")]))),
   ("selfjoin",  DS_self, ["?d"],
      ("bgp", [("?x", "p", "?d"), ("?y", "p", "?d")])),
+  # --- property paths ---
+  ("path_plus_cyc", DS_cyc, ["?x", "?y"],           # p+ on a cyclic graph (all pairs)
+     ("path", "?x", ("plus", ("edge", "p")), "?y")),
+  ("path_star_cyc", DS_cyc, ["?x", "?y"],           # p* = p+ (+) zero-length
+     ("path", "?x", ("star", ("edge", "p")), "?y")),
+  ("path_bound_src", DS_cyc, ["?y"],                # bound source: A p+ ?y
+     ("path", "A", ("plus", ("edge", "p")), "?y")),
+  ("path_seq",   DS_pth, ["?x", "?z"],              # p/q  (X ->Y ->Z)
+     ("path", "?x", ("seq", ("edge", "p"), ("edge", "q")), "?z")),
+  ("path_alt",   DS_pth, ["?x", "?z"],              # (p/q)|r  (both reach X->Z: collapse)
+     ("path", "?x", ("alt", ("seq", ("edge", "p"), ("edge", "q")), ("edge", "r")), "?z")),
+  ("path_inv",   DS_pth, ["?y", "?x"],              # ^p  (inverse of p)
+     ("path", "?y", ("inv", ("edge", "p")), "?x")),
+  ("path_opt",   DS_pth, ["?x", "?z"],              # r?  (zero-or-one)
+     ("path", "?x", ("opt", ("edge", "r")), "?z")),
+  ("path_plus_join", DS_cyc, ["?y"],                # path composed with a join (mixed fragment)
+     ("join", ("path", "A", ("plus", ("edge", "p")), "?y"),
+              ("bgp", [("?y", "p", "A")]))),
 ]
 
 def assignments(toks, i):

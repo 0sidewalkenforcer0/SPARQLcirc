@@ -71,6 +71,26 @@ class Circuit:
             return self.CONST0
         return self._put(_sha("MINUS|" + m + "|" + s), ("minus", (m, s)))
 
+    # ---- PosBool (absorptive) constructors: LEGAL ONLY inside path subcircuits ----
+    # Property paths have SET semantics in the absorptive semiring PosBool(X): (+) and
+    # (*) are IDEMPOTENT (a+a=a, a*a=a) with absorption a + (a*b) = a. These reuse the
+    # plus/times NODE TYPES -- their Boolean reading (OR/AND) already validates these laws,
+    # so path gates compile + WMC through the SAME backend -- but first canonicalize the
+    # child MULTISET to a SET. They must NOT be used for non-path gates, whose (+) is
+    # bag-valued (g (+) g = 2g); see plus() above.
+    def otimes(self, children):
+        """Idempotent product (a*a=a): dedup children, then (*)."""
+        return self.times(list(dict.fromkeys(children)))
+
+    def oplus(self, children):
+        """Idempotent + absorptive sum: dedup (a+a=a), then drop any product term a*b
+        whose factor a is also a sibling (absorption a + (a*b) = a), then (+)."""
+        cs = list(dict.fromkeys(children))                       # a (+) a = a
+        sib = set(cs)
+        keep = [c for c in cs
+                if not (self.gates[c][0] == "times" and any(f in sib for f in self.gates[c][1]))]
+        return self.plus(keep)
+
     # ---- introspection ----
     def leaves(self):
         return sorted({pl for _, (op, pl) in self.gates.items() if op == "leaf"})

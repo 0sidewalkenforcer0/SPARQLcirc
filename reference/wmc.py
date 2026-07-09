@@ -49,6 +49,40 @@ def prob(circ, root, P):
 
 
 # ----------------------------- PWE ground truth ------------------------------
+def _path_pairs(pexpr, T):
+    """Set of (u,v) pairs connected by path expr `pexpr` over active triples T --
+    an INDEPENDENT plain-reachability oracle (no provenance), for cross-checking the
+    gamma path circuit.  SET semantics; zero-length uses the terms-in-graph reading."""
+    kind = pexpr[0]
+    if kind == "edge":
+        return {(s, o) for (s, p, o) in T if p == pexpr[1]}
+    if kind == "inv":
+        return {(v, u) for (u, v) in _path_pairs(pexpr[1], T)}
+    if kind == "alt":
+        return _path_pairs(pexpr[1], T) | _path_pairs(pexpr[2], T)
+    if kind == "seq":
+        R2 = _path_pairs(pexpr[2], T); idx = {}
+        for (v, w) in R2: idx.setdefault(v, set()).add(w)
+        return {(u, w) for (u, v) in _path_pairs(pexpr[1], T) for w in idx.get(v, ())}
+    if kind in ("plus", "star", "opt"):
+        R = _path_pairs(pexpr[1], T)
+        if kind == "opt":
+            return R | {(u, u) for tr in T for u in (tr[0], tr[2])}
+        idx = {}                                          # transitive closure
+        for (u, v) in R: idx.setdefault(u, set()).add(v)
+        clo = set(R); changed = True
+        while changed:
+            changed = False
+            for (u, v) in list(clo):
+                for w in idx.get(v, ()):
+                    if (u, w) not in clo:
+                        clo.add((u, w)); changed = True
+        if kind == "star":
+            clo |= {(u, u) for tr in T for u in (tr[0], tr[2])}
+        return clo
+    raise ValueError("path op: " + kind)
+
+
 def _plain_eval(q, T):
     """Plain SPARQL bindings (list of dicts) over a set T of active (s,p,o) triples."""
     t = q[0]
@@ -90,6 +124,17 @@ def _plain_eval(q, T):
         for a in _plain_eval(q[1], T):
             ext = [b for b in rhs if all(a[v] == b[v] for v in a if v in b)]
             out.extend([{**a, **b} for b in ext] if ext else [a])
+        return out
+    if t == "path":
+        subj, pexpr, obj = q[1], q[2], q[3]
+        out = []
+        for (u, v) in _path_pairs(pexpr, T):
+            b = {}
+            if isinstance(subj, str) and subj.startswith("?"): b[subj] = u
+            elif subj != u: continue
+            if isinstance(obj, str) and obj.startswith("?"): b[obj] = v
+            elif obj != v: continue
+            out.append(b)
         return out
     raise ValueError(t)
 
