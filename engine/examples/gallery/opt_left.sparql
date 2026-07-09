@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# OPTIONAL as the LEFT operand of MINUS: (A OPTIONAL B) MINUS P.
+# Normalizes to (Join(A,B) MINUS P) UNION (A MINUS (B UNION P)).
+SELECT ?y ?c WHERE {
+  { :Alice :knows ?y  OPTIONAL { ?y :city ?c } }
+  MINUS { ?w :blocks ?y }
+}

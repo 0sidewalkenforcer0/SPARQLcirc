@@ -66,7 +66,26 @@ def circuit_wmc(op):
     return out
 
 # ---- ground truth: possible-world enumeration over the set semantics ----
+def answers_rdflib(op, T):
+    """Oracle for arbitrary queries: evaluate the actual .sparql on world T with rdflib
+    (its own W3C MINUS/OPTIONAL semantics). Key format matches the circuit's c:answer."""
+    import rdflib
+    g = rdflib.Graph()
+    for (s, p, o) in T:
+        g.add((rdflib.URIRef(EX + s), rdflib.URIRef(EX + p), rdflib.URIRef(EX + o)))
+    res = g.query(open(f"{G}/{op}.sparql").read())
+    pvars = [str(v) for v in res.vars]
+    out = set()
+    for row in res:
+        out.add("A|" + "|".join(f"{v}=" + (str(row[rdflib.Variable(v)])
+                if row[rdflib.Variable(v)] is not None else "NULL") for v in pvars))
+    return out
+
+RDFLIB_OPS = {"opt_left", "opt_right"}   # OPTIONAL-as-MINUS-operand: oracle via rdflib
+
 def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
+    if op in RDFLIB_OPS:
+        return answers_rdflib(op, T)
     kn = {(s, o) for (s, pr, o) in T if pr == "knows"}
     def key(**kv): return "A|" + "|".join(f"{k}={v}" for k, v in kv.items())
     if op == "atom":
@@ -129,7 +148,8 @@ def check_guard():
 
 if __name__ == "__main__":
     allok = True
-    for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union", "optional"]:
+    for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
+               "opt_left", "opt_right", "optional"]:
         cw, tw = circuit_wmc(op), pwe(op)
         keys = sorted(set(cw) | set(tw))
         ok = all(abs(cw.get(k, 0.0) - tw.get(k, 0.0)) < 1e-9 for k in keys)

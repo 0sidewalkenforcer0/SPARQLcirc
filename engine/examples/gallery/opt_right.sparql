@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# OPTIONAL as the RIGHT operand of MINUS: P1 MINUS (C OPTIONAL D).
+# P1 shares no D-only variable, so it normalizes to P1 MINUS C (the optional D washes out).
+SELECT ?y WHERE {
+  :Alice :knows ?y
+  MINUS { ?y :city ?c  OPTIONAL { ?w :blocks ?y } }
+}

@@ -80,6 +80,28 @@ public class CircuitRewriter {
             Difference d = (Difference) node;
             TupleExpr nl = normalize(d.getLeftArg().clone());
             TupleExpr nr = normalize(d.getRightArg().clone());
+            // OPTIONAL left operand: (A OPT B) MINUS P ≡ (Join(A,B) MINUS P) ∪ (A MINUS (B ∪ P)).
+            // Valid when A,B share a variable (then A DIFF B = A MINUS B, and (A∖B)∖P = A∖(B∪P)).
+            if (nl instanceof LeftJoin) {
+                LeftJoin lj = (LeftJoin) nl;
+                if (!intersect(varsOf(lj.getLeftArg()), varsOf(lj.getRightArg())).isEmpty()) {
+                    return normalize(new Union(
+                            new Difference(new Join(lj.getLeftArg().clone(), lj.getRightArg().clone()), nr.clone()),
+                            new Difference(lj.getLeftArg().clone(), new Union(lj.getRightArg().clone(), nr.clone()))));
+                }
+            }
+            // OPTIONAL right operand: P1 MINUS (C OPT D) ≡ P1 MINUS C when P1 shares no D-only
+            // variable (the optional D-part washes out of the subtrahend: matched ⊕ unmatched = always).
+            if (nr instanceof LeftJoin) {
+                LeftJoin lj = (LeftJoin) nr;
+                LinkedHashSet<String> dOnly = varsOf(lj.getRightArg());
+                dOnly.removeAll(varsOf(lj.getLeftArg()));         // vars(D) \ vars(C)
+                LinkedHashSet<String> shareD = varsOf(nl);
+                shareD.retainAll(dOnly);
+                if (shareD.isEmpty()) {
+                    return normalize(new Difference(nl.clone(), lj.getLeftArg().clone()));
+                }
+            }
             if (nl instanceof Union) {          // (A∪B) MINUS P → (A MINUS P) ∪ (B MINUS P)
                 Union u = (Union) nl;
                 return normalize(new Union(
@@ -355,6 +377,11 @@ public class CircuitRewriter {
             add(out, sp.getSubjectVar()); add(out, sp.getPredicateVar()); add(out, sp.getObjectVar());
         }
         return out;
+    }
+
+    /** All real variables occurring in a (sub)expression's triple patterns (structure-agnostic). */
+    private static LinkedHashSet<String> varsOf(TupleExpr te) {
+        return vars(StatementPatternCollector.process(te));
     }
 
     private static void add(Set<String> s, Var v) {
