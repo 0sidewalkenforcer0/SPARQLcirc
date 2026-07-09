@@ -1,0 +1,4 @@
+PREFIX : <http://example.org/paper#>
+# Free endpoints (all-pairs): every (x,y) connected by one-or-more :p edges. On the cyclic
+# pathcyc.ttl this is all 9 ordered pairs over {A,B,C}; naive walk enumeration is infinite.
+SELECT ?x ?y WHERE { ?x :p+ ?y }

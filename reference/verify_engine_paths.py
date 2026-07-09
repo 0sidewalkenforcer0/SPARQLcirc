@@ -51,21 +51,32 @@ def engine(query_file):
     circ, ans = load(nt)
     return {key: round(compile_bdd.probability(circ, gate, P)[0], 10) for gate, key in ans.items()}
 
-def oracle(op):
-    q = ("path", EX + "A", (op, ("edge", "p")), "?y")
-    truth = wmc.pwe(q, ["?y"], DATA, P)
-    return {"A|y=" + next(iter(k))[1]: round(v, 10) for k, v in truth.items() if v > 1e-12}
+def oracle(op, subj, obj, selvars):
+    q = ("path", subj, (op, ("edge", "p")), obj)
+    out = {}
+    for fs, v in wmc.pwe(q, selvars, DATA, P).items():
+        if v > 1e-12:
+            d = dict(fs)
+            out["A" + "".join("|" + w.lstrip("?") + "=" + d[w] for w in selvars)] = round(v, 10)
+    return out
+
+# (query file, path op, subject term, object term, SELECT var order)
+TESTS = [
+    ("pathplus.sparql",      "plus", EX + "A", "?y", ["?y"]),        # <A> :p+ ?y   (bound source)
+    ("pathstar.sparql",      "star", EX + "A", "?y", ["?y"]),        # <A> :p* ?y
+    ("pathplus_free.sparql", "plus", "?x",     "?y", ["?x", "?y"]),  # ?x :p+ ?y    (all-pairs)
+]
 
 if __name__ == "__main__":
     allok = True
-    for qf, op in [("pathplus.sparql", "plus"), ("pathstar.sparql", "star")]:
-        eng, tru = engine(qf), oracle(op)
+    for qf, op, subj, obj, sel in TESTS:
+        eng, tru = engine(qf), oracle(op, subj, obj, sel)
         keys = sorted(set(eng) | set(tru))
         ok = all(abs(eng.get(k, 0.0) - tru.get(k, 0.0)) < 1e-9 for k in keys)
         allok &= ok
-        print(f"[{qf:16}] answers={len(tru)}  engine-WMC == PWE? {'OK' if ok else 'MISMATCH'}")
+        print(f"[{qf:20}] answers={len(tru):2}  engine-WMC == PWE? {'OK' if ok else 'MISMATCH'}")
         for k in keys:
             f = "" if abs(eng.get(k, 0.) - tru.get(k, 0.)) < 1e-9 else "   <-- MISMATCH"
-            print(f"    {k:42} engine={eng.get(k, 0.):.6f}  pwe={tru.get(k, 0.):.6f}{f}")
+            print(f"    {k:46} engine={eng.get(k, 0.):.6f}  pwe={tru.get(k, 0.):.6f}{f}")
     print("\nALL OK" if allok else "\nFAILURES")
     sys.exit(0 if allok else 1)
