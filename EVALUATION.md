@@ -24,6 +24,51 @@ claim from the paper.
 
 ---
 
+## Predicted trends by query shape (pre-registered — compare results against this)
+
+**Two costs, two independent knobs:**
+- **Construction** (engine builds the circuit) ∝ **#derivations `D`**; for query depth `d`,
+  branching `b`, `D ~ b^d`. Factored construction cuts the intermediate to the *frontier* →
+  polynomial in treewidth.
+- **Compilation + WMC** ∝ compiled size `~ n·2^{O(tw)}` (d-DNNF) / `n^{O(tw)}` (OBDD),
+  `tw` = treewidth of the lineage; WMC linear in that.
+- **Compactness** (circuit vs strings): `T_string ∝ D ~ b^d`, `T_circuit(factored) ∝
+  poly(tw,n)` → ratio `~ b^d/poly`, unbounded in depth/branching, ≈1 when `D` small.
+
+So **treewidth governs compile; depth/branching governs construction & compactness** — they
+move independently.
+
+| shape | join graph / tw | #deriv `D` | sharing (fact.) | build | compile+WMC | bottleneck |
+|---|---|---|---|---|---|---|
+| single triple | tw 1 | 1 | 1× | O(#ans) | trivial | — |
+| path / linear (L) len ℓ | path, **tw 1** | `b^ℓ` | `~b^ℓ/ℓ` ↑ | flat ∝`D` / fact. ∝`ℓ·W` | **linear** | construction |
+| star (S) breadth k, deg d | star, **tw 1** | `d^k` | `~∏/∑` ↑ | flat ∝`d^k` / fact. ∝`k·d` | trivial | construction (flat) |
+| snowflake (F) | tree, **tw 1–2** | `∏ b^ℓ` | high ↑ | flat ∝`D` / fact. poly | small | construction |
+| cycle len ℓ | 1 cycle, **tw 2** | data-dep | moderate | ∝`D` | const× path | balanced |
+| complex (C) | few cycles, **tw 2–3** | data-dep | moderate | ∝`D` | grows w/ tw | compile bites |
+| grid k×k *(synthetic)* | grid, **tw = k↑** | large | — | ∝`D` | **2^Θ(k) wall** | compilation |
+| clique k *(synthetic)* | clique, **tw = k−1** | large | — | ∝`D` | 2^Θ(k) (earliest) | compilation |
+
+**Predicted regime boundaries:**
+- Compactness ratio ≈1 until `D`/answer exceeds ~O(1), then ~exponential in depth/branching
+  (anchors: WatDiv shallow ≈0.5×; layered depth-12 = 201×).
+- Compile cliff at **tw ≈ 20–25** (2^tw memory wall). WatDiv S/L/F/C are all **low tw (1–3)**
+  → compile uniformly cheap; the wall appears only in synthetic grid/clique — why **E4 is
+  synthetic-only**.
+- Construction ∝ `D` (flat) → deep/broad queries make construction the bottleneck even when
+  compile is trivial → **factored is essential precisely for S/L/F**.
+- Data size N (fixed shape): #answers ∝ N, build ∝ N, per-answer tw ~const → total compile ∝ N.
+
+**Falsification plan (formal vs theory):** WatDiv S/L/F with *expensive* compile ⇒ real-data
+tw higher than expected (a finding) or a bug; compactness ≈1 on a *deep* query ⇒ factoring
+not firing (a UNION-as-join-class bug); build not ∝ `D` ⇒ engine optimization worth
+explaining; grid not walling by tw~25 ⇒ tw estimate off or compiler beats the bound. WatDiv
+classes map as: **S = star (tw1), L = linear (tw1), F = snowflake (tw1–2), C = complex
+(tw2–3)** — the standard workload is low-tw, so it stresses construction/compactness, not
+compilation.
+
+---
+
 ## E1 — Correctness / exactness  *(status: piloted — `verify_gallery.py`, `verify_engine_native.py`)*
 
 - **Proves:** C. The full pipeline computes the *exact* probability.
