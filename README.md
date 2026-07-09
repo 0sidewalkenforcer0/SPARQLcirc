@@ -16,7 +16,11 @@ the circuit is a normal RDF graph, so RDF set-semantics deduplicates shared gate
 automatically.
 
 **Scope.** ABox only (no TBox); property paths are out of scope (deferred to follow-up
-work); OPTIONAL / MINUS are supported via ⊖ gates with the standard semantics.
+work). Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
+`OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
+when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
+MINUS operands are assumed to be BGPs (binding patterns); the disjoint-domain no-op is
+verified by `reference/verify_gallery.py` (`minus_disjoint`).
 
 ## Repository layout
 

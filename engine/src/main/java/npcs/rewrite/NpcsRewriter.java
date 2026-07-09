@@ -89,7 +89,7 @@ public class NpcsRewriter {
             return betaOptional((LeftJoin) node);
         }
         if (node instanceof Difference) {
-            return betaDiff((Difference) node);
+            return betaMinus((Difference) node);
         }
         if (isPureBgp(node)) {
             return betaBgp(node);
@@ -119,8 +119,11 @@ public class NpcsRewriter {
 
     /** Def 4.2 rule 4: β(Q1) UNION β(Q2), both branches exposing the same prov var. */
     private Frag betaUnion(Union u) {
-        Frag l = beta(u.getLeftArg());
-        Frag r = beta(u.getRightArg());
+        return unionFrags(beta(u.getLeftArg()), beta(u.getRightArg()));
+    }
+
+    /** ⊕ of two already-rewritten fragments under one shared provenance var. */
+    private Frag unionFrags(Frag l, Frag r) {
         String z = "funion" + (unionCounter++);
         LinkedHashSet<String> vars = new LinkedHashSet<>(l.vars);
         vars.addAll(r.vars);
@@ -128,25 +131,38 @@ public class NpcsRewriter {
         return new Frag(body, z, vars);
     }
 
-    /** P1 OPTIONAL P2 ≡ (P1 AND P2) UNION (P1 DIFF P2)  (paper §4.2 footnote). */
+    /** P1 OPTIONAL P2 ≡ (P1 AND P2) UNION (P1 DIFF P2)  (paper §4.2 footnote).
+     *  The negative branch is DIFF (anti-join, NO shared-var guard) — not user MINUS. */
     private Frag betaOptional(LeftJoin lj) {
-        TupleExpr l1 = lj.getLeftArg().clone();
-        TupleExpr r1 = lj.getRightArg().clone();
-        TupleExpr l2 = lj.getLeftArg().clone();
-        TupleExpr r2 = lj.getRightArg().clone();
-        Union u = new Union(new Join(l1, r1), new Difference(l2, r2));
-        return betaUnion(u);
+        Frag joinFrag = beta(new Join(lj.getLeftArg().clone(), lj.getRightArg().clone()));
+        Frag diffFrag = diffCore(lj.getLeftArg().clone(), lj.getRightArg().clone());
+        return unionFrags(joinFrag, diffFrag);
     }
 
     /**
-     * Def 4.2 rule 5 (monus): keep P1's answers, subtract the aggregated
-     * provenance of compatible P2 answers. P2's non-shared variables are
-     * renamed fresh (the substitution ν) so the subtrahend only constrains
-     * the join variables.
+     * User-level SPARQL MINUS = DIFF behind a shared-variable guard. W3C MINUS removes
+     * μ iff ∃ compatible μ' AND dom(μ)∩dom(μ')≠∅; for BGP operands dom(μ)∩dom(μ') =
+     * vars(P1)∩vars(P2) statically, so: no shared variable ⇒ guard never holds ⇒ MINUS
+     * is a no-op (= P1); a shared variable ⇒ guard always holds ⇒ MINUS collapses to DIFF.
+     * (OPTIONAL's negative branch uses {@link #diffCore} directly and is NOT guarded.)
+     * Assumes MINUS operands are BGPs (binding patterns).
      */
-    private Frag betaDiff(Difference d) {
-        Frag left = beta(d.getLeftArg());
-        TupleExpr right = d.getRightArg().clone();
+    private Frag betaMinus(Difference d) {
+        if (sharedVars(d.getLeftArg(), d.getRightArg()).isEmpty()) {
+            return beta(d.getLeftArg());                 // no shared var ⇒ MINUS is a no-op
+        }
+        return diffCore(d.getLeftArg(), d.getRightArg());
+    }
+
+    /**
+     * DIFF (anti-join) provenance, Def 4.2 rule 5 (monus): keep P1's answers, subtract
+     * the aggregated provenance of compatible P2 answers. P2's non-shared variables are
+     * renamed fresh (ν) so the subtrahend only constrains the shared (join) variables.
+     * Used by MINUS (guarded above) and by OPTIONAL (unguarded).
+     */
+    private Frag diffCore(TupleExpr leftArg, TupleExpr rightArg) {
+        Frag left = beta(leftArg);
+        TupleExpr right = rightArg.clone();
         renameNonShared(right, left.vars);   // ν
         Frag rght = beta(right);
 
@@ -160,6 +176,13 @@ public class NpcsRewriter {
                     + seal(left, zL) + "\n OPTIONAL { \n" + seal(rght, zR) + "\n }\n"
                     + " }\n GROUP BY " + group + " }";
         return new Frag(body, zDiff, left.vars);   // in-scope = P1 variables
+    }
+
+    /** vars(a) ∩ vars(b) over the real (named, bound) query variables. */
+    private static LinkedHashSet<String> sharedVars(TupleExpr a, TupleExpr b) {
+        LinkedHashSet<String> s = queryVars(a);
+        s.retainAll(queryVars(b));
+        return s;
     }
 
     // ----------------------------------------------------------------- helpers

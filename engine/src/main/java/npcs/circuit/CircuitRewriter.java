@@ -77,7 +77,17 @@ public class CircuitRewriter {
             return plan;
         }
         if (body instanceof Difference) {
-            return minusPlan((Difference) body, W);
+            Difference d = (Difference) body;
+            // W3C MINUS = DIFF only when the operands share a variable; if they share
+            // none, MINUS is a no-op (= P1). (OPTIONAL builds its DIFF via optionalPlan
+            // and never reaches here, so it is not guarded.) Assumes BGP operands.
+            List<StatementPattern> L = collect(d.getLeftArg());
+            if (intersect(vars(L), vars(collect(d.getRightArg()))).isEmpty()) {
+                List<String> p = new ArrayList<>();
+                p.add(bgp(L, W));                        // no shared var ⇒ MINUS no-op ⇒ just P1
+                return p;
+            }
+            return minusPlan(d, W);
         }
         if (body instanceof LeftJoin) {
             return optionalPlan((LeftJoin) body, W);
