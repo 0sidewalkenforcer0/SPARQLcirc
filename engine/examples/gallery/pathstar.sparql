@@ -1,0 +1,3 @@
+PREFIX : <http://example.org/paper#>
+# Zero-or-more :p from :A: like p+ but also includes :A itself (zero-length, terms-in-graph reading).
+SELECT ?y WHERE { :A :p* ?y }

@@ -1,0 +1,8 @@
+@prefix : <http://example.org/paper#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+# Cyclic graph (A->B, B->C, A->C shortcut, C->A back edge): naive walk enumeration for
+# :p+ / :p* is INFINITE (cycle A->C->A and A->B->C->A), but the level-indexed circuit is finite.
+:e1 rdf:subject :A ; rdf:predicate :p ; rdf:object :B .
+:e2 rdf:subject :B ; rdf:predicate :p ; rdf:object :C .
+:e3 rdf:subject :A ; rdf:predicate :p ; rdf:object :C .
+:e4 rdf:subject :C ; rdf:predicate :p ; rdf:object :A .

@@ -1,0 +1,4 @@
+PREFIX : <http://example.org/paper#>
+# Arbitrary-length path, bound source: all nodes reachable from :A via one-or-more :p edges.
+# On pathcyc.ttl this is cyclic (naive enumeration infinite); the emitted circuit is finite.
+SELECT ?y WHERE { :A :p+ ?y }

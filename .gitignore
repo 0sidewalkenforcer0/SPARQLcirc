@@ -22,3 +22,8 @@ reference/cnf/
 
 # generated treewidth-controlled families (rebuilt by reference/gen_families.py)
 reference/families/
+
+# scratch run artifacts
+engine/*.nt
+engine/err.txt
+circ.nt

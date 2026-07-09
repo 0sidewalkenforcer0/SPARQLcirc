@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -444,6 +445,120 @@ public class CircuitRewriter {
             throw new UnsupportedOperationException("Unsupported solution modifier: " + bad[0]
                 + ". SPARQL_circ computes the full set of answer probabilities; sequence modifiers "
                 + "do not apply. (DISTINCT is implicit — answers are a set.)");
+        }
+    }
+
+    // =========================== PROPERTY PATHS ===========================
+    // Recursive provenance for SPARQL 1.1 arbitrary-length paths (:p+ / :p*), emitted by an
+    // UNMODIFIED engine via a CLIENT-DRIVEN ITERATIVE protocol (CircuitRun drives the loop).
+    // reach gates are keyed by (level, node) -- the level makes the emitted RDF an ACYCLIC DAG
+    // even on cyclic data -- while composition Times gates are content-addressed by their sorted
+    // child hashes (as elsewhere). First cut: BOUND source, single constant predicate, free
+    // object (<A> :p+ ?y / <A> :p* ?y), Standard reification.
+    private static final String RDF_S = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
+    private static final String RDF_P = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
+    private static final String RDF_O = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
+
+    /** Parse an arbitrary-length path query; {@code null} if the query has no such path. */
+    public PathQuery pathQuery(String query) {
+        ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
+        TupleExpr te = pq.getTupleExpr();
+        ArbitraryLengthPath[] found = {null};
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(ArbitraryLengthPath node) { if (found[0] == null) found[0] = node; }
+        });
+        if (found[0] == null) return null;                       // not a path query
+        if (scheme != Reification.STANDARD)
+            throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
+        ArbitraryLengthPath alp = found[0];
+        if (!(alp.getPathExpression() instanceof StatementPattern))
+            throw new UnsupportedOperationException("Property path: only a single constant predicate is supported (no nested path expression yet).");
+        Var pv = ((StatementPattern) alp.getPathExpression()).getPredicateVar();
+        if (pv == null || !pv.hasValue())
+            throw new UnsupportedOperationException("Property path: predicate must be a constant IRI.");
+        Var s = alp.getSubjectVar(), o = alp.getObjectVar();
+        if (s == null || !s.hasValue())
+            throw new UnsupportedOperationException("Property path: only a BOUND source is supported so far (e.g. <A> :p+ ?y).");
+        if (o == null || o.hasValue())
+            throw new UnsupportedOperationException("Property path: object must be a variable (e.g. <A> :p+ ?y).");
+        if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath))
+            throw new UnsupportedOperationException("Property path must be the whole pattern for now (no join/union/minus with a path yet).");
+        return new PathQuery(pv.getValue().stringValue(), s.getValue().stringValue(),
+                             o.getName(), alp.getMinLength() == 0);
+    }
+
+    /** A bound-source arbitrary-length path plan: generates the iterative CONSTRUCTs. */
+    public static final class PathQuery {
+        private final String pred, src, objVar;
+        private final boolean star;                              // :p* includes zero-length; :p+ does not
+        PathQuery(String pred, String src, String objVar, boolean star) {
+            this.pred = pred; this.src = src; this.objVar = objVar; this.star = star;
+        }
+        private String edge(String tok, String sv, String ov) { // reified P-edge sv -> ov (Standard)
+            return "  ?" + tok + " <" + RDF_S + "> " + sv + " .\n"
+                 + "  ?" + tok + " <" + RDF_P + "> <" + pred + "> .\n"
+                 + "  ?" + tok + " <" + RDF_O + "> " + ov + " .\n";
+        }
+        private static String reachIri(String nodeExpr, String lvlLit) {  // reach gate IRI = f(level, node)
+            return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|" + lvlLit + "|\", STR(" + nodeExpr + "))))) AS ?rg)\n";
+        }
+        private static String timesIri(String tokVar) {          // single-token Times gate
+            return "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(STR(?" + tokVar + ")))) AS ?tg)\n";
+        }
+        /** Distinct-node count over P-edges, to size the loop (rounds = N-1 simple-path bound). */
+        public String nodeCountQuery() {
+            return PRE + "SELECT (COUNT(DISTINCT ?n) AS ?c) WHERE {\n"
+                 + "  { ?t <" + RDF_P + "> <" + pred + "> ; <" + RDF_S + "> ?n . }\n"
+                 + "  UNION { ?t <" + RDF_P + "> <" + pred + "> ; <" + RDF_O + "> ?n . }\n}\n";
+        }
+        /** reach^0: direct P-edges from the source (+ zero-length (src,src) for :p*). */
+        public List<String> init() {
+            List<String> out = new ArrayList<>();
+            StringBuilder q = new StringBuilder(PRE);
+            q.append("CONSTRUCT {\n  ?rg a c:Plus ; c:rlvl \"0\" ; c:rto ?v .\n")
+             .append("  ?tg a c:Times ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n")
+             .append(edge("t", "<" + src + ">", "?v"))
+             .append(reachIri("?v", "0")).append(timesIri("t")).append("}\n");
+            out.add(q.toString());
+            if (star) {                                          // reach^0(src,src) = OR of tokens mentioning src
+                StringBuilder z = new StringBuilder(PRE);
+                z.append("CONSTRUCT {\n  ?rg a c:Plus ; c:rlvl \"0\" ; c:rto <" + src + "> .\n")
+                 .append("  ?tg a c:Times ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n")
+                 .append("  { ?t <" + RDF_S + "> <" + src + "> . } UNION { ?t <" + RDF_O + "> <" + src + "> . }\n")
+                 .append(reachIri("<" + src + ">", "0")).append(timesIri("t")).append("}\n");
+                out.add(z.toString());
+            }
+            return out;
+        }
+        /** reach^{k+1} from reach^k: (A) extend by one edge, (B) carry forward. */
+        public List<String> step(int k) {
+            String kL = "\"" + k + "\"", k1 = Integer.toString(k + 1);
+            List<String> out = new ArrayList<>();
+            StringBuilder a = new StringBuilder(PRE);            // (A) reach^k(w) (*) edge(w,v) -> reach^{k+1}(v)
+            a.append("CONSTRUCT {\n  ?rg a c:Plus ; c:rlvl \"" + k1 + "\" ; c:rto ?v .\n")
+             .append("  ?comp a c:Times ; c:in ?rk ; c:in ?t ; c:feeds ?rg .\n}\nWHERE {\n")
+             .append("  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rto ?w .\n")
+             .append(edge("t", "?w", "?v")).append(reachIri("?v", k1))
+             .append("  BIND(SHA256(STR(?rk)) AS ?h0)\n  BIND(SHA256(STR(?t)) AS ?h1)\n")
+             .append("  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n")
+             .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS ?comp)\n}\n");
+            out.add(a.toString());
+            StringBuilder b = new StringBuilder(PRE);            // (B) reach^k(v) feeds reach^{k+1}(v)
+            b.append("CONSTRUCT {\n  ?rg a c:Plus ; c:rlvl \"" + k1 + "\" ; c:rto ?v .\n")
+             .append("  ?rk c:feeds ?rg .\n}\nWHERE {\n")
+             .append("  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rto ?v .\n")
+             .append(reachIri("?v", k1)).append("}\n");
+            out.add(b.toString());
+            return out;
+        }
+        /** Project reach^{lastLevel} to answer gates keyed by the object variable. */
+        public List<String> finalize(int lastLevel) {
+            StringBuilder q = new StringBuilder(PRE);
+            q.append("CONSTRUCT {\n  ?rg c:feeds ?ans .\n  ?ans a c:Plus ; c:answer ?anskey .\n}\nWHERE {\n")
+             .append("  ?rg a c:Plus ; c:rlvl \"" + lastLevel + "\" ; c:rto ?v .\n")
+             .append("  BIND(CONCAT(\"A|" + objVar + "=\", STR(?v)) AS ?anskey)\n")
+             .append("  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(?anskey))) AS ?ans)\n}\n");
+            return java.util.Collections.singletonList(q.toString());
         }
     }
 }
