@@ -201,14 +201,18 @@ edge tokens are counted once (correlation), exactly as for BGP sharing.
   **client-driven iterative protocol** issues one CONSTRUCT per level, feeds each round's reach gates
   back into the store, and loops to the simple-path bound. reach gates are keyed by `(level, from, to)`
   (the level keeps the RDF DAG acyclic); the (possibly compound) sub-path is materialized once as an
-  all-pairs base relation reach⁰, and composition ⊗ gates are content-addressed by sorted child hashes.
-  Engine scope: `+`/`*` over a single predicate **or a compound sub-path** (`/`, `|`, `^`), all endpoint
-  combinations, Standard reification — verified against the Python reference / possible-world enumeration
-  on cyclic graphs (`reference/verify_engine_paths.py`: `(p/q)+`, `(p|q)+`, `(^p)+`, …). The circuit can be
+  all-pairs base relation, and composition ⊗ gates are content-addressed by sorted child hashes. reach⁰
+  is seeded from the base **restricted to the source when it is bound**, so a bound source is
+  single-source `O(|V_s|·|E_s|)` while a variable source stays all-pairs (a factor of `|V|` larger —
+  confirmed by ring-scaling). Engine scope: `+`/`*` over a single predicate **or a compound sub-path**
+  (`/`, `|`, `^`), the zero-or-one `?` (via `ZeroLengthPath`), all endpoint combinations, Standard
+  reification — verified against the Python reference / possible-world enumeration on cyclic graphs
+  (`reference/verify_engine_paths.py`: `(p/q)+`, `(p|q)+`, `(^p)+`, `:p?`, …). The circuit can be
   built on **any SPARQL 1.1 engine** (`CircuitRun` endpoint mode → GraphDB/Fuseki), since the emitted
   CONSTRUCTs are deterministic and use only standard SPARQL 1.1 (checked by
   `reference/verify_engine_agnostic.py`); the byte-identical cross-engine run needs a running endpoint.
-  Standalone `:p?` (a bare `ZeroLengthPath`) and nested closures are future work. **[impl, verified]**
+  **Nested** closures (a closure whose sub-path itself contains a closure, or a closure joined with
+  other patterns) and SPARQL-star reification for paths are future work. **[impl, verified]**
 
 **Size, empirically** (`reference/path_demo.py`): on a cyclic ring the `?x p+ ?y` circuit has `≈|V|²`
 gates (`gates/|V|² → 1`); on a clique it stays polynomial while the number of simple paths is
@@ -439,11 +443,12 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
    fragment (incl. all nested MINUS); the *circuit* rewriter (the contribution) covers
    BGP/UNION/OPTIONAL/chained-MINUS operands, property paths, and rejects the three residuals.
 9. **Property-path scope** — the Python reference covers all operators `/ | ^ + * ?`. The *engine* emits
-   `+`/`*` over a single predicate or a compound sub-path (`/ | ^`), all endpoint modes, Standard
-   reification (verified on cyclic graphs). Remaining engine gaps: a standalone `:p?` (`ZeroLengthPath`),
-   nested closures, SPARQL-star reification, and a single-source specialization of the all-pairs reach.
-   Zero-length semantics are qualified to the terms-in-graph reading. Cross-engine byte-identity uses
-   `CircuitRun` endpoint mode; it needs a running SPARQL 1.1 endpoint (e.g. GraphDB), not bundled here.
+   `+`/`*` over a single predicate or a compound sub-path (`/ | ^`), the zero-or-one `?`, all endpoint
+   modes (single-source `O(|V_s|·|E_s|)` when the source is bound), Standard reification (verified on
+   cyclic graphs). Remaining engine gaps: **nested** closures (a closure whose sub-path contains a
+   closure, or a closure joined with other patterns) and SPARQL-star reification for paths. Zero-length
+   semantics are qualified to the terms-in-graph reading. Cross-engine byte-identity uses `CircuitRun`
+   endpoint mode; it needs a running SPARQL 1.1 endpoint (e.g. GraphDB), not bundled here.
 
 ---
 
