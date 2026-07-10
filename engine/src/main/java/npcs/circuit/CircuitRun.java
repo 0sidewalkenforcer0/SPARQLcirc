@@ -54,7 +54,11 @@ public final class CircuitRun {
 
         Repository repo;
         if (endpoint != null) {
-            SPARQLRepository sparql = new SPARQLRepository(endpoint);   // GraphDB / Fuseki / any SPARQL 1.1 endpoint
+            // GraphDB / Fuseki / any SPARQL 1.1 endpoint. RDF4J-based servers (GraphDB) expose the
+            // SPARQL *update* endpoint at <repo>/statements while the query endpoint is <repo>; the
+            // single-URL constructor would POST updates to the query endpoint ("Missing parameter: query").
+            String updateEndpoint = endpoint.replaceAll("/+$", "") + "/statements";
+            SPARQLRepository sparql = new SPARQLRepository(endpoint, updateEndpoint);
             sparql.init();
             repo = sparql;
             System.err.println("# building the circuit on remote endpoint: " + endpoint);
