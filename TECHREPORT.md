@@ -452,8 +452,12 @@ NPCS (Asma et al., WWW'24) and its federated/journal extension (TGDK'26) — nat
 *rewriting* producing strings; we reproduce its `β` and replace the leaf ops with gate constructors.
 **spm/Geerts (2016)** — algebraic provenance of SPARQL, the ⊕/⊗/⊖ semantics and the OPTIONAL-via-DIFF
 decomposition. **ProvSQL** — provenance circuits + knowledge compilation in modified PostgreSQL
-(the closest baseline; our axis of difference is *unmodified engine + native RDF*). **SPARQLprov** —
-monotone provenance annotation (no monus ⇒ cannot do OPTIONAL/MINUS). **Green et al. (2007)** —
+(the closest baseline; our axis of difference is *unmodified engine + native RDF*). **SPARQLprov**
+(Galárraga et al., PVLDB'21) — query-rewriting how-provenance on a *stock* engine, on the **same**
+spm-semiring with monus ⊖; handles UNION/OPTIONAL/**MINUS** (excludes aggregation & property paths),
+emitting *per-answer* polynomials (shared subterms repeated), not a shared circuit and no probabilities.
+Its released rewriter realizes MINUS as *unguarded* DIFF (`A OPTIONAL B`) — sound on its shared-variable
+benchmark, but over-subtracts on disjoint operands (confirmed by counterexample). **Green et al. (2007)** —
 provenance semirings (positive fragment). **Grahne–Thomo (2020)** — provenance for regular path
 queries (relevant to the deferred property-path follow-up). **pSPARQL (Fang 2019)** — fuzzy, not
 possible-world; non-competitor. Companion **ProbSPARQL** (the author's probability model) — the
