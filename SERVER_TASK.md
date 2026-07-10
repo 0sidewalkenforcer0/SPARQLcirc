@@ -41,10 +41,21 @@ accident.
   *Why these:* NPCS used 10/100/200M; SPARQLprov used 100M — so 10/100/200M covers both.
   Reify with `reference/watdiv/reify.py <base.nt> <base.reified.nt>`.
 - **Wikidata** (real KG; both baselines used it — NPCS via WDBench queries). Optional / stretch.
-- **Query shapes:** WatDiv **Linear / Star / snowFlake / Complex** + **non-monotone** (OPTIONAL/MINUS)
-  + our **property-path** queries. Starters in `reference/watdiv/`: `L-path.rq`, `S-star.rq`,
-  `F-snow.rq`. SPARQLprov added 5 OPTIONAL templates; add MINUS and `:p+`/`:p*` shapes to exercise
-  our contributions.
+- **Query shapes** — ready-made in `reference/watdiv/` (all use real WatDiv `wsdbm:` predicates):
+  - monotone: `L-path.rq` (linear), `S-star.rq` (star), `F-snow.rq` (snowflake)
+  - **non-monotone (MINUS):** `M-minus.rq` (likes ∖ purchased; compound 2-pattern subtrahend),
+    `M-minus2.rq` (purchasers ∖ likers; single shared var)
+  - **property paths** (over `wsdbm:friendOf`, a User→User edge): `P-plus.rq` (bound source,
+    single-source `friendOf+`), `P-plus-all.rq` (free/all-pairs `friendOf+`), `P-star.rq`
+    (`friendOf*`), `P-alt.rq` (compound closure `(friendOf|^friendOf)+` = undirected reachability).
+  - **How to run each:** monotone + MINUS go through the one-shot flow (`watdiv_run.py`, which POSTs a
+    single CONSTRUCT). **PROPERTY PATHS require `CircuitRun`'s client-driven iterative protocol** (a
+    single CONSTRUCT can't express recursion), so run them as:
+    ```bash
+    java -cp engine/target/npcs-rewrite.jar npcs.circuit.CircuitRun \
+         Standard /data/watdiv/base.reified.nt reference/watdiv/P-plus.rq >circ.nt   # in-memory RDF4J
+    #   ...or add a 4th arg = writable SPARQL endpoint (GraphDB) to build it there.
+    ```
 
 ## 3. Experiments (priority order — predictions in `EVALUATION.md`)
 Run from `reference/`. Each script writes a CSV; record what matches/deviates from the prediction.
@@ -66,9 +77,12 @@ Run from `reference/`. Each script writes a CSV; record what matches/deviates fr
    GraphDB via `CircuitRun`'s endpoint mode and diff vs in-memory RDF4J:
    `SPARQLCIRC_ENDPOINT=http://localhost:7200/repositories/<repo> python3 verify_engine_agnostic.py`
    (the endpoint must be writable — the path protocol INSERTs each round back).
-5. **Property paths at scale (our contribution).** Run `:p+`/`:p*` on a cyclic/deep WatDiv subgraph or
-   a Wikidata hierarchy; show the circuit stays **polynomial** where naive per-answer expansion is
-   infinite/exponential. `python3 path_demo.py` shows the shape; scale it on real data.
+5. **Property paths at scale (our contribution).** Run the `reference/watdiv/P-*.rq` files over
+   `wsdbm:friendOf` via `CircuitRun` (see §2 for the exact command; paths need the iterative protocol,
+   not `watdiv_run.py`). Report circuit size (gates+edges) and build time for `P-plus.rq` (single-source)
+   vs `P-plus-all.rq` (all-pairs) — the ratio should grow ~`|V|` — and confirm the circuit stays
+   **polynomial** where naive per-answer walk expansion is infinite/exponential. `python3 path_demo.py`
+   shows the shape + the ring/clique scaling on synthetic data.
 
 ## 4. Environment setup
 - **Java 11+, Maven** (engine). **Python 3.9+** (`reference/` core is stdlib-only; `rdflib` for the

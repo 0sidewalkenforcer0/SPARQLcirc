@@ -1,0 +1,4 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# Zero-or-more friendOf* from a bound user: like friendOf+ but also includes User0 itself
+# (zero-length, terms-in-graph reading). RUN VIA CircuitRun.
+SELECT ?y WHERE { wsdbm:User0 wsdbm:friendOf* ?y }

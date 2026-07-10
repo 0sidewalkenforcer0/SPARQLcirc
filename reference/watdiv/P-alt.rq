@@ -1,0 +1,5 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# Compound-sub-path closure: UNDIRECTED transitive friendship (friendOf OR its inverse) = the
+# connected component of User0. Exercises closure over a compound sub-path (alternative + inverse).
+# RUN VIA CircuitRun.
+SELECT ?y WHERE { wsdbm:User0 (wsdbm:friendOf|^wsdbm:friendOf)+ ?y }

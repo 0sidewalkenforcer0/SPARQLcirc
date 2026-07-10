@@ -1,0 +1,4 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# Same path, FREE endpoints (all-pairs): shows the factor-|V| cost vs single-source. Large on
+# 100M+ -- run on the 10M dataset. RUN VIA CircuitRun.
+SELECT ?x ?y WHERE { ?x wsdbm:friendOf+ ?y }

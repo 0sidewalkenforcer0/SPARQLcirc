@@ -1,0 +1,6 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# Property path friendOf+ from a BOUND user (single-source, O(|V_s|.|E_s|)): everyone reachable
+# from User0 via one-or-more friend-of edges. friendOf is cyclic/deep -> naive walk enumeration
+# blows up while the circuit stays polynomial. Swap wsdbm:User0 for any user at your scale.
+# RUN VIA CircuitRun (iterative protocol), not the one-shot watdiv_run.py flow.
+SELECT ?y WHERE { wsdbm:User0 wsdbm:friendOf+ ?y }

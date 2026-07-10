@@ -1,0 +1,8 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# MINUS (non-monotone): users who LIKE a product but did NOT purchase it.
+# minuend {?u,?prod} and subtrahend {?u,?pur,?prod} share ?u,?prod -> real (guarded) MINUS;
+# the subtrahend is a 2-pattern join (a COMPOUND MINUS operand -> exercises normalize()).
+SELECT ?u ?prod WHERE {
+  ?u wsdbm:likes ?prod
+  MINUS { ?u wsdbm:makesPurchase ?pur . ?pur wsdbm:purchaseFor ?prod }
+}

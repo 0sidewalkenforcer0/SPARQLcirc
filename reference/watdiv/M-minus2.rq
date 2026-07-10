@@ -1,0 +1,6 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+# MINUS (non-monotone), single shared variable: users who make a purchase but like no product.
+SELECT ?u WHERE {
+  ?u wsdbm:makesPurchase ?pur
+  MINUS { ?u wsdbm:likes ?prod }
+}
