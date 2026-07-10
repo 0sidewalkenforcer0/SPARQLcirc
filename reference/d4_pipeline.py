@@ -22,23 +22,36 @@ V2 = os.environ.get("D4V2")
 def ddnnf_cmd(cnf, out):
     if V2:  # d4v2: crillab/d4v2
         return [D4, "--input", cnf, "--method", "ddnnf", "--dump-ddnnf", out]
-    return [D4, "-dDNNF", cnf, f"-out={out}"]           # d4 v1: crillab/d4
+    return [D4, cnf, "-dDNNF", f"-out={out}"]           # d4 v1 (crillab/d4): positional input
 
-def wmc_cmd(cnf):
+def wmc_cmd(cnf, wfile):
     if V2:
         return [D4, "--input", cnf, "--method", "wmc"]
-    return [D4, "-wmc", cnf]
+    # d4 v1 does WEIGHTED counting via -mc + an external -wFile of '<lit> <weight>' pairs;
+    # the 'c p weight ... 0' lines inside the CNF are comments d4 ignores.
+    return [D4, cnf, "-mc", f"-wFile={wfile}"]
+
+def write_weights(cnf, wfile):
+    """Extract the CNF's 'c p weight <lit> <w> 0' comment lines into a d4 -wFile
+    ('<lit> <weight>' pairs). Literals not listed default to weight 1 in d4."""
+    with open(cnf) as f, open(wfile, "w") as g:
+        for line in f:
+            p = line.split()
+            if len(p) == 6 and p[:3] == ["c", "p", "weight"]:   # 'c p weight <lit> <w> 0'
+                g.write(f"{p[3]} {p[4]}\n")
 
 def nnf_size(path):
-    """Parse the d-DNNF header 'nnf <nodes> <edges> <vars>' -> (nodes, edges)."""
+    """d4 v1 d-DNNF text format: node lines 'o|a|t|f <id> 0'; arc lines '<from> <to> [lits] 0'.
+    (Also handles the classic 'nnf <nodes> <edges> <vars>' header if a build emits it.)"""
+    nodes = edges = 0
     with open(path) as f:
         for line in f:
             m = re.match(r"\s*nnf\s+(\d+)\s+(\d+)\s+(\d+)", line)
             if m:
                 return int(m.group(1)), int(m.group(2))
-    # fallback: count node lines
-    n = sum(1 for l in open(path) if l[:1] in "LAO")
-    return n, -1
+            if re.match(r"[oatf]\s", line): nodes += 1
+            elif re.match(r"\d", line): edges += 1
+    return nodes, edges
 
 def parse_wmc(stdout):
     # d4 prints the count on a line like 's <value>' or 'c s exact ... <value>'
@@ -54,11 +67,12 @@ def main():
     man = json.load(open("cnf/manifest.json"))
     rows = []
     for e in man:
-        cnf = os.path.join("cnf", e["cnf"]); nnf = cnf + ".nnf"
+        cnf = os.path.join("cnf", e["cnf"]); nnf = cnf + ".nnf"; wf = cnf + ".w"
+        write_weights(cnf, wf)
         try:
             subprocess.run(ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=600)
             nodes, edges = nnf_size(nnf)
-            wout = subprocess.run(wmc_cmd(cnf), check=True, capture_output=True, text=True, timeout=600)
+            wout = subprocess.run(wmc_cmd(cnf, wf), check=True, capture_output=True, text=True, timeout=600)
             d4wmc = parse_wmc(wout.stdout)
         except Exception as ex:
             print(f"[{e['instance']}] d4 failed: {ex}"); nodes = edges = d4wmc = None
