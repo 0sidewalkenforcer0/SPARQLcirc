@@ -7,7 +7,7 @@ with open(inp) as f, open(out,"w") as g:
         line=line.strip()
         if not line.endswith("."): continue
         body=line[:-1].strip()
-        parts=body.split(" ",2)          # s, p, o(rest; o may be a literal with spaces)
+        parts=body.split(None,2)         # split on ANY whitespace: WatDiv .nt is TAB-separated (o may be a literal with spaces)
         if len(parts)<3: continue
         s,p,o=parts
         t=f"<urn:t:{n}>"
