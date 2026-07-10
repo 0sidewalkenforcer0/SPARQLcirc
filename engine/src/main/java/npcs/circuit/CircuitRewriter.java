@@ -528,22 +528,22 @@ public class CircuitRewriter {
         for (ProjectionElem pe : outerProjection(te).getProjectionElemList().getElements())
             if (!W.contains(pe.getName())) W.add(pe.getName());
         boolean star = alp.getMinLength() == 0;
-        // Materialize the all-pairs base relation reach^0 here (reify needs the instance): one CONSTRUCT
-        // per UNION alternative, each a ⊗ over the branch's reified patterns.
-        List<String> initC = new ArrayList<>();
+        // Materialize the all-pairs BASE relation (rlvl "base") here (reify needs the instance): one
+        // CONSTRUCT per UNION alternative, each a ⊗ over the branch's reified patterns. reach^0 is then
+        // seeded FROM the base (see PathQuery.init), restricted to the source when it is bound.
+        List<String> baseC = new ArrayList<>();
         for (List<StatementPattern> br : branches) {
             List<String> toks = new ArrayList<>();
             StringBuilder where = reify(br, "a", toks);          // binds ?u,?v (+ intermediates) and the tokens
             String tkey = emitSortedProdKey(where, toks);
             StringBuilder q = new StringBuilder(PRE);
-            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("0")).append(" .\n  ?t a c:Times ;");
+            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base")).append(" .\n  ?t a c:Times ;");
             for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
             q.append(" c:feeds ?rg .\n}\nWHERE {\n").append(where)
-             .append(PathQuery.reachIri("?u", "?v", "0")).append(bindIri("?t", "urn:g:t:", tkey)).append("}\n");
-            initC.add(q.toString());
+             .append(PathQuery.reachIri("?u", "?v", "base")).append(bindIri("?t", "urn:g:t:", tkey)).append("}\n");
+            baseC.add(q.toString());
         }
-        if (star) initC.add(PathQuery.zeroLenConstruct());
-        return new PathQuery(initC, endOf(s, subjName), endOf(o, objName), star, W);
+        return new PathQuery(baseC, endOf(s, subjName), endOf(o, objName), star, W);
     }
 
     private static PathQuery.End endOf(Var v, String name) {
@@ -578,12 +578,15 @@ public class CircuitRewriter {
             End(boolean isVar, String iri, String var) { this.isVar = isVar; this.iri = iri; this.var = var; }
             String pat(String v) { return isVar ? v : iri; }     // SPARQL term to match this endpoint
         }
-        private final List<String> initConstructs;               // reach^0 = all-pairs base relation (precomputed)
+        private final List<String> baseConstructs;               // the all-pairs base relation (rlvl "base")
         private final End subj, obj; private final boolean star;
         private final List<String> W;
-        PathQuery(List<String> initConstructs, End subj, End obj, boolean star, List<String> W) {
-            this.initConstructs = initConstructs; this.subj = subj; this.obj = obj; this.star = star; this.W = W;
+        PathQuery(List<String> baseConstructs, End subj, End obj, boolean star, List<String> W) {
+            this.baseConstructs = baseConstructs; this.subj = subj; this.obj = obj; this.star = star; this.W = W;
         }
+        // A BOUND source restricts reach^0 (and zero-length) to (source, .) -> single-source
+        // O(|V_s|.|E_s|); a variable source keeps all pairs. The from-var in reach heads is ?u.
+        private String sourceFilter() { return subj.isVar ? "" : "  FILTER(?u = " + subj.iri + ")\n"; }
         static String reachIri(String from, String to, String lvl) {   // reach gate IRI = f(level, from, to)
             return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|" + lvl + "|\", STR(" + from
                  + "), \"|\", STR(" + to + "))))) AS ?rg)\n";
@@ -596,10 +599,10 @@ public class CircuitRewriter {
                  + "  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n"
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS " + out + ")\n";
         }
-        static String zeroLenConstruct() {                       // reach^0(u,u) = OR of tokens mentioning u
+        String zeroLenConstruct() {                              // reach^0(u,u) = OR of tokens mentioning u
             return PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?tg a c:Times ; c:in ?z ; c:feeds ?rg .\n}\nWHERE {\n"
                  + "  { ?z <" + RDF_S + "> ?u . } UNION { ?z <" + RDF_O + "> ?u . }\n"
-                 + "  BIND(?u AS ?v)\n" + reachIri("?u", "?u", "0")
+                 + "  BIND(?u AS ?v)\n" + sourceFilter() + reachIri("?u", "?u", "0")
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?z)))))) AS ?tg)\n}\n";
         }
         /** Distinct-node count over the reified data, to size the loop (rounds = N-1 simple-path bound). */
@@ -607,8 +610,20 @@ public class CircuitRewriter {
             return PRE + "SELECT (COUNT(DISTINCT ?n) AS ?c) WHERE {\n"
                  + "  { ?t <" + RDF_S + "> ?n . } UNION { ?t <" + RDF_O + "> ?n . }\n}\n";
         }
-        /** reach^0 = the all-pairs base relation for the sub-path (+ zero-length (u,u) for :p*). */
-        public List<String> init() { return initConstructs; }
+        /** Materialize the base relation, then seed reach^0 from it (restricted to the source),
+         *  plus the zero-length pairs for :p*. */
+        public List<String> init() {
+            List<String> out = new ArrayList<>(baseConstructs);   // all-pairs base (rlvl "base")
+            out.add(seedReach0());                                // reach^0 = base, restricted to the source
+            if (star) out.add(zeroLenConstruct());                // + zero-length at the source (for :p*)
+            return out;
+        }
+        // reach^0(u,v) fed by base(u,v); sourceFilter() makes it single-source when the source is bound.
+        private String seedReach0() {
+            return PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?rb c:feeds ?rg .\n}\nWHERE {\n"
+                 + "  ?rb a c:Plus ; c:rlvl \"base\" ; c:rfrom ?u ; c:rto ?v .\n"
+                 + sourceFilter() + reachIri("?u", "?v", "0") + "}\n";
+        }
         /** reach^{k+1} from reach^k: (A) compose reach^k(u,w) ⊗ reach^0(w,v), (B) carry forward. */
         public List<String> step(int k) {
             String kL = "\"" + k + "\"", k1 = Integer.toString(k + 1);
@@ -616,7 +631,7 @@ public class CircuitRewriter {
             out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
                   + "  ?comp a c:Times ; c:in ?rk ; c:in ?rb ; c:feeds ?rg .\n}\nWHERE {\n"
                   + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?w .\n"
-                  + "  ?rb a c:Plus ; c:rlvl \"0\" ; c:rfrom ?w ; c:rto ?v .\n"
+                  + "  ?rb a c:Plus ; c:rlvl \"base\" ; c:rfrom ?w ; c:rto ?v .\n"
                   + reachIri("?u", "?v", k1) + comp2("?rk", "?rb", "?comp") + "}\n");
             out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n  ?rk c:feeds ?rg .\n}\nWHERE {\n"  // (B) carry
                   + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?v .\n"
