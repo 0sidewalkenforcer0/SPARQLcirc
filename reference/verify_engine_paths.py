@@ -73,6 +73,7 @@ TESTS = [
     ("pathseq.sparql",       "pathcompound.ttl", CMP, CMP_P, ("plus", ("seq", E("p"), E("q"))),    EX + "A", "?y", ["?y"]),
     ("pathalt.sparql",       "pathcompound.ttl", CMP, CMP_P, ("plus", ("alt", E("p"), E("q"))),    "?x",     "?y", ["?x", "?y"]),
     ("pathinv.sparql",       "pathcompound.ttl", CMP, CMP_P, ("plus", ("inv", E("p"))),            "?x",     "?y", ["?x", "?y"]),
+    ("pathopt.sparql",       "pathcyc.ttl",      CYC, CYC_P, ("opt", E("p")),                      "?x",     "?y", ["?x", "?y"]),  # zero-or-one :p?
 ]
 
 if __name__ == "__main__":

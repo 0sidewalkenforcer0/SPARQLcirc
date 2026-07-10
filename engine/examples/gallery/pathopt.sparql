@@ -1,0 +1,3 @@
+PREFIX : <http://example.org/paper#>
+# zero-or-one: :p edges plus every node reflexively (zero-length, terms-in-graph)
+SELECT ?x ?y WHERE { ?x :p? ?y }

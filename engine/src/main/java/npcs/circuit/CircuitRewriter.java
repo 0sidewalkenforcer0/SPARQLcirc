@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -18,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -143,6 +145,10 @@ public class CircuitRewriter {
      *   - BGP:      1 CONSTRUCT    (⊗ per derivation -> ⊕ per answer)
      */
     private List<String> branchPlan(TupleExpr body, List<String> W) {
+        // Look through the Distinct + inner Projection that a property-path `?` expansion wraps around
+        // its Union (both are no-ops for our content-addressed, set-semantics answer gates).
+        if (body instanceof Distinct)   return branchPlan(normalize(((Distinct) body).getArg()), W);
+        if (body instanceof Projection) return branchPlan(normalize(((Projection) body).getArg()), W);
         if (body instanceof Union) {
             Union u = (Union) body;
             List<String> plan = new ArrayList<>(branchPlan(u.getLeftArg(), W));
@@ -155,9 +161,41 @@ public class CircuitRewriter {
         if (body instanceof LeftJoin) {
             return optionalPlan((LeftJoin) body, W);
         }
+        if (body instanceof ZeroLengthPath) {                 // zero-length path, e.g. the ?-branch of :p?
+            List<String> plan = new ArrayList<>();
+            plan.add(zeroLengthPlan((ZeroLengthPath) body, W));
+            return plan;
+        }
         List<String> plan = new ArrayList<>();
         plan.add(bgp(collect(body), W));
         return plan;
+    }
+
+    /**
+     * Zero-length path {@code ?x <>? ?y} (the reflexive branch RDF4J emits for {@code :p?}, and the
+     * zero-length part of {@code :p*}): the pair {@code (u,u)} for every term {@code u} in the graph,
+     * with provenance {@code occ(u)} = ⊕ of the tokens of triples that mention {@code u} ("u occurs")
+     * — the terms-in-graph reading. Both endpoints bind to {@code u}; a constant endpoint filters it.
+     */
+    private String zeroLengthPlan(ZeroLengthPath zlp, List<String> W) {
+        if (scheme != Reification.STANDARD)
+            throw new UnsupportedOperationException("Zero-length paths (:p?) currently support Standard reification only.");
+        Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
+        StringBuilder key = new StringBuilder("CONCAT(\"A\"");
+        for (String w : W)                                     // both endpoints are the same node ?u
+            if ((!s.hasValue() && w.equals(s.getName())) || (!o.hasValue() && w.equals(o.getName())))
+                key.append(", \"|").append(w).append("=\", STR(?u)");
+        key.append(")");
+        StringBuilder q = new StringBuilder(PRE);
+        q.append("CONSTRUCT {\n  ?t a c:Times ; c:in ?tok ; c:feeds ?ans .\n")
+         .append("  ?ans a c:Plus ; c:answer ?anskey .\n}\nWHERE {\n")
+         .append("  { ?tok <").append(RDF_S).append("> ?u . } UNION { ?tok <").append(RDF_O).append("> ?u . }\n");
+        if (s.hasValue()) q.append("  FILTER(?u = <").append(s.getValue().stringValue()).append(">)\n");
+        if (o.hasValue()) q.append("  FILTER(?u = <").append(o.getValue().stringValue()).append(">)\n");
+        q.append("  BIND(").append(key).append(" AS ?anskey)\n")
+         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?tok)))))) AS ?t)\n")
+         .append("  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(?anskey))) AS ?ans)\n}\n");
+        return q.toString();
     }
 
     // --------------------------- BGP ---------------------------
