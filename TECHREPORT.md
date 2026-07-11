@@ -436,8 +436,12 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 4. **PQE tractability is treewidth-bounded** — high-tw queries are `#P`-hard for everyone.
 5. **MINUS residuals** — right-nested `A MINUS (P MINUS Q)` and two pathological OPTIONAL-operand
    shapes are rejected (safely) by the circuit; the string path handles them.
-6. **d4 leg** blocked on Apple Silicon (PATOH x86_64-only); the asymptotic d-DNNF≻OBDD advantage is
-   *not* exhibited by PySDD at small scale — needs d4 at scale.
+6. **d4 d-DNNF (run on the server, Linux/x86).** E4 confirms d-DNNF ≪ OBDD at bounded treewidth
+   (OBDD ~300k nodes then times out at layered-d32-w2, while d-DNNF stays ≤ ~5k to d64). **Caveat:**
+   our pure-Python OBDD uses a naive DFS variable order, so it blows up *faster* than the theoretical
+   `n^{O(tw)}` even at fixed tw — the d-DNNF≻OBDD conclusion holds (and is stronger empirically), but do
+   **not** claim the OBDD achieves `n^{O(tw)}`; a treewidth-optimal order would, and we do not build one.
+   WMC underflows to `0.0` on long chains — report in log-space.
 7. **Content-addressing** relies on SHA256 collision-resistance (a standard assumption).
 8. **Two rewriters** — the *string* rewriter (NpcsRewriter) reproduces NPCS and handles the full
    fragment (incl. all nested MINUS); the *circuit* rewriter (the contribution) covers
@@ -449,6 +453,14 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
    closure, or a closure joined with other patterns) and SPARQL-star reification for paths. Zero-length
    semantics are qualified to the terms-in-graph reading. Cross-engine byte-identity uses `CircuitRun`
    endpoint mode; it needs a running SPARQL 1.1 endpoint (e.g. GraphDB), not bundled here.
+10. **Non-selective queries at 100M** — unbound (all-pairs) BGP shapes at 100M exceed GraphDB's HTTP
+    CONSTRUCT transfer/timeout (E3 unbound-100M failed with IncompleteRead/http; 10M completed but slow,
+    e.g. star ≈ 8 min). The circuit route targets *selective/bounded* queries at scale; huge result sets
+    need streaming/pagination (future work).
+11. **Property-path loop bound** — `CircuitRun` runs `N−1` rounds where `N` is the *global* distinct-node
+    count, so property paths are currently feasible only on small graphs / small reachable subgraphs. A
+    reachable-set (early-stop) round bound is needed before paths run on the full 100M graph; scale
+    evidence for paths is therefore gathered on the extracted `friendOf` subgraph, not the whole KG.
 
 ---
 

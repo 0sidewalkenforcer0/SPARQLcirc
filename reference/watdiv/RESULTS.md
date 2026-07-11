@@ -100,3 +100,23 @@ Same data + same per-triple probabilities + same query. *Predicted: identical ex
 ## Correctness (E1/E6) gate
 
 `verify_gallery.py`, `verify_nonmono.py`, `verify_engine_paths.py`, `verify_engine_agnostic.py` run green before any scale numbers were trusted (see the overnight log). E4/E7 additionally cross-check d4/ProvSQL WMC == our OBDD == possible-world enumeration per instance.
+
+---
+
+## Dev review (2026-07-11)
+
+**Validated (match `EVALUATION.md`):** E2 compactness (shallow 0.4–0.9×, deep-12x2 = 201.4×); E4
+d-DNNF ≪ OBDD at bounded tw (OBDD ~300k → timeout @ d32-w2, d-DNNF ≤ ~5k @ d64; all WMC match d4);
+E7 identical exact probabilities vs ProvSQL (diff ~1e-16); E3 bound compactness 0.5–0.66× as predicted.
+Merged code (with the 3 server fixes) re-verified green on the dev side.
+
+**Gaps / caveats (honest):**
+- **MINUS and property paths were not run** — E3 covered only S/L/F. MINUS is runnable now (Round 2A);
+  property paths are blocked on the `N−1` global-round loop (§13.11) and deferred to a dev early-stop fix.
+- **E4 OBDD** blows up faster than the theoretical `n^{O(tw)}` (naive DFS variable order) — d-DNNF≻OBDD
+  holds and is stronger, but do not claim the OBDD achieves `n^{O(tw)}`. Long-chain WMC underflows to 0.0.
+- **E3 unbound (all-pairs) at 100M FAILED** on GraphDB HTTP limits (10M completed but slow, star ≈ 8 min).
+  The circuit route targets selective/bounded queries at scale.
+- **E7** is 3 tiny instances (8–24 triples); the takeaway is exactness-equivalence + unmodified engine,
+  NOT the toy-scale timing.
+- **E3 star** construction overhead grows with scale (3.2×→6.8×) — build ∝ #derivations.

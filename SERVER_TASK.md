@@ -124,3 +124,32 @@ git push                                     # normal push; the dev side pulls
 Both emit **per-answer provenance strings, no probabilities**. SPARQLprov's released rewriter realizes
 MINUS as *unguarded* DIFF (`A OPTIONAL B`) — correct only when operands share a variable. Our target:
 the **same datasets**, but producing a **shared circuit + exact probabilities on a stock engine**.
+
+---
+
+# ROUND 2 — follow-up (after dev review of the round-1 results)
+
+Round 1 ran E1–E7 on the monotone **S/L/F** shapes and validated the core claims (E2 compactness:
+deep-12x2 = 201×; E4 d-DNNF ≪ OBDD; E7 exact-probability match vs ProvSQL). Two gaps to close:
+
+## A. MINUS at scale — RUNNABLE NOW, please do
+The non-monotone contribution was not run. Run `reference/watdiv/M-minus.rq` and `M-minus2.rq` at
+**10M and 100M** via the one-shot flow (they are BGP+MINUS, no recursion — the standard route works).
+Caveat: `watdiv_run.py` globs `*.rq` when `WATDIV_QDIR=reference/watdiv` is set, which also picks up
+the `P-*.rq` PATH files — those will **fail** one-shot (paths need `CircuitRun`), so either run the two
+`M-*.rq` explicitly or temporarily move `P-*.rq` out of the glob dir. Extend `RESULTS.md` with a
+**MINUS** table (build_ms, plain_ms, c_overhead, deriv, gates, edges, answers, share) and confirm
+WMC == possible-world enumeration on a small check.
+
+## B. Property paths — DEFERRED (blocked on a dev fix; do NOT attempt full-scale)
+`CircuitRun` currently runs `N−1` rounds where `N` = the **global** distinct-node count
+(TECHREPORT §13.11). On WatDiv that is ~10^6 rounds → the path loop would hang. So do **not** run the
+`P-*.rq` files on the full reified WatDiv. The dev side will add an **early-stop / reachable-subgraph
+round bound**; a Round-3 note will follow to run the paths on the `friendOf` subgraph then. (Optional
+toy proof-of-concept only: extract a few-hundred-triple friend graph, reify it, run
+`CircuitRun … P-plus.rq` on that — but label it a toy, not a scale number.)
+
+## C. Honest caveats now in the write-up (no action needed)
+TECHREPORT §13: (6) our OBDD blows up *faster* than `n^{O(tw)}` due to a naive DFS variable order —
+the d-DNNF≻OBDD conclusion still holds; (10) unbound/all-pairs shapes at 100M exceed GraphDB's HTTP
+CONSTRUCT limits; (11) the path round-bound above.
