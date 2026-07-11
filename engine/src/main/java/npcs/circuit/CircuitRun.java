@@ -7,6 +7,7 @@ import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -77,28 +78,28 @@ public final class CircuitRun {
             }
             Model circuit = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
             if (pathq != null) {
-                // property paths: CLIENT-DRIVEN ITERATIVE fixpoint. Count nodes to bound the
-                // rounds (simple-path bound N-1), then INIT, loop STEP feeding each round back
-                // into the store so the next round's WHERE can read reach^k, then FINAL.
-                int n;
+                // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round
+                // bound. INIT, then loop STEP, feeding each round back into the store; stop after
+                // |V_s|-1 rounds where V_s = the nodes actually reached SO FAR (discovered live from the
+                // reach gates' c:rfrom/c:rto). A simple path in the reachable subgraph has <= |V_s|-1
+                // edges, so |V_s|-1 rounds capture every simple path -> exact provenance -- while
+                // |V_s| << the global node count keeps a bounded/sparse query feasible.
+                int nGlobal;
                 try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
-                    n = ((Literal) r.next().getValue("c")).intValue();
+                    nGlobal = ((Literal) r.next().getValue("c")).intValue();
                 }
-                int rounds = Math.max(1, n - 1);
-                System.err.println("# ---- property-path plan: nodes=" + n + ", rounds=" + rounds + " ----");
-                java.util.List<String> constructs = new java.util.ArrayList<>(pathq.init());
-                for (int k = 0; k < rounds; k++) constructs.addAll(pathq.step(k));
-                constructs.addAll(pathq.projectAnswers(rounds));
-                int i = 0;
-                for (String c : constructs) {
-                    System.err.println("# --- path CONSTRUCT " + (++i) + " ---\n" + c);
-                    Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
-                    try (GraphQueryResult res = con.prepareGraphQuery(c).evaluate()) {
-                        m.addAll(QueryResults.asModel(res));
-                    }
-                    circuit.addAll(m);
-                    con.add(m);                 // FEEDBACK: materialize this round for the next
+                int cap = Math.max(1, nGlobal - 1);            // global upper bound (safety net)
+                java.util.Set<String> reachNodes = new java.util.HashSet<>();
+                for (String c : pathq.init()) runFeed(con, circuit, reachNodes, c);
+                int k = 0, lastLevel = 0;
+                while (k < cap) {
+                    for (String c : pathq.step(k)) runFeed(con, circuit, reachNodes, c);
+                    lastLevel = ++k;
+                    if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
                 }
+                for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
+                System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
+                    + ", rounds=" + lastLevel + " (global-N cap=" + cap + ") ----");
             } else {
                 java.util.List<String> planQueries = rw.plan(query);
                 System.err.println("# ---- circuit construction plan: " + planQueries.size() + " CONSTRUCT(s) ----");
@@ -116,5 +117,31 @@ public final class CircuitRun {
             System.err.println("# circuit triples: " + circuit.size());
         }
         repo.shutDown();
+    }
+
+    /** Run one path-round CONSTRUCT, add its triples to the accumulated circuit AND back into the
+     *  store (feedback for the next round), and record any reach-gate endpoints (c:rfrom/c:rto) so the
+     *  caller can bound the loop by the live reachable-set size |V_s|. */
+    private static void runFeed(RepositoryConnection con, Model circuit,
+                                java.util.Set<String> reachNodes, String construct) {
+        Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+        try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
+            m.addAll(QueryResults.asModel(res));
+        }
+        circuit.addAll(m);
+        con.add(m);
+        // reachable-subgraph nodes = endpoints of the reach LEVEL gates (rlvl 0,1,2,...); the base
+        // relation (rlvl "base") is all-pairs over the WHOLE graph, so exclude it from the bound.
+        java.util.Set<String> baseGates = new java.util.HashSet<>();
+        for (Statement st : m)
+            if (st.getPredicate().stringValue().equals("urn:circuit:rlvl")
+                    && st.getObject().stringValue().equals("base"))
+                baseGates.add(st.getSubject().stringValue());
+        for (Statement st : m) {
+            String p = st.getPredicate().stringValue();
+            if ((p.equals("urn:circuit:rfrom") || p.equals("urn:circuit:rto"))
+                    && !baseGates.contains(st.getSubject().stringValue()))
+                reachNodes.add(st.getObject().stringValue());
+        }
     }
 }

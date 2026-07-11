@@ -457,10 +457,13 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
     CONSTRUCT transfer/timeout (E3 unbound-100M failed with IncompleteRead/http; 10M completed but slow,
     e.g. star ≈ 8 min). The circuit route targets *selective/bounded* queries at scale; huge result sets
     need streaming/pagination (future work).
-11. **Property-path loop bound** — `CircuitRun` runs `N−1` rounds where `N` is the *global* distinct-node
-    count, so property paths are currently feasible only on small graphs / small reachable subgraphs. A
-    reachable-set (early-stop) round bound is needed before paths run on the full 100M graph; scale
-    evidence for paths is therefore gathered on the extracted `friendOf` subgraph, not the whole KG.
+11. **Property-path loop cost** — `CircuitRun` bounds the reach loop by `|V_s|−1` rounds, where `V_s` is
+    the source's *reachable* subgraph (discovered live from the reach gates), **not** the global node
+    count — so a bounded/sparse-reach path query is feasible and stays *exact* (a simple path in the
+    reachable subgraph has ≤ `|V_s|−1` edges). Residual costs: the all-pairs base relation is still
+    materialized once (`O(|E|)` in a single CONSTRUCT), and a densely-connected reachable set still needs
+    `~|V_s|` rounds (inherent to exact reachability provenance). Not yet done: a source-restricted base
+    (materialize base only for reachable edges) and nested closures.
 
 ---
 

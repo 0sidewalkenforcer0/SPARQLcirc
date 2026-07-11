@@ -153,3 +153,26 @@ toy proof-of-concept only: extract a few-hundred-triple friend graph, reify it, 
 TECHREPORT §13: (6) our OBDD blows up *faster* than `n^{O(tw)}` due to a naive DFS variable order —
 the d-DNNF≻OBDD conclusion still holds; (10) unbound/all-pairs shapes at 100M exceed GraphDB's HTTP
 CONSTRUCT limits; (11) the path round-bound above.
+
+---
+
+# ROUND 3 — property paths are now runnable
+
+The Round-2 §B blocker is fixed: `CircuitRun` now bounds the reach loop by `|V_s|-1` rounds, where
+`V_s` is the source's *reachable* subgraph (discovered live), not the global node count — so a
+bounded-source path is feasible and exact. Also: the base relation is built from the path's predicate
+only (e.g. friendOf edges), not the whole KG, so you can run directly on the reified WatDiv (no
+subgraph extraction needed). **`git pull` first** to get the fix.
+
+Run the paths via `CircuitRun` (iterative), e.g.:
+```bash
+java -cp engine/target/npcs-rewrite.jar npcs.circuit.CircuitRun \
+     Standard /data/watdiv/base.reified.nt reference/watdiv/P-plus.rq  2>plan.txt >circ.nt
+grep "property-path plan" plan.txt      # reports reachable-nodes + rounds actually run
+```
+For each of `P-plus.rq` (single-source), `P-plus-all.rq` (all-pairs — 10M only), `P-star.rq`,
+`P-alt.rq`, record in a **"Property paths"** section of `RESULTS.md`: reachable-nodes, rounds,
+gates+edges, build_ms, answers, and a WMC == possible-world spot-check on a small friend subgraph.
+Report `P-plus` (single-source) vs `P-plus-all` (all-pairs) gate counts — the ratio should grow ~`|V|`.
+Caveat: if `User0`'s friendOf reach is a large connected component, `|V_s|` (hence rounds) is large —
+that's inherent to exact reachability provenance; pick a user with bounded reach, or use 10M, and note it.
