@@ -120,3 +120,53 @@ Merged code (with the 3 server fixes) re-verified green on the dev side.
 - **E7** is 3 tiny instances (8–24 triples); the takeaway is exactness-equivalence + unmodified engine,
   NOT the toy-scale timing.
 - **E3 star** construction overhead grows with scale (3.2×→6.8×) — build ∝ #derivations.
+
+---
+
+## Round 2A — MINUS at scale (non-monotone construction)
+
+The ⊖ (monus) contribution, run on the deployed engine. MINUS emits a **multi-CONSTRUCT** plan
+(⊕_P1, ⊕_P2, compatible-join, ⊖), so the single-POST one-shot flow can't send it as one query; the
+harness (`e6_minus.py`) posts each plan CONSTRUCT separately and dedups. Source auto-bound for
+selectivity (as the baselines run the official templates). `M-minus` = likes ∖ purchased (2 shared
+vars → ⊖ stays under binding); `M-minus2` = purchasers ∖ likers (single shared var = the answer, so
+binding degenerates the guarded MINUS to a no-op — it must run unbound).
+
+| query | scale | src | plan | build_ms | plain_ms | c | deriv(⊗) | **minus(⊖)** | gates | answers | share | WMC==PWE |
+|---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| M-minus | 10M | User10003 | 4 | 48 | 9 | 5.5 | 2 | **2** | 10 | 2 | 0.30× | Δ=0.0 |
+| M-minus | 100M | User100000 | 4 | 93 | 7 | 12.9 | 3 | **3** | 15 | 3 | 0.30× | Δ=1.1e-16 |
+
+- **Non-monotone construction works on the stock engine at 10M and 100M**, with correct ⊖ gates and
+  `circuit WMC == possible-world enumeration` (Δ ≤ 1e-16). *Source:* `e6_minus.py` → `e6_minus_{10M,100M}.csv`.
+- **Caveats (honest):** (i) `M-minus2`'s only shared variable is the answer, so a bound source turns
+  the guarded MINUS into a no-op — it needs the unbound form. (ii) The **unbound** MINUS at 10M is too
+  slow to finish here — its ⊕_P2 compatible-join is an expensive full join (the same all-pairs wall as
+  E3 unbound); the **selective/bound** route is the practical one at scale.
+
+## Round 3 — property paths (recursive provenance — our contribution)
+
+Run via `CircuitRun`'s iterative protocol with the dev's **reachable-set round bound** (`|V_s|−1`
+rounds over the source's *reachable* subgraph, discovered live — not the ~10⁶ global-node count that
+would hang). On a **bounded friendOf subgraph of real WatDiv edges** (BFS-induced from User15187,
+80 nodes / 80 edges — a single real user's *full* friendOf reach is a giant component, infeasible per
+user, so we bound it and note it).
+
+| query | operator | reach-nodes | rounds | build_ms | ⊗ | ⊕ | gates | edges | answers |
+|---|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| P-plus | `friendOf+` (single-source) | 80 | 79 | 1874 | 159 | 6479 | 6638 | 6796 | 79 |
+| P-star | `friendOf*` | 80 | 79 | 2727 | 6400 | 6560 | 12960 | 25678 | 80 |
+| P-alt | `(friendOf│^friendOf)+` (undirected) | 80 | 79 | 2990 | 12641 | 6639 | 19280 | 44401 | 80 |
+| P-plus-all | `friendOf+` (all-pairs) | 80 | 79 | 1931 | 159 | 6560 | 6719 | 80 |
+
+- **All four operators build exact circuits** on real friendOf edges; the level-indexed fixpoint keeps
+  the DAG acyclic even though friendOf is cyclic. **WMC == PWE** spot-check on a tiny 11-token subgraph:
+  **max\|Δ\| = 5.6e-16** ✅. *Source:* `e_paths.py` → `e_paths.csv`.
+- **all-pairs / single-source ratio = 1.0×** here (not the predicted ~\|V\|): the extracted subgraph is a
+  BFS-*tree* rooted at the source, so single-source already reaches all 80 while other sources reach
+  little. The ~\|V\| ratio needs strongly-connected structure — shown on synthetic graphs below.
+- **Synthetic ring/clique (`path_demo.py`)** — where naive walk enumeration is *infinite*:
+  circuit WMC == PWE on a cyclic graph (all pairs exact); **ring** `|V|=n` → gates **≈ n²**
+  (`gates/n²`: 1.156→1.070→1.033→**1.016** for n=8→64); **clique** n=3…6 → gates 98→364→967→**2111**
+  (polynomial) while the number of simple paths is `~e·(n−2)!` (factorial). The circuit stays
+  polynomial where enumeration is intractable — the property-path claim.

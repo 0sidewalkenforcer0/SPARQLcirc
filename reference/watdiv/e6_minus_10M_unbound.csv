@@ -1,0 +1,3 @@
+query,repo,mode,status,note
+M-minus,watdiv,unbound,too-slow,"unbound compatible-join (⊕_P2) build exceeds practical limit at 10M; selective/bound is the path (cf. E3 unbound)"
+M-minus2,watdiv,unbound,too-slow,same

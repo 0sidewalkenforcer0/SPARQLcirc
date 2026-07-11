@@ -63,6 +63,7 @@ def bind_source(q):
     from the projection (it is now a constant) and substituted ONLY in the WHERE clause; if
     that empties the projection (e.g. a star whose only answer var is the hub), the first
     remaining object variable is projected instead. Returns (bound_query, iri) or (q, None)."""
+    q = re.sub(r"#[^\n]*", "", q)                          # strip SPARQL comments (may contain '{' or 'MINUS')
     if "+" in q or "*" in q or "/" in q.split("{")[-1]:
         return q, None                                     # property path -> not this flow
     pfx = _prefixes(q)

@@ -1,0 +1,5 @@
+query,status,reach_nodes,rounds,build_ms,times,plus,gates,edges,answers
+P-plus,ok,80,79,1874,159,6479,6638,6796,79
+P-star,ok,80,79,2727,6400,6560,12960,25678,80
+P-alt,ok,80,79,2990,12641,6639,19280,44401,80
+P-plus-all,ok,80,79,1931,159,6560,6719,6877,80
