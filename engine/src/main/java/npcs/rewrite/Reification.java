@@ -34,6 +34,29 @@ public enum Reification {
             String o = Terms.render(sp.getObjectVar());
             return "\t<< " + s + " " + p + " " + o + " >> <" + OCCURRENCE_OF + "> ?" + provVar + " . \n";
         }
+    },
+
+    /**
+     * Wikidata's native statement reification (matches NPCS's "Wikidatareal"): a direct triple
+     * {@code s wdt:P o} is encoded as {@code s p:P ?prov . ?prov ps:P o}, so the STATEMENT NODE is
+     * the provenance token. The predicate must be a constant {@code wdt:} (prop/direct) IRI; the
+     * data must be reified into the same p:/ps: form (see reference/wikidata/reify_wikidata.py).
+     */
+    WIKIDATA {
+        @Override
+        public String reify(StatementPattern sp, String provVar) {
+            String s = Terms.render(sp.getSubjectVar());
+            String o = Terms.render(sp.getObjectVar());
+            org.eclipse.rdf4j.model.Value pv = sp.getPredicateVar().getValue();
+            if (pv == null || !pv.stringValue().startsWith(WDT_DIRECT)) {
+                throw new UnsupportedOperationException(
+                    "Wikidata reification needs a constant wdt: (prop/direct) predicate; got: "
+                    + (pv == null ? "a variable" : pv.stringValue()));
+            }
+            String local = pv.stringValue().substring(WDT_DIRECT.length());   // e.g. "P35"
+            return "\t" + s + " <" + WD_PROP + local + "> ?" + provVar + " . \n"
+                 + "\t?" + provVar + " <" + WD_STATEMENT + local + "> " + o + " . \n";
+        }
     };
 
     static final String RDF_SUBJECT   = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
@@ -41,6 +64,10 @@ public enum Reification {
     static final String RDF_OBJECT    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
     // Placeholder predicate for the SPARQL-star occurrence link; must match the reified data's convention.
     static final String OCCURRENCE_OF = "http://example.org/occurrenceOf";
+    // Wikidata statement-reification namespaces: wdt:P (direct) -> p:P (claim) + ps:P (statement value).
+    static final String WDT_DIRECT   = "http://www.wikidata.org/prop/direct/";
+    static final String WD_PROP      = "http://www.wikidata.org/prop/";
+    static final String WD_STATEMENT = "http://www.wikidata.org/prop/statement/";
 
     /** Encode one triple pattern, binding the statement to {@code ?provVar}. */
     public abstract String reify(StatementPattern sp, String provVar);
@@ -50,10 +77,11 @@ public enum Reification {
         switch (name) {
             case "Standard":    return STANDARD;
             case "SPARQL_Star": return SPARQL_STAR;
+            case "Wikidata":    return WIKIDATA;
             default:
                 throw new IllegalArgumentException(
                     "Unsupported reification scheme: " + name
-                    + " (supported: Standard, SPARQL_Star)");
+                    + " (supported: Standard, SPARQL_Star, Wikidata)");
         }
     }
 }
