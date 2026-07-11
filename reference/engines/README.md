@@ -21,6 +21,12 @@ byte-identity result (E3), now across independent implementations.
 
 \* read-only engines run property paths only once the VALUES-inline loop lands (see below).
 
+**Reification schemes** (the `--scheme` / first `CircuitRun` arg): `Standard` (plain rdf:subject/…triples,
+loadable anywhere), `SPARQL_Star` (compact, needs an RDF-star engine — avoids the 3× blow-up), and
+`Wikidata` (the server-added NPCS-matching Wikidata statement model — also plain triples). **For Wikidata
+data use `--scheme Wikidata`**: it matches NPCS's reification *and*, being plain-triple, loads on the
+read-only engines (QLever/MillenniumDB) that have no RDF-star support.
+
 ## The one constraint: writable vs read-only
 
 - **Non-path** queries (BGP / UNION / MINUS / OPTIONAL) are a **read-only** multi-CONSTRUCT plan → run on
