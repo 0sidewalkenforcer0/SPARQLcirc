@@ -1,0 +1,4 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# UNION: people who are scientists (Q901) OR mathematicians (Q170790) by occupation.
+SELECT ?p WHERE { { ?p wdt:P106 wd:Q901 } UNION { ?p wdt:P106 wd:Q170790 } }

@@ -1,0 +1,4 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# OPTIONAL: scientists, optionally attaching country of citizenship.
+SELECT ?p ?c WHERE { ?p wdt:P106 wd:Q901  OPTIONAL { ?p wdt:P27 ?c } }

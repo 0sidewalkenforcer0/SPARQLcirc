@@ -1,0 +1,5 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# PROPERTY PATH - transitive administrative containment, single-source: the places that contain
+# New York City (Q60) via wdt:P131+ (city -> state -> country). RUN VIA CircuitRun.
+SELECT ?admin WHERE { wd:Q60 wdt:P131+ ?admin }

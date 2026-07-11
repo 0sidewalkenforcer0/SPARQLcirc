@@ -1,0 +1,6 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# PROPERTY PATH (our contribution) - transitive subclass-of hierarchy, single-source (bounded reach):
+# all superclasses of "software" (Q7397) via wdt:P279+. Small reachable set -> feasible with the
+# reachable-set-bounded loop. RUN VIA CircuitRun.
+SELECT ?super WHERE { wd:Q7397 wdt:P279+ ?super }

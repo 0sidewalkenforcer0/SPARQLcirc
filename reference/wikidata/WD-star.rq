@@ -1,0 +1,4 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# BGP / star (selective): people whose occupation is scientist (Q901) AND citizen of the USA (Q30).
+SELECT ?p WHERE { ?p wdt:P106 wd:Q901 . ?p wdt:P27 wd:Q30 . }

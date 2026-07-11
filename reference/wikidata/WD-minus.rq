@@ -1,0 +1,4 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+# MINUS (non-monotone, shares ?p): scientists who are NOT US citizens.
+SELECT ?p WHERE { ?p wdt:P106 wd:Q901  MINUS { ?p wdt:P27 wd:Q30 } }

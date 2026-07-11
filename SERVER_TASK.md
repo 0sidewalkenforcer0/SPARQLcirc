@@ -176,3 +176,28 @@ gates+edges, build_ms, answers, and a WMC == possible-world spot-check on a smal
 Report `P-plus` (single-source) vs `P-plus-all` (all-pairs) gate counts — the ratio should grow ~`|V|`.
 Caveat: if `User0`'s friendOf reach is a large connected component, `|V_s|` (hence rounds) is large —
 that's inherent to exact reachability provenance; pick a user with bounded reach, or use 10M, and note it.
+
+---
+
+# ROUND 4 — large-scale datasets: Wikidata + TPC-H (VLDB-scale comparability)
+
+VLDB expects large-data results, and the baselines used these exact datasets. Add both. `git pull` first.
+
+## A. Wikidata (PRIMARY — full fit; matches SPARQLprov 942M + NPCS/WDBench)
+Data: the Wikidata **truthy** dump (`wdt:` direct predicates) or the WDBench graph (matches NPCS). Reify
+(`reference/watdiv/reify.py` works on any `.nt`), load into GraphDB. **Keep the dump OUTSIDE the repo.**
+Queries: `reference/wikidata/*.rq` (real `wdt:` predicates; see `reference/wikidata/README.md`).
+- One-shot flow (set `WATDIV_QDIR=reference/wikidata`, but **exclude** `WD-path*.rq` — they need CircuitRun):
+  `WD-star`, `WD-union`, `WD-minus`, `WD-opt`.
+- Paths via `CircuitRun` (iterative, reachable-bounded, single-source small reach): `WD-path` (`P279+`
+  superclasses of software), `WD-path2` (`P131+` containers of NYC). Report reachable-nodes + rounds.
+Report a **"Wikidata"** section in `RESULTS.md` (build_ms, gates, edges, answers, share; paths:
+reachable-nodes, rounds, gates, build). This is the headline large-scale + real-KG property-path result.
+
+## B. TPC-H (SECONDARY — comparability, aggregation-limited)
+See `reference/tpch/README.md`. TPC-H is aggregation-heavy and we do NOT do aggregation, so run only the
+**non-aggregate SPJ/MINUS skeleton** (= SPARQLprov "base non-aggregate"). Needs a `dbgen`→RDF
+direct-mapping converter we don't ship yet — write a small one, or, if time-constrained, report that TPC-H
+was descoped in favour of the Wikidata full-fit result. Scale factors `10^{i/4-2}` (1.2M–123M) to match SPARQLprov.
+
+**Priority: Wikidata first (high value); TPC-H if time permits.** Both are E8/E9 in `EVALUATION.md`.
