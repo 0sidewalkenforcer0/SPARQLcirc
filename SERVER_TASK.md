@@ -201,3 +201,30 @@ direct-mapping converter we don't ship yet — write a small one, or, if time-co
 was descoped in favour of the Wikidata full-fit result. Scale factors `10^{i/4-2}` (1.2M–123M) to match SPARQLprov.
 
 **Priority: Wikidata first (high value); TPC-H if time permits.** Both are E8/E9 in `EVALUATION.md`.
+
+---
+
+# ROUND 5 — multi-engine study (strengthen Claim A: unmodified, engine-agnostic)
+
+Everything lives in `reference/engines/` (registry `engines.json`, driver `run_engine.py`, per-engine
+setup docs, hub `README.md`). `CircuitRun` is now engine-configurable via env vars
+(`CIRCUIT_UPDATE_ENDPOINT`, `CIRCUIT_SKIP_LOAD`, `CIRCUIT_READONLY`) — GraphDB behaviour unchanged when unset.
+
+**Four engines added** (+ Virtuoso/Stardog registry entries for the baselines):
+- **Fuseki** (writable, SPARQLprov's engine; already in `pilot/tools/apache-jena-fuseki-5.2.0`)
+- **Oxigraph** (writable, independent Rust implementation)
+- **QLever** (read-only, Wikidata-scale non-path)
+- **MillenniumDB** (read-only, property-path SOTA — non-path for now)
+
+**Constraint:** non-path (BGP/UNION/MINUS/OPTIONAL) runs on ANY engine; property paths need a WRITABLE
+engine (the iterative loop INSERTs each round). Read-only engines auto-skip path queries (exit 3). The
+planned VALUES-inline path loop would unlock QLever/MillenniumDB for bounded paths — NOT yet implemented.
+
+**Two results to produce:**
+1. **Byte-identity (E10, Claim A).** Load the *same* WatDiv slice, run the same query set on **GraphDB +
+   Fuseki + Oxigraph**; `circuit_sha256` must be identical across all three (independent codebases, one
+   non-Java). `python3 engines/run_engine.py --engine {graphdb,fuseki,oxigraph} --data <slice> --queries ...`
+2. **Scale non-path.** Run non-path Wikidata queries on **QLever** at full-Wikidata scale (E8 large-scale
+   construction datapoint). MillenniumDB = same, plus cite it for path-answer performance.
+
+Rebuild the engine first (`cd engine && mvn -q package`) so the env-var support is present, then `git pull`.

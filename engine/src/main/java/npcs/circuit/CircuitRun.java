@@ -39,8 +39,13 @@ public final class CircuitRun {
             System.err.println("Usage: CircuitRun <Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
             System.err.println("  With an endpoint URL, the circuit is built on that engine (e.g. GraphDB) instead");
             System.err.println("  of in-memory RDF4J -- the SAME standard-SPARQL-1.1 CONSTRUCTs, so the circuit is");
-            System.err.println("  byte-identical across engines. The endpoint must be WRITABLE (the iterative path");
-            System.err.println("  protocol INSERTs each round's gates back).");
+            System.err.println("  byte-identical across engines. Non-path queries are read-only CONSTRUCTs (run on");
+            System.err.println("  ANY SPARQL 1.1 engine); property paths need a WRITABLE endpoint. Per-engine env:");
+            System.err.println("    CIRCUIT_UPDATE_ENDPOINT=<url>  (default <endpoint>/statements = GraphDB/RDF4J;");
+            System.err.println("                                    Fuseki/Oxigraph = <base>/update, Virtuoso = /sparql)");
+            System.err.println("    CIRCUIT_SKIP_LOAD=1            (data already bulk-loaded on the engine)");
+            System.err.println("    CIRCUIT_READONLY=1            (engine has no SPARQL UPDATE: QLever/MillenniumDB)");
+            System.err.println("  See reference/engines/ for a profile per engine.");
             System.exit(2);
             return;
         }
@@ -49,34 +54,58 @@ public final class CircuitRun {
         String query = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
         String endpoint = args.length == 4 ? args[3] : null;
         RDFFormat fmt = args[1].endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
+        // Per-engine configuration via environment (script-friendly; GraphDB defaults unchanged when unset).
+        // Profiles for Fuseki/Oxigraph/QLever/MillenniumDB/Virtuoso/Stardog live in reference/engines/.
+        String updateEndpointEnv = System.getenv("CIRCUIT_UPDATE_ENDPOINT");   // override; else <endpoint>/statements
+        boolean skipLoad = "1".equals(System.getenv("CIRCUIT_SKIP_LOAD"));     // data pre-loaded via bulk import
+        boolean readOnly = "1".equals(System.getenv("CIRCUIT_READONLY"));      // engine exposes query only, no UPDATE
+        if (readOnly) skipLoad = true;                                         // read-only implies data pre-loaded
 
         CircuitRewriter rw = new CircuitRewriter(scheme);
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
 
         Repository repo;
         if (endpoint != null) {
-            // GraphDB / Fuseki / any SPARQL 1.1 endpoint. RDF4J-based servers (GraphDB) expose the
-            // SPARQL *update* endpoint at <repo>/statements while the query endpoint is <repo>; the
-            // single-URL constructor would POST updates to the query endpoint ("Missing parameter: query").
-            String updateEndpoint = endpoint.replaceAll("/+$", "") + "/statements";
-            SPARQLRepository sparql = new SPARQLRepository(endpoint, updateEndpoint);
+            // Any SPARQL 1.1 endpoint. The *update* endpoint differs per engine: GraphDB/RDF4J use
+            // <repo>/statements, Fuseki/Oxigraph use <base>/update, Virtuoso uses <base>/sparql -- override
+            // via CIRCUIT_UPDATE_ENDPOINT. Read-only engines (QLever/MillenniumDB) expose query only.
+            SPARQLRepository sparql;
+            if (readOnly) {
+                sparql = new SPARQLRepository(endpoint);               // query-only; no UPDATE is ever issued
+                System.err.println("# building on remote READ-ONLY endpoint (non-path only): " + endpoint);
+            } else {
+                String updateEndpoint = (updateEndpointEnv != null && !updateEndpointEnv.isEmpty())
+                    ? updateEndpointEnv : endpoint.replaceAll("/+$", "") + "/statements";
+                sparql = new SPARQLRepository(endpoint, updateEndpoint);
+                System.err.println("# building on remote endpoint: " + endpoint + "  (update: " + updateEndpoint + ")");
+            }
             sparql.init();
             repo = sparql;
-            System.err.println("# building the circuit on remote endpoint: " + endpoint);
         } else {
             repo = new SailRepository(new MemoryStore());
         }
         try (RepositoryConnection con = repo.getConnection()) {
-            try {
+            if (skipLoad) {
+                System.err.println("# CIRCUIT_SKIP_LOAD: assuming the (reified) data is already loaded on the engine");
+            } else try {
                 con.add(dataFile, "urn:base:", fmt);                   // in-memory: load; endpoint: INSERT (needs write access)
             } catch (RuntimeException e) {
                 if (endpoint != null) {
-                    System.err.println("# ERROR: could not write data to the endpoint (needs a WRITABLE repo for the "
-                        + "iterative protocol): " + e.getMessage());
+                    System.err.println("# ERROR: could not write data to the endpoint (needs a WRITABLE repo, or set "
+                        + "CIRCUIT_SKIP_LOAD=1 if the data is already loaded): " + e.getMessage());
                 }
                 throw e;
             }
             Model circuit = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+            if (pathq != null && readOnly) {
+                System.err.println("# ERROR: property-path queries need a WRITABLE endpoint -- the iterative protocol "
+                    + "INSERTs each round's reach gates back so the next CONSTRUCT can match them. This engine is "
+                    + "read-only (CIRCUIT_READONLY=1). Run non-path queries here; use a writable engine "
+                    + "(Fuseki/Oxigraph/GraphDB) for paths. (Planned read-only route: inline the prior round's gates "
+                    + "via VALUES instead of INSERT -- see reference/engines/README.md.)");
+                System.exit(3);
+                return;
+            }
             if (pathq != null) {
                 // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round
                 // bound. INIT, then loop STEP, feeding each round back into the store; stop after

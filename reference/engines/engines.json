@@ -1,0 +1,60 @@
+{
+  "_comment": "Engine registry for the multi-engine study. Endpoints are localhost defaults -- EDIT to your deployment (or pass --query-endpoint/--update-endpoint to run_engine.py). 'writable' engines run property paths (iterative INSERT); 'readonly' engines run non-path CONSTRUCTs only. 'reification' lists the schemes the engine supports (SPARQL_Star needs 'rdfstar': true).",
+
+  "graphdb": {
+    "role": "our primary + baseline-shared with NPCS",
+    "query": "http://localhost:7200/repositories/sparqlcirc",
+    "update": "http://localhost:7200/repositories/sparqlcirc/statements",
+    "writable": true, "readonly": false, "rdfstar": true,
+    "reification": ["Standard", "SPARQL_Star"], "paths": true, "scale": "10^9",
+    "note": "RDF4J-based; SPARQL update at <repo>/statements (CircuitRun default)."
+  },
+  "fuseki": {
+    "role": "baseline-shared with SPARQLprov; already in pilot/tools/apache-jena-fuseki-5.2.0",
+    "query": "http://localhost:3030/ds/query",
+    "update": "http://localhost:3030/ds/update",
+    "writable": true, "readonly": false, "rdfstar": true,
+    "reification": ["Standard", "SPARQL_Star"], "paths": true, "scale": "~10^9 (TDB2)",
+    "note": "Apache Jena Fuseki. Start with --update; GSP bulk endpoint at /ds/data."
+  },
+  "oxigraph": {
+    "role": "independent (Rust) implementation -- strongest cross-engine byte-identity",
+    "query": "http://localhost:7878/query",
+    "update": "http://localhost:7878/update",
+    "writable": true, "readonly": false, "rdfstar": true,
+    "reification": ["Standard", "SPARQL_Star"], "paths": true, "scale": "~10^8",
+    "note": "Single MIT binary; GSP at /store."
+  },
+  "qlever": {
+    "role": "Wikidata-scale non-path (billions of triples)",
+    "query": "http://localhost:7001",
+    "update": null,
+    "writable": false, "readonly": true, "rdfstar": false,
+    "reification": ["Standard"], "paths": false, "scale": "10^10 (full Wikidata)",
+    "note": "READ-ONLY: bulk-build the index offline; non-path only (CIRCUIT_READONLY=1). Paths need the VALUES-inline loop (see README)."
+  },
+  "millenniumdb": {
+    "role": "property-path SOTA (WDBench) -- ideal path target once read-only paths land",
+    "query": "http://localhost:1234/sparql",
+    "update": null,
+    "writable": false, "readonly": true, "rdfstar": false,
+    "reification": ["Standard"], "paths": false, "scale": "10^9 (WDBench/Wikidata)",
+    "note": "READ-ONLY: bulk import; non-path only for now. Check the build exposes a SPARQL endpoint (newer versions do)."
+  },
+  "virtuoso": {
+    "role": "baseline (SPARQLprov primary)",
+    "query": "http://localhost:8890/sparql",
+    "update": "http://localhost:8890/sparql",
+    "writable": true, "readonly": false, "rdfstar": false,
+    "reification": ["Standard"], "paths": true, "scale": "10^10",
+    "note": "Open-source edition; updates may need /sparql-auth + credentials."
+  },
+  "stardog": {
+    "role": "baseline (NPCS)",
+    "query": "http://localhost:5820/sparqlcirc/query",
+    "update": "http://localhost:5820/sparqlcirc/update",
+    "writable": true, "readonly": false, "rdfstar": true,
+    "reification": ["Standard", "SPARQL_Star"], "paths": true, "scale": "10^9",
+    "note": "Commercial; free academic license."
+  }
+}
