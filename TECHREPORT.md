@@ -468,20 +468,31 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 ---
 
 ## 14. Related work (cite + distinguish)
-NPCS (Asma et al., WWW'24) and its federated/journal extension (TGDK'26) — native provenance
-*rewriting* producing strings; we reproduce its `β` and replace the leaf ops with gate constructors.
-**spm/Geerts (2016)** — algebraic provenance of SPARQL, the ⊕/⊗/⊖ semantics and the OPTIONAL-via-DIFF
-decomposition. **ProvSQL** — provenance circuits + knowledge compilation in modified PostgreSQL
-(the closest baseline; our axis of difference is *unmodified engine + native RDF*). **SPARQLprov**
-(Galárraga et al., PVLDB'21) — query-rewriting how-provenance on a *stock* engine, on the **same**
-spm-semiring with monus ⊖; handles UNION/OPTIONAL/**MINUS** (excludes aggregation & property paths),
-emitting *per-answer* polynomials (shared subterms repeated), not a shared circuit and no probabilities.
-Its released rewriter realizes MINUS as *unguarded* DIFF (`A OPTIONAL B`) — sound on its shared-variable
-benchmark, but over-subtracts on disjoint operands (confirmed by counterexample). **Green et al. (2007)** —
-provenance semirings (positive fragment). **Grahne–Thomo (2020)** — provenance for regular path
-queries (relevant to the deferred property-path follow-up). **pSPARQL (Fang 2019)** — fuzzy, not
-possible-world; non-competitor. Companion **ProbSPARQL** (the author's probability model) — the
-semantics we compute, not a competitor.
+
+| system | engine | provenance form | exact PQE | datasets evaluated | UNION | OPT | MINUS | paths | aggreg. |
+|---|---|---|---|---|---|---|---|---|---|
+| **NPCS** (Asma et al., WWW'24) | stock RDF (GraphDB/Stardog) | per-answer spm strings | ✗ | WatDiv, **Wikidata/WDBench (~2B)** — *RDF-native only* | ✓ | ✓ | ✓ | ✗ | ✗ |
+| **SPARQLprov** (Galárraga et al., PVLDB'21) | stock RDF | per-answer spm strings | ✗ | WatDiv (100M), **TPC-H** (→RDF), Wikidata (942M) | ✓ | ✓ | ✓† | ✗ | ✓ (§4.4) |
+| **ProvSQL** (Senellart et al., VLDB'18) | **modified** PostgreSQL | shared circuit | ✓ | **TPC-H** | ✓ | ⋈⁺ | ✓ (monus) | ✗ | ✓ |
+| **SPARQL_circ (ours)** | **stock RDF** | **shared circuit (RDF DAG)** | ✓ | WatDiv, Wikidata, TPC-H (skeleton) | ✓ | ✓ | ✓ | **✓** | ✗ |
+
+†SPARQLprov's released rewriter realizes MINUS as *unguarded* DIFF (`A OPTIONAL B`) — sound on its
+shared-variable benchmark, over-subtracts on disjoint operands (confirmed by counterexample). ⋈⁺ = ProvSQL
+is relational (SPJU + difference + aggregation); OPTIONAL maps to left-outer-join, recursive paths are not
+expressible. **TPC-H is used only by the relational-heritage systems (SPARQLprov via direct mapping,
+ProvSQL natively); NPCS never runs it** — it is RDF-native (WatDiv + Wikidata/WDBench). So our TPC-H (E9)
+is a comparison vs SPARQLprov + ProvSQL, *not* NPCS; the NPCS comparison lives on WatDiv + Wikidata (E8).
+
+**Takeaways.** Only ProvSQL shares our *shared-circuit + exact PQE*, but it needs a **modified PostgreSQL**;
+we deliver the same on a **stock RDF engine**. NPCS/SPARQLprov run unmodified but emit *per-answer* strings
+(shared subterms repeated) with no probabilities. **Property-path provenance is uniquely ours**; the one
+capability the baselines have that we do not is **aggregation** (ProvSQL, and SPARQLprov §4.4).
+
+Lineage/other: **spm/Geerts (2016)** — algebraic SPARQL provenance, the ⊕/⊗/⊖ semantics + OPTIONAL-via-DIFF
+decomposition; we reproduce NPCS's `β` rewriting and replace the leaf ops with gate constructors.
+**Green et al. (2007)** — provenance semirings (positive fragment). **Grahne–Thomo (2020)** — provenance
+for regular path queries (basis for our path construction). **pSPARQL (Fang 2019)** — fuzzy, not
+possible-world; non-competitor. Companion **ProbSPARQL** — the probability model we compute, not a competitor.
 
 ---
 

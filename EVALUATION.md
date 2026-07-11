@@ -22,7 +22,7 @@ claim from the paper.
 | E6 Non-monotone | C | correct; ⊖ cost linear in operand size; baselines can't do it |
 | E7 End-to-end vs baselines | A,B,C | vs NPCS/SPARQLprov: PQE they lack (decode cost); vs ProvSQL: comparable PQE, unmodified engine |
 | E8 Wikidata (real-KG scale) | A,B,C | full fragment + **property paths** on a 10⁸–10⁹-triple real KG; matches SPARQLprov (942M) & NPCS (WDBench); paths (`P279+`/`P131+`) the baselines cannot do |
-| E9 TPC-H (relational→RDF scale) | A,B | **non-aggregate SPJ/MINUS skeleton** at 1.2M–123M (= SPARQLprov "base non-aggregate"); construction scaling on relational-derived RDF; aggregation is out of scope |
+| E9 TPC-H (relational→RDF scale) | A,B | **non-aggregate SPJ/MINUS skeleton** at 1.2M–123M (= SPARQLprov "base non-aggregate"); construction scaling on relational-derived RDF; aggregation out of scope. **Compares vs SPARQLprov + ProvSQL only — NPCS never ran TPC-H (it is RDF-native)** |
 
 ---
 
@@ -149,7 +149,7 @@ decoupled from KG size). Each experiment lives on one axis.
 | E6 | small enumerable + WatDiv **100M**/real-KG OPTIONAL/MINUS | ≤25 + 100M | exactness vs PWE, then scale |
 | E7 | WatDiv **10M–100M** (baseline-limited) + real-KG subset | ≤ what ProvSQL/PG finish | fair head-to-head; show where string baselines OOM |
 | E8 | Wikidata truthy dump / WDBench graph | **10⁸–10⁹** triples | real-KG scale; comparability with SPARQLprov (942M) & NPCS; property paths on `P279`/`P131` hierarchies (single-source, bounded reach). Queries: `reference/wikidata/*.rq` |
-| E9 | TPC-H → RDF (direct mapping) | 1.2M–123M (SF `10^{i/4-2}`) | comparability with SPARQLprov & ProvSQL; **non-aggregate SPJ/MINUS only** (no aggregation). Plan: `reference/tpch/README.md` |
+| E9 | TPC-H → RDF (direct mapping) | 1.2M–123M (SF `10^{i/4-2}`) | comparability with SPARQLprov & ProvSQL **only (NPCS never ran TPC-H)**; **non-aggregate, filter-free SPJ/MINUS only**; **per-row (`naryrel`) provenance**. Plan: `reference/tpch/README.md` |
 
 - **`base.nt` (51K) is retired** to a CI/smoke correctness fixture — it is *not* an experiment dataset (3–4 orders below the VLDB bar).
 - **In-memory `watdiv_factor.py` is small-scale only** (can't hold 100M in RAM); the 100M E5 runs through the engine (CONSTRUCT on GraphDB), not the Python in-memory factor.
