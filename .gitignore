@@ -27,3 +27,6 @@ reference/families/
 engine/*.nt
 engine/err.txt
 circ.nt
+
+# generated results page (rebuilt by reference/build_artifact.py from watdiv/figures/)
+reference/watdiv/results_page.html

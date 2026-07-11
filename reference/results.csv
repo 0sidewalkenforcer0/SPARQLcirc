@@ -1,0 +1,9 @@
+instance,cnf,nvars,nclauses,expected_wmc,obdd_size,ddnnf_nodes,ddnnf_edges,d4_wmc,match
+"drug_[(z,Omeprazole)]","drug_[(z,Omeprazole)].cnf",8,12,0.774297708,5,6,9,0.774298,True
+"drug_[(z,Clopidogrel)]","drug_[(z,Clopidogrel)].cnf",5,7,0.3588,3,2,1,0.3588,True
+"selfjoin_[(d,B)]","selfjoin_[(d,B)].cnf",6,12,0.75,2,4,5,0.75,True
+"minus_[(x,Alice)]","minus_[(x,Alice)].cnf",11,19,0.195,3,4,5,0.195,True
+"minus_[(x,Bob)]","minus_[(x,Bob)].cnf",6,11,0.6,1,2,1,0.6,True
+"optional_[(x,Bob)]","optional_[(x,Bob)].cnf",6,11,0.6,1,2,1,0.6,True
+"optional_[(c,Italy),(x,Alice)]","optional_[(c,Italy),(x,Alice)].cnf",6,10,0.455,4,6,7,0.455,True
+"optional_[(x,Alice)]","optional_[(x,Alice)].cnf",11,19,0.195,3,4,5,0.195,True

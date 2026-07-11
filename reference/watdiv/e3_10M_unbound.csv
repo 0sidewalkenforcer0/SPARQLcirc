@@ -1,0 +1,4 @@
+query,bound,status,build_ms,plain_ms,c_overhead,deriv,gates,edges,answers,T_string,T_circ,share
+S-star,False,ok,485953,96984,5.01,267784,268583,1071136,799,803352,1339719,0.6
+F-snow,False,ok,10618,1491,7.12,62863,64890,314315,2027,251452,379205,0.663
+L-path,False,ok,123901,19212,6.45,938669,1834500,3754676,895831,2816007,5589176,0.504

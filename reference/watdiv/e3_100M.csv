@@ -1,0 +1,4 @@
+query,bound,status,build_ms,plain_ms,c_overhead,deriv,gates,edges,answers,T_string,T_circ,share
+S-star,True,ok,515,76,6.76,855,874,3420,19,2565,4294,0.597
+F-snow,True,ok,19,9,2.08,25,26,125,1,100,151,0.662
+L-path,True,ok,23,14,1.6,79,158,316,79,237,474,0.5
