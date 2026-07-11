@@ -1,0 +1,4 @@
+query,bound,status,build_ms,plain_ms,c_overhead,deriv,gates,edges,answers,T_string,T_circ,share
+P2-path,False,ok,9,5,1.86,13,26,39,13,26,65,0.4
+P2-unbound,False,ok,3227,1723,1.87,149998,299996,449994,149998,299996,749990,0.4
+S-star,False,ok,7,4,1.85,54,108,216,54,162,324,0.5

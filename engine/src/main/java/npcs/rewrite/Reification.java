@@ -57,6 +57,25 @@ public enum Reification {
             return "\t" + s + " <" + WD_PROP + local + "> ?" + provVar + " . \n"
                  + "\t?" + provVar + " <" + WD_STATEMENT + local + "> " + o + " . \n";
         }
+    },
+
+    /**
+     * n-ary-relationship reification (matches SPARQLprov's "naryrel" + ProvSQL's granularity): the
+     * provenance token is the SUBJECT (the row entity), not a reified triple. The data stays PLAIN
+     * (no reification) -- every triple about a row shares that row's token, so provenance is PER-ROW.
+     * Intended for relational-derived RDF (the TPC-H direct mapping) where a row's attributes are ONE
+     * uncertain unit; write skeletons with one pattern per row so each row contributes one token.
+     * Unlike the other schemes, the predicate may be a variable (the token is the subject regardless).
+     */
+    NARYREL {
+        @Override
+        public String reify(StatementPattern sp, String provVar) {
+            String s = Terms.render(sp.getSubjectVar());
+            String p = Terms.render(sp.getPredicateVar());
+            String o = Terms.render(sp.getObjectVar());
+            return "\t" + s + " " + p + " " + o + " . \n"
+                 + "\tBIND(" + s + " AS ?" + provVar + ") \n";
+        }
     };
 
     static final String RDF_SUBJECT   = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
@@ -78,10 +97,11 @@ public enum Reification {
             case "Standard":    return STANDARD;
             case "SPARQL_Star": return SPARQL_STAR;
             case "Wikidata":    return WIKIDATA;
+            case "naryrel":     return NARYREL;
             default:
                 throw new IllegalArgumentException(
                     "Unsupported reification scheme: " + name
-                    + " (supported: Standard, SPARQL_Star, Wikidata)");
+                    + " (supported: Standard, SPARQL_Star, Wikidata, naryrel)");
         }
     }
 }

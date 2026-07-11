@@ -1,0 +1,8 @@
+# GraphDB importrdf preload temp-sort files (E8 pipeline cd's into reference/)
+plists_q
+pos_q
+pso_q
+# transient harness scratch
+engines/_empty.ttl
+__pycache__/
+*.pyc

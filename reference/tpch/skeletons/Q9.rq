@@ -1,0 +1,2 @@
+BASE <http://example.org/>
+SELECT ?line WHERE { ?ps <ps_partkey> ?part . ?ps <ps_suppkey> ?supp . ?line <l_partkey> ?part . ?line <l_suppkey> ?supp . ?line <l_orderkey> ?order . ?supp <s_nationkey> ?nat . }

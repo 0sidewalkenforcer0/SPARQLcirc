@@ -1,0 +1,2 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+SELECT ?p ?prod WHERE { ?u wsdbm:makesPurchase ?p . ?p wsdbm:purchaseFor ?prod . }

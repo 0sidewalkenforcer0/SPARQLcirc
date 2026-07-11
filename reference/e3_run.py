@@ -24,9 +24,12 @@ except ImportError:
     def tqdm(x, **k): return x
     tqdm.write = staticmethod(lambda *a, **k: print(*a))
 
-GDB = "http://localhost:7200"
+GDB = os.environ.get("SPARQLCIRC_BASE", "http://localhost:7200")
 REPO = os.environ.get("WATDIV_REPO", "watdiv")
-EP = f"{GDB}/repositories/{REPO}"
+# EP = the SPARQL 1.1 query endpoint the whole harness (e3/e6/e8/e9/bench) posts CONSTRUCTs to.
+# Defaults to the GraphDB repo; set SPARQLCIRC_ENDPOINT to point at ANY engine (Oxigraph/QLever/
+# MillenniumDB/...) for the E10 cross-engine portability runs -- same standard CONSTRUCTs, any store.
+EP = os.environ.get("SPARQLCIRC_ENDPOINT") or f"{GDB}/repositories/{REPO}"
 TIMEOUT = int(os.environ.get("E3_TIMEOUT", "300"))
 BOUND = os.environ.get("E3_BOUND", "1") != "0"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -63,7 +66,9 @@ def bind_source(q):
     from the projection (it is now a constant) and substituted ONLY in the WHERE clause; if
     that empties the projection (e.g. a star whose only answer var is the hub), the first
     remaining object variable is projected instead. Returns (bound_query, iri) or (q, None)."""
-    q = re.sub(r"#[^\n]*", "", q)                          # strip SPARQL comments (may contain '{' or 'MINUS')
+    # strip SPARQL comments (may contain '{' or 'MINUS') but NOT a '#' inside an IRI (e.g. rev#): match
+    # a full <...> first so its '#' is consumed as part of the IRI, only a bare '#' starts a comment.
+    q = re.sub(r"<[^>]*>|#[^\n]*", lambda m: m.group(0) if m.group(0)[0] == "<" else "", q)
     if "+" in q or "*" in q or "/" in q.split("{")[-1]:
         return q, None                                     # property path -> not this flow
     pfx = _prefixes(q)
@@ -75,9 +80,10 @@ def bind_source(q):
                      for i, (s, p, o) in enumerate(trips))
     finder = f"SELECT {src} WHERE {{ {where} }} LIMIT 1"
     try:
-        data = UP.urlencode({"query": finder}).encode()
-        req = U.Request(EP, data=data, method="POST")
-        req.add_header("Content-Type", "application/x-www-form-urlencoded"); req.add_header("Accept", "text/csv")
+        # direct SPARQL-query body (portable across GraphDB/QLever/Oxigraph/MillenniumDB; MDB
+        # doesn't accept the form-urlencoded variant)
+        req = U.Request(EP, data=finder.encode(), method="POST")
+        req.add_header("Content-Type", "application/sparql-query"); req.add_header("Accept", "text/csv")
         rows = U.urlopen(req, timeout=60).read().decode().splitlines()
     except Exception:
         return q, None

@@ -170,3 +170,33 @@ user, so we bound it and note it).
   (`gates/n²`: 1.156→1.070→1.033→**1.016** for n=8→64); **clique** n=3…6 → gates 98→364→967→**2111**
   (polynomial) while the number of simple paths is `~e·(n−2)!` (factorial). The circuit stays
   polynomial where enumeration is intractable — the property-path claim.
+
+## E9 — TPC-H (relational-derived RDF, per-row provenance)
+
+**Goal.** The circuit machinery is not WatDiv-specific: the same ⊕/⊗/⊖ construction works on
+relational data mapped to RDF, at ProvSQL/SPARQLprov **per-row** (tuple) granularity, incl.
+non-monotone anti-joins. Reproduces how SPARQLprov stresses a provenance engine on TPC-H.
+
+**Setup.** Official `dbgen` → direct mapping (`tpch/tbl_to_rdf.py`: row→`<Table/PK>`, column→bare
+predicate, FK→edge) — SF 0.01 = 1.26 M triples. New **`naryrel`** reification scheme (token = the row
+entity). Non-aggregate, filter-free SPJ/MINUS skeletons (SPARQLprov's base fragment).
+
+**Result** (SF 0.01, clean build_ms via GraphDB): Q3 1256 ms, Q10 1712 ms, Q5 15 755 ms (6-way join),
+Q9 20 386 ms (60 k derivations); **Mminus → 15 000 ⊖ gates** (non-monotone MINUS on TPC-H). WMC == PWE
+Δ = **5.6e-17** (exact). *Full write-up + tables:* [`tpch/RESULTS.md`](../tpch/RESULTS.md).
+
+## E10 — Engine portability (the circuit is engine-agnostic)
+
+**Goal.** The provenance circuit is materialized byte-identically by *unmodified* off-the-shelf SPARQL
+1.1 engines — the approach is not tied to one triple store. Enabled by the design: emitted CONSTRUCTs
+are SPARQL-1.1-only + deterministic, every gate IRI content-addressed via plain `SHA256`.
+
+**Result 1 — byte-identity.** All four engines (GraphDB · Oxigraph 0.5.9 · QLever 0.5.49 ·
+MillenniumDB v1.0.0), across 8 shapes (BGP / MINUS×4 / OPTIONAL×2 / UNION / DISTINCT), produce the
+**byte-identical** circuit; all four support the required `SHA256`. **Zero engine changes.**
+
+**Result 2 — build-time** (reified WatDiv 32.7 M): small circuits single-to-tens of ms on all; the
+large circuit (P2-unbound, ~300 k gates) is construction-dominated and engines diverge sharply —
+QLever 3.2 s, MillenniumDB 17 s, Oxigraph 493 s (~150×) — the *same* 149 998-derivation circuit
+everywhere (engine choice trades construction speed, never correctness). *Full write-up + matrix:*
+[`engines/RESULTS.md`](../engines/RESULTS.md). (RDFox deferred — academic license.)
