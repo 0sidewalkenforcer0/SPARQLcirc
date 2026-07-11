@@ -124,6 +124,7 @@ public final class CircuitRun {
      *  caller can bound the loop by the live reachable-set size |V_s|. */
     private static void runFeed(RepositoryConnection con, Model circuit,
                                 java.util.Set<String> reachNodes, String construct) {
+        System.err.println("# --- path CONSTRUCT ---\n" + construct);   // emit the plan (stderr)
         Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
         try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
             m.addAll(QueryResults.asModel(res));
