@@ -362,3 +362,76 @@ IRI-vs-literal / datatype / lang / delimiter / unbound-vs-"NULL"). Regression: `
 - `urn:g:t:` product-gate IRIs are unchanged.
 Verified green after the fix: tests.py 171/171, verify_gallery, verify_oxigraph (byte-identical),
 verify_engine_paths (WMC==PWE), verify_engine_agnostic (SPARQL-1.1-only), verify_answer_keys (6/6).
+
+---
+
+# ROUND 8 — collapse the conflicting timing tables into ONE authoritative result (READ FIRST)
+
+A second external review of `c4ec949` confirmed the ROUND 7 diagnosis and found a **new, concrete
+reporting hazard**: after the answer-key fix (`1e67021`) the repo now carries **two mutually
+inconsistent "authoritative" perf tables**, and one still calls its (pre-fix) numbers "stable and
+citable". This round is mostly a **RE-RUN + RETIRE-STALE** pass, not new experiments. Dev side has
+started the matching local fixes (path-state isolation, G2b metric, docs) — see the FIX NOTE style commits.
+
+## The conflict (must be resolved before any number is quoted in the paper)
+Same query, two tables, different "authoritative" totals:
+
+| query | `G4_RESULTS.md` (labeled *stable & citable*) | `G3_RESULTS.md` (post-`1e67021`) |
+|---|---|---|
+| tpch-Q3 (TPC-H 1.26 M, 14 908 ans) | **1.654 s** (construct 1471 ms) | **4.09 s** (construct 3860 ms) |
+| wikidata-WDpath (P279+) | **2.127 s**, compile **1 ms** | **7.24 s**, compile **3.87 s** |
+
+The WD-path jump is *expected and correct*: the fix un-merged reach states that a STR-collision had
+previously collapsed, so the post-fix circuit is genuinely bigger → slower to compile. **G4's row is
+pre-fix and must not be cited.** G3 (post-fix) is closer to authoritative but was not run under the
+G4 5-run rigor protocol.
+
+## 🆕 R8.1 — produce ONE canonical, post-fix, 5-run timing table (TOP PRIORITY)
+Re-run **every headline timing number on the current jar** (state the commit) under the G4 protocol
+(≥3–5 instances/shape, 1–2 warm-ups + **5 timed runs**, median + min/max, 300 s timeout, logged
+quiescent environment), covering:
+- **WD-path** `P279+` / `P131+`, single-source *and* all-pairs (this is also G1's number);
+- **TPC-H Q3** naryrel, SF 0.01 → 1 (construct + compile + WMC, the *full* pipeline);
+- **G6** d4-on-real-circuits, **G8** space/memory, **four-engine E10** timing.
+
+Then **move `G3_RESULTS.md` + `G4_RESULTS.md` + `G2a`'s stale rows into a single `HISTORICAL_TIMINGS.md`
+appendix** clearly marked "pre-`1e67021`, superseded — do not cite", and have EVALUATION/TECHREPORT point
+only at the new canonical table. Every row: jar commit + environment line. **No query may appear with two
+different totals across the repo.**
+
+## R8.2 — G2b / G8 size metrics: never divide bytes by graph elements
+`g2b_npcs_vs_ours.py`'s `size_win = NPCS_bytes / (gates+edges)` is dimensionless-nonsense and was
+reported as "10–27× smaller". Dev has corrected the script to emit **three separate** comparisons; when
+you re-run G2b/G8 use the corrected script and report them separately, never as one ratio:
+- **structural**: NPCS token-occurrences vs our gates+edges;
+- **serialized bytes**: NPCS string bytes vs our N-Triples bytes — and **state honestly that ours is
+  currently LARGER** here (≈133 MB vs 19.9 MB on P2-unbound); the compactness story is *structural*, not
+  serialized-byte;
+- **compiled**: compiled nodes vs compiled nodes.
+
+## R8.3 — ProvSQL comparison must exercise correlated / reconvergent lineage
+The current G2a/E7 Q3 has a single 3-token derivation per answer → probability is trivially `0.5³ =
+0.125`; it validates *execution compatibility* but not *shared-circuit WMC*. Add **one TPC-H query with
+multiple derivations per answer that share base tokens** (reconvergent lineage — the case where a
+naive per-answer product would double-count and the shared circuit must not), run it through the full
+pipeline on **both** ProvSQL and us, and complete the **SF 0.1 end-to-end on our side** (the current
+SF 0.1 "ours" cell is construction-only — either run compile+WMC or label it `construction only`).
+
+## R8.4 — E10: make the "four-engine post-fix" claim literally true
+`engines/RESULTS.md` headline says "all four engines, 52 byte-identity checks ✓ (post-fix)" but the
+footnote admits **Oxigraph is a pre-fix carry-over** (its server was down at re-verify). Either re-verify
+**Oxigraph's 13 shapes on the post-fix jar** (then the headline is true), or relabel to "3 engines live
+post-fix + Oxigraph pre-fix". Do not leave the table and footnote contradicting each other.
+
+## R8.5 — d4 on real path circuits: keep the honest stance in the canonical table
+d4-v1 WMC still disagrees with OBDD/PWE on **8 of 16** WD-path answers (already recorded honestly).
+In the R8.1 canonical table, keep **OBDD + PWE authoritative for path probability** and mark d4 as
+**compiled-size-only** until the discrepancy is resolved (newer d4 build / encoding audit). Do not quote
+d4 WMC as a path result.
+
+## Priority
+1. **R8.1** canonical 5-run table + retire stale (unblocks *every* cited number).
+2. **R8.3** correlated ProvSQL query + SF 0.1 end-to-end.
+3. **R8.2** corrected size metrics on G2b/G8 re-run. 4. **R8.4** Oxigraph post-fix. 5. **R8.5** stance.
+Dev-side, in parallel (no server needed): property-path per-run state isolation, G2b script metric,
+G7 real `CircuitRun` circuit-diff, doc-status sync, `circuit_io` N-Triples unescaping.
