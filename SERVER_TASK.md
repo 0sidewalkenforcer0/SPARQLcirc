@@ -530,10 +530,16 @@ PostgreSQL/relations). Two levels — dev builds the wrapper, server runs both:
   `SET provsql.fallback_compiler='d4';` (confirm the GUC/registry name in your build — dispatch chooses
   among `d4/c2d/minic2d/dsharp`). Same Boolean function, same compiler → the prediction "compile+WMC is
   essentially the same work" becomes directly testable.
-- **Level 2 (same method-selection logic).** Dev will add a `compile_portfolio.py` that mirrors ProvSQL's
-  cost-ranked exact portfolio on our circuit — read-once/independent → (tree-decomposition) → Tseitin CNF →
-  d4-v2 — so *both* systems make the same algorithmic choice per instance. Then G3/G2a/R8.3 report "same
-  portfolio, same compiler," and the contribution is cleanly the **no-engine-fork / native-RDF** axis.
+- **Level 2 (same method-selection logic) — BUILT.** `reference/compile_portfolio.py` mirrors ProvSQL's
+  cost-ranked exact portfolio on our circuit: read-once (linear) → possible-worlds (≤ 20 tok) → Tseitin CNF
+  → **d4** (set `D4=/path/to/d4v2`), OBDD fallback when d4 is absent. `verify_portfolio.py` validates it
+  locally == OBDD == PWE (read-once + possible-worlds + OBDD paths; read-once detection proven to avoid the
+  shared-variable over-count; the CNF the d4 path consumes is encoding-checked). **Server:** set `D4` to
+  d4-v2 and route G3/G2a/R8.3 compile through `compile_portfolio.probability(circ, root, P)` so *both*
+  systems make the same algorithmic choice per instance. (tree-decomposition — ProvSQL's step between
+  possible-worlds and compilation — is a TODO; its absence only reaches `compilation` earlier, never a
+  wrong answer.) Then G3/G2a/R8.3 report "same portfolio, same compiler," and the contribution is cleanly
+  the **no-engine-fork / native-RDF** axis.
 - **Keep OBDD + PWE as the INDEPENDENT correctness oracle.** PWE (no compiler, no variable order) and our
   ROBDD stay the ground-truth cross-check (E1/G6) — do NOT drop them; they are how we validate the shared
   stack, and they remain the portable/arm64 path when d4 (x86-only) is unavailable.
