@@ -8,15 +8,13 @@ enumeration is infinite; the emitted circuit is finite and its compile+WMC termi
 cycle in the gate graph would make compile_bdd recurse forever -- so this also checks the
 level-indexing kept the DAG acyclic). Covers +, *, all endpoint modes, and closures over
 compound sub-paths (sequence /, alternative |, inverse ^)."""
-import subprocess, os, sys, rdflib
-import compile_bdd, wmc
+import subprocess, os, sys
+import compile_bdd, wmc, circuit_io
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 JAR  = os.path.join(HERE, "..", "engine", "target", "npcs-rewrite.jar")
 G    = os.path.join(HERE, "..", "engine", "examples", "gallery")
 EX   = "http://example.org/paper#"
-RDFT = rdflib.RDF.type
-C    = rdflib.Namespace("urn:circuit:")
 
 # mirror engine/examples/gallery/pathcyc.ttl and pathcompound.ttl
 CYC = {EX + "e1": (EX + "A", "p", EX + "B"), EX + "e2": (EX + "B", "p", EX + "C"),
@@ -26,42 +24,19 @@ CMP = {EX + "e1": (EX + "A", "p", EX + "B"), EX + "e2": (EX + "B", "q", EX + "C"
        EX + "e3": (EX + "C", "p", EX + "D"), EX + "e4": (EX + "D", "q", EX + "A")}
 CMP_P = {EX + "e1": .9, EX + "e2": .8, EX + "e3": .7, EX + "e4": .6}
 
-def load(nt_text):
-    """Parse the engine .nt into a gates.Circuit-style dict (Times may have gate children)."""
-    g = rdflib.Graph().parse(data=nt_text, format="nt")
-    kind, feeders, cin, ans = {}, {}, {}, {}
-    for s, p, o in g:
-        if p == RDFT and o == C.Plus:  kind[str(s)] = "plus"
-        elif p == RDFT and o == C.Times: kind[str(s)] = "times"
-        elif p == C.feeds: feeders.setdefault(str(o), []).append(str(s))   # s feeds o
-        elif p == C["in"]: cin.setdefault(str(s), []).append(str(o))
-        elif p == C.answer: ans[str(s)] = str(o)
-    circ = {}
-    for n, k in kind.items():
-        if k == "times":
-            kids = []
-            for c in cin.get(n, []):
-                kids.append(c)
-                if c not in kind: circ[c] = ("leaf", c)                    # token leaf
-            circ[n] = ("times", tuple(kids))
-        else:
-            circ[n] = ("plus", tuple(feeders.get(n, [])))
-    return circ, ans
-
 def engine(query_file, data_file, P):
     nt = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
                          f"{G}/{data_file}", f"{G}/{query_file}"],
                         capture_output=True, text=True, check=True).stdout
-    circ, ans = load(nt)
-    return {key: round(compile_bdd.probability(circ, gate, P)[0], 10) for gate, key in ans.items()}
+    return circuit_io.answer_probs(nt, P, compile_bdd.probability)     # term-aware answer keys via c:binding
 
 def oracle(expr, subj, obj, sel, data, P):
     q = ("path", subj, expr, obj)
     out = {}
     for fs, v in wmc.pwe(q, sel, data, P).items():
         if v > 1e-12:
-            d = dict(fs)
-            out["A" + "".join("|" + w.lstrip("?") + "=" + d[w] for w in sel)] = round(v, 10)
+            d = dict(fs)                                               # path endpoints are IRIs -> canon_iri
+            out[circuit_io.answer_key({w.lstrip("?"): circuit_io.canon_iri(d[w]) for w in sel})] = round(v, 10)
     return out
 
 E = lambda p: ("edge", p)
