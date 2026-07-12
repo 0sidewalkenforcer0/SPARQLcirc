@@ -14,7 +14,7 @@ and `EVALUATION.md`; gap IDs (G1–G10) are defined in `SERVER_TASK.md` ROUND 6.
 | reification: named-graph / Wikidata / standard | yes | Standard (E1–E10), Wikidata (E8), SPARQL\* (piloted) | ◑ clean cmp (G7) |
 | query versions B / R / P | B vs P | E3 `c_overhead` = circuit / plain | ✓ (R not essential) |
 | engine: Virtuoso / Fuseki | yes | E10 — 4 engines + byte-identity | ✓ exceeded |
-| query types L / S / F / **C** / O | yes | E3 (S/L/F), E6/R2A (O); **C missing** | ◑ C = G10 |
+| query types L / S / F / **C** / O | yes | E3 (S/L/F), E6/R2A (O), **C1 built at WatDiv 10M (G10, `G10_RESULTS.md`)** | ✓ full L/S/F/C/O taxonomy (C at 10M; 200M-C pending) |
 | TPC-H, **aggregate** vs non-aggregate | non-agg only | E9 (non-agg, SF 0.01–1) | ✗ agg out-of-scope (G9) |
 | baselines: SPARQLprov / **TripleProv / GProM** | no | our distinguishing baseline is ProvSQL (PQE) | ✗ don't need — same class |
 
@@ -27,7 +27,7 @@ and `EVALUATION.md`; gap IDs (G1–G10) are defined in `SERVER_TASK.md` ROUND 6.
 | GraphDB vs Stardog | yes | E10 (4 engines) | ✓ exceeded |
 | RDF-star vs named graphs | yes | reification schemes | ◑ clean cmp (G7) |
 | WatDiv 10M / 100M / **200M** | yes | E3 (10M, 100M) | ◑ 200M = G10 |
-| query types L / S / F / **C** / O | yes | E3/E6 | ◑ C = G10 |
+| query types L / S / F / **C** / O | yes | E3/E6 + **C1 (G10, WatDiv 10M)** | ✓ C done (10M) |
 | WDBench on Wikidata (~15 B) | yes | E8 (2.13 B, partial + broad filter) | ◑ full WDBench (G2b) |
 | monotone vs non-monotone optional | yes — a strength | E1 / E6 / R2A (⊖) | ✓ + PQE they can't |
 

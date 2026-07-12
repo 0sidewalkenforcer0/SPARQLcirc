@@ -8,7 +8,11 @@ in the paper / EVALUATION / TECHREPORT must come from here. Older tables in `G3_
 ## Provenance of these numbers
 
 - **Jar:** engine @ `1e67021` (term-type-aware gate identity + `urn:circuit:binding`); rebuilt
-  2026-07-12 18:33. Engine source unchanged since (`cc1e39c`/`bc8cb03` touched only `reference/` Python).
+  2026-07-12 18:33. ⚠ **`7882a1e` (property-path state isolation) later changed the PATH engine** —
+  reach/base gate IRIs, an added `c:rpath` triple per reach gate, and every path match query. The **BGP
+  rows below (watdiv-Sstar, tpch-Q3) are unaffected and current**; the **wikidata-WDpath row predates
+  `7882a1e`** (†) and must be re-measured on the isolation-fixed jar before it is cited — circuit
+  topology is unchanged so compile/WMC should hold, but construct time + triple count shift slightly.
 - **Protocol (G4):** 1 warm-up + **5 timed runs**, report **median [min–max]**, 300 s timeout.
 - **Environment:** `aisa-mgmt01.ki.uni-stuttgart.de`, 32 cores, 131 GB; **shared** HPC box (other users'
   jobs logged, not killable); **warm** cache (repos loaded, daemons up) — steady-state, not cold-start.
@@ -21,7 +25,7 @@ in the paper / EVALUATION / TECHREPORT must come from here. Older tables in `G3_
 |---|---|--:|--:|--:|--:|--:|
 | watdiv-Sstar       | WatDiv 32.7 M reified         |     2 |   10 ms |    2 ms |  0 ms | **12 ms [11–12]** |
 | tpch-Q3 (naryrel)  | TPC-H SF 0.01 (1.26 M)        | 14 908 | 2598 ms |  148 ms | 36 ms | **2.78 s [2.78–2.80]** |
-| wikidata-WDpath    | Wikidata 2.13 B (`P279+`, G1) |    16 | 2308 ms | **5750 ms** | 10 ms | **8.04 s [7.69–8.14]** |
+| wikidata-WDpath **†** | Wikidata 2.13 B (`P279+`, G1) |    16 | 2308 ms | **5750 ms** | 10 ms | **8.04 s [7.69–8.14]** |
 
 - **Tree/star PQE is construct-dominated; compile+WMC is near-free.** TPC-H Q3: compile+WMC = 184 ms of
   2.78 s (≈ 7 %) for all 14 908 answers — the stage the how-provenance baselines lack. Star: 2 ms.
@@ -64,4 +68,7 @@ Ours == ProvSQL probabilities; a naive per-answer product-sum would exceed 1 for
 - TPC-H Q3 **SF 0.1 / SF 1** full-pipeline ours: Q3 SF 0.1 stays **construction-only** (125 154-answer
   circuit = pure-Python compile bottleneck; native/d4 compile is the follow-up). SF 1 not loaded.
   (R8.3's SF 0.1 end-to-end is delivered via Qrecon above, whose smaller circuit compiles.)
+- **† Re-measure `wikidata-WDpath` on the `7882a1e` isolation-fixed jar** (R8.1) — the current row was
+  built before the per-path fingerprint / `c:rpath` change; topology is unchanged so the total should hold,
+  but it is not literally on current HEAD until re-run.
 - **WatDiv 200 M: dropped** — the 2014 generator segfaults on the modern toolchain; 10 M / 100 M stand.

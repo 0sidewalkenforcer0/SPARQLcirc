@@ -17,8 +17,10 @@ CASES = [
     (r'"a\\b"',                        "a\\b"),                # escaped backslash
     (r'"line1\nline2"',                "line1\nline2"),        # newline
     (r'"tab\there"',                   "tab\there"),           # tab
-    (r'"éclair"',                 "éclair"),         # \uXXXX (é)
-    (r'"smiley\U0001F600"',            "smiley\U0001F600"),    # \UXXXXXXXX (emoji)
+    (f'"caf{chr(92)}u00e9"',           "café"),                # é escape -> é (chr(92)=backslash so the
+                                                               #   source isn't mangled); exercises the \u branch
+    ('"literal-é"',                    "literal-é"),           # actual Unicode char, no escape -> passthrough
+    (r'"smiley\U0001F600"',            "smiley\U0001F600"),    # \UXXXXXXXX escape (emoji)
     (r'"mix \"q\" and \\ and \n"',     'mix "q" and \\ and \n'),
     (r'"typed\"q"^^<http://example/dt>', 'typed"q'),           # escaped quote + datatype
     (r'"lang\nbreak"@EN',              "lang\nbreak"),         # escaped + language tag (lang lowercased)

@@ -9,8 +9,8 @@ Ours side : the CircuitRewriter CONSTRUCT plan -> the shared circuit; POST it, m
 
 Same bound queries as E3 (selective, matches the baselines). Reports per query in THREE
 DIMENSIONALLY-SEPARATE comparisons — NEVER bytes÷graph-elements (that ratio is meaningless):
-  • STRUCTURAL   : NPCS flat token-occurrences (T_string = 3·products, the unshared how-provenance)
-                   vs our shared gates+edges (T_circ). This is the compactness claim.
+  • STRUCTURAL   : NPCS flat token-occurrences (T_string = Σ each product's ACTUAL token inputs — arity
+                   derived from the circuit, not hardcoded) vs our shared gates+edges (T_circ). The claim.
   • SERIALIZED   : NPCS string bytes vs our N-Triples bytes — SAME unit. Honest caveat: our RDF
                    serialization is frequently LARGER here; compactness is structural, not byte-count.
   • COMPILED     : compiled d-DNNF/OBDD nodes — measured in G6/E4, not duplicated here.
@@ -49,7 +49,10 @@ def ours_side(qtext):
     circ, ans, typ = parse_circuit(triples)
     tms, plus, minus, edges, answers = counts(circ, ans, typ)
     gates_edges = tms + plus + minus + edges                 # STRUCTURAL: shared circuit size (T_circ)
-    t_string = tms * 3                                        # STRUCTURAL: flat token-occurrences (E2 model)
+    # STRUCTURAL: flat token-occurrences = Σ over products of their ACTUAL token inputs (NOT a hardcoded
+    # arity — a 2-pattern P2 product contributes 2, a 3-pattern S-star product contributes 3).
+    t_string = sum(1 for _, (op, pl) in circ.items() if op == "times"
+                   for c in pl if circ.get(c, ("",))[0] == "leaf")
     ours_bytes = sum(len(l.encode("utf-8")) + 1 for l in triples)  # SERIALIZED: real N-Triples byte size
     return ms, answers, gates_edges, t_string, ours_bytes
 

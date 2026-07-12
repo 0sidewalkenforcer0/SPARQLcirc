@@ -107,54 +107,7 @@ public final class CircuitRun {
                 return;
             }
             if (pathq != null) {
-                // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round
-                // bound. INIT, then loop STEP, feeding each round back into the store; stop after
-                // |V_s|-1 rounds where V_s = the nodes actually reached SO FAR (discovered live from the
-                // reach gates' c:rfrom/c:rto). A simple path in the reachable subgraph has <= |V_s|-1
-                // edges, so |V_s|-1 rounds capture every simple path -> exact provenance -- while
-                // |V_s| << the global node count keeps a bounded/sparse query feasible.
-                int cap;
-                if (pathq.boundSource()) {
-                    // G1: discover the source's REACHABLE subgraph by a read-only client BFS, then restrict
-                    // the base relation to edges FROM reachable nodes (in pathq.init below). This avoids ever
-                    // materializing the all-pairs base (every predicate edge = the OOM at KG scale); the
-                    // composition protocol is unchanged, so provenance stays exact (all simple paths in V_s).
-                    java.util.Set<String> reach = new java.util.LinkedHashSet<>();
-                    java.util.Set<String> frontier = new java.util.LinkedHashSet<>();
-                    reach.add(pathq.sourceValue()); frontier.add(pathq.sourceValue());
-                    while (!frontier.isEmpty()) {
-                        java.util.Set<String> next = new java.util.LinkedHashSet<>();
-                        try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
-                            while (r.hasNext()) {
-                                org.eclipse.rdf4j.model.Value v = r.next().getValue("v");
-                                if (v != null && reach.add(v.stringValue())) next.add(v.stringValue());
-                            }
-                        }
-                        frontier = next;
-                    }
-                    pathq.setReachable(reach);
-                    cap = Math.max(1, reach.size() - 1);       // |V_s|-1 bounds every simple path in the reachable subgraph
-                    System.err.println("# ---- G1 reachable-subgraph BFS: |V_s| = " + reach.size() + " ----");
-                } else {
-                    int nGlobal;                               // variable source (all-pairs): fall back to the global bound
-                    try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
-                        nGlobal = ((Literal) r.next().getValue("c")).intValue();
-                    }
-                    cap = Math.max(1, nGlobal - 1);
-                }
-                java.util.Set<String> reachNodes = new java.util.HashSet<>();
-                for (String c : pathq.init()) runFeed(con, circuit, reachNodes, c);
-                int k = 0, lastLevel = 0;
-                while (k < cap) {
-                    for (String c : pathq.step(k)) runFeed(con, circuit, reachNodes, c);
-                    lastLevel = ++k;
-                    if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
-                }
-                for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
-                System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
-                    + ", rounds=" + lastLevel + " (cap=" + cap + "), path fp=" + pathq.fingerprint() + " ----");
-                System.err.println("# reach/base gates are fingerprinted (urn:g:r: + c:rpath) so distinct path "
-                    + "queries on a shared writable endpoint never compose with each other's persisted gates.");
+                buildPathCircuit(con, pathq, circuit);          // client-driven iterative path fixpoint (below)
             } else {
                 java.util.List<String> planQueries = rw.plan(query);
                 System.err.println("# ---- circuit construction plan: " + planQueries.size() + " CONSTRUCT(s) ----");
@@ -184,6 +137,58 @@ public final class CircuitRun {
             }
         }
         repo.shutDown();
+    }
+
+    /** Build a property-path circuit on `con` via the client-driven iterative fixpoint: bound the reach
+     *  loop by |V_s|-1 rounds (V_s = the source's reachable subgraph, discovered live), INIT, loop STEP
+     *  feeding each round back so the next CONSTRUCT can match it, then PROJECT. Reused by main() and by
+     *  the PathIsoSeq harness, which runs two path queries on ONE shared connection to prove the per-path
+     *  fingerprint prevents cross-query contamination on a real persistent store. */
+    static void buildPathCircuit(RepositoryConnection con, CircuitRewriter.PathQuery pathq, Model circuit) {
+        // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round bound. A
+        // simple path in the reachable subgraph has <= |V_s|-1 edges, so |V_s|-1 rounds capture every
+        // simple path -> exact provenance -- while |V_s| << the global node count keeps it feasible.
+        int cap;
+        if (pathq.boundSource()) {
+            // G1: discover the source's REACHABLE subgraph by a read-only client BFS, then restrict the
+            // base relation to edges FROM reachable nodes (in pathq.init) -- never materialize the
+            // all-pairs base (the OOM at KG scale); provenance stays exact (all simple paths in V_s).
+            java.util.Set<String> reach = new java.util.LinkedHashSet<>();
+            java.util.Set<String> frontier = new java.util.LinkedHashSet<>();
+            reach.add(pathq.sourceValue()); frontier.add(pathq.sourceValue());
+            while (!frontier.isEmpty()) {
+                java.util.Set<String> next = new java.util.LinkedHashSet<>();
+                try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
+                    while (r.hasNext()) {
+                        org.eclipse.rdf4j.model.Value v = r.next().getValue("v");
+                        if (v != null && reach.add(v.stringValue())) next.add(v.stringValue());
+                    }
+                }
+                frontier = next;
+            }
+            pathq.setReachable(reach);
+            cap = Math.max(1, reach.size() - 1);       // |V_s|-1 bounds every simple path in the reachable subgraph
+            System.err.println("# ---- G1 reachable-subgraph BFS: |V_s| = " + reach.size() + " ----");
+        } else {
+            int nGlobal;                               // variable source (all-pairs): fall back to the global bound
+            try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
+                nGlobal = ((Literal) r.next().getValue("c")).intValue();
+            }
+            cap = Math.max(1, nGlobal - 1);
+        }
+        java.util.Set<String> reachNodes = new java.util.HashSet<>();
+        for (String c : pathq.init()) runFeed(con, circuit, reachNodes, c);
+        int k = 0, lastLevel = 0;
+        while (k < cap) {
+            for (String c : pathq.step(k)) runFeed(con, circuit, reachNodes, c);
+            lastLevel = ++k;
+            if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
+        }
+        for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
+        System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
+            + ", rounds=" + lastLevel + " (cap=" + cap + "), path fp=" + pathq.fingerprint() + " ----");
+        System.err.println("# reach/base gates are fingerprinted (urn:g:r: + c:rpath) so distinct path "
+            + "queries on a shared writable endpoint never compose with each other's persisted gates.");
     }
 
     /** Run one path-round CONSTRUCT, add its triples to the accumulated circuit AND back into the

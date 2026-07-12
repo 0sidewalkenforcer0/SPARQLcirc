@@ -617,7 +617,7 @@ public class CircuitRewriter {
         // gate IRI AND matched via a c:rpath guard on every step/seed/project pattern, so two DIFFERENT path
         // queries on the SAME writable endpoint can never compose with (or collapse onto) each other's
         // persisted reach/base gates. Same query => same fp => byte-identical, idempotent re-runs.
-        String fp = sha256hex(String.join("", branchWheres));
+        String fp = sha256hex(String.join("", branchWheres) + "star=" + star);   // star MUST be in the fp: :p* persists zero-length gates :p+ must not read
         List<String> baseC = new ArrayList<>();
         for (int i = 0; i < branches.size(); i++) {
             StringBuilder where = whereFull.get(i);

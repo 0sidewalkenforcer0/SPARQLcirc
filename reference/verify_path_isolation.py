@@ -126,6 +126,23 @@ def main():
     ok &= c4
     print(f"[4] re-run byte-identical (deterministic fp)   {'OK' if c4 else 'FAIL'}")
 
+    # (5) REAL same-endpoint sequential test via the Java PathIsoSeq harness: run the second path query
+    #     BOTH after the first on ONE shared store (gates fed back, NOT cleaned) AND alone, and require
+    #     the circuits to be identical. Covers :p* -> :p+ specifically (star must be in the fingerprint,
+    #     else :p*'s persisted zero-length reach gates leak into :p+). This is the persistent-endpoint
+    #     scenario the two-fresh-stores union check in (1)-(3) does NOT exercise.
+    G = os.path.join(HERE, "..", "engine", "examples", "gallery")
+    seq_ok = True
+    for first, second in (("pathstar.sparql", "pathplus.sparql"), ("pathplus.sparql", "pathstar.sparql")):
+        r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.PathIsoSeq",
+                            os.path.join(G, "pathcyc.ttl"), os.path.join(G, first), os.path.join(G, second)],
+                           capture_output=True, text=True)
+        good = r.returncode == 0
+        seq_ok &= good
+        print(f"[5] shared store: {first.split('.')[0]:9} then {second.split('.')[0]:9} -> "
+              f"{'OK (second query uncontaminated)' if good else 'FAIL (contamination)'}")
+    ok &= seq_ok
+
     print("\nALL OK" if ok else "\nFAILURES")
     sys.exit(0 if ok else 1)
 

@@ -435,3 +435,25 @@ d4 WMC as a path result.
 3. **R8.2** corrected size metrics on G2b/G8 re-run. 4. **R8.4** Oxigraph post-fix. 5. **R8.5** stance.
 Dev-side, in parallel (no server needed): property-path per-run state isolation, G2b script metric,
 G7 real `CircuitRun` circuit-diff, doc-status sync, `circuit_io` N-Triples unescaping.
+
+## ROUND 8 ADDENDUM (after the dev-side path-isolation + G2b-arity fixes landed — `7882a1e`, `46d8660`)
+A second review round found two things that affect your re-runs:
+1. **Re-run the canonical `wikidata-WDpath` row on the post-`7882a1e` jar.** R8.1's `CANONICAL_TIMINGS.md`
+   was built at `cc59f0a`, *before* `7882a1e` changed the property-path engine (reach/base gate IRIs now
+   carry a per-path fingerprint + a `c:rpath` triple; every path match query changed). The BGP rows
+   (watdiv-Sstar, tpch-Q3) are unaffected — **only the WD-path row** needs re-measuring. Topology is
+   unchanged (fingerprint only re-namespaces gates), so the ~8 s total should hold; construct + triple
+   count shift slightly. The row is marked `†` in the canonical table until you re-run it.
+2. **G2b: R8.2 already regenerated the RESULTS honestly (good) — one script↔results nit remains.** Your
+   `18674af` rewrote `G2b_RESULTS.md` into the 3-metric, "ours is larger" version (correct). The dev side
+   then fixed one thing R8.2 did *not*: the committed script still hardcoded `t_string = tms*3`; it now
+   sums each product's **actual** token inputs (2-pattern P2 is no longer over-counted 50 %). Remaining
+   reconciliation for the NEXT g2b re-run: the RESULTS table presents **NPCS-occ / ours-(g+e)** but the
+   committed script only emits **ours-flat-tokens / ours-(g+e)** — `npcs_side` does not count NPCS token
+   occurrences, so the script as committed does not reproduce the RESULTS' NPCS-occ column. Either add an
+   NPCS-occurrence count to `npcs_side`, or switch the RESULTS structural column to ours-flat-tokens.
+   Either way the arity is now correct; the "ours is larger, compactness is structural/reconvergent"
+   conclusion is unaffected.
+Note: the `:p+`/`:p*` fingerprint-collision the review flagged is **fixed** in the engine (`star` is now in
+the fingerprint) and covered by a real same-endpoint sequential regression (`PathIsoSeq` + `verify_path_isolation.py`),
+so path re-runs on a shared writable repo are safe against cross-query contamination.
