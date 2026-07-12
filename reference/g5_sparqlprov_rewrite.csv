@@ -1,0 +1,6 @@
+shape,input_chars,rewritten_chars,ratio
+watdiv-S1,566,4619,8.2
+watdiv-L1,233,1790,7.7
+watdiv-F3,424,3229,7.6
+wikidata-star,423,2912,6.9
+wikidata-minus,850,6916,8.1
