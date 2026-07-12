@@ -10,18 +10,19 @@ same GraphDB WatDiv (32.7 M reified), post-`1e67021`. `g2b_npcs_vs_ours.py` → 
 
 | query | answers | **structural** NPCS-occ / ours-g+e | **serialized** NPCS-B / ours-B | construct NPCS / ours |
 |---|--:|--:|--:|--:|
-| S-star (bound)     |      2 | 162 / 272 = **0.6×** | 2 587 / 36 488 = **0.07×** | 4 ms / 15 ms |
-| P2-path (bound)    |     13 | 39 / 65 = **0.6×** | 1 726 / 22 770 = **0.08×** | 7 ms / 6 ms |
-| P2-unbound (all)   | 149 998 | 449 994 / 749 990 = **0.6×** | 19.9 MB / 262.8 MB = **0.08×** | 3.3 s / 28.9 s |
+| S-star (bound)     |      2 | 162 / 272 = **0.6×** | 2 730 / 36 488 = **0.07×** | 4 ms / 10 ms |
+| P2-path (bound)    |     13 | 26 / 65 = **0.4×** | 1 836 / 22 770 = **0.08×** | 6 ms / 6 ms |
+| P2-unbound (all)   | 149 998 | 299 996 / 749 990 = **0.4×** | 20.8 MB / 262.8 MB = **0.08×** | 3.2 s / 28.9 s |
 
-(structural = NPCS flat token-occurrences ÷ our shared gates+edges; serialized = string bytes ÷ N-Triples
-bytes; compiled = G6/E4, not duplicated. ratio < 1 ⇒ **ours larger**.)
+(structural = NPCS flat token-occurrences ÷ our shared gates+edges — corrected `T_string` = *actual*
+per-product tokens, `406ddbe`; serialized = raw UTF-8 string bytes ÷ N-Triples bytes; compiled = G6/E4,
+not duplicated. ratio < 1 ⇒ **ours larger**.)
 
 ## Findings (honest)
 
 - **On these selective / low-sharing queries, our shared circuit is NOT smaller — it is larger** on both
-  axes: **~1.7× more structural elements** (share 0.6×) and **~12× more serialized bytes** (0.08×; SHA-256
-  content-addressed IRIs, ~180 B/triple). NPCS's flat per-answer token list is compact here because these
+  axes: **~1.7–2.5× more structural elements** (share 0.4–0.6×) and **~12× more serialized bytes** (0.08×;
+  SHA-256 content-addressed IRIs, ~180 B/triple). NPCS's flat per-answer token list is compact here because these
   queries have **little cross-answer sharing** to amortize the DAG's answer/product-gate + IRI overhead.
 - **The compactness claim is *structural* and materializes with RECONVERGENCE — not on these queries.**
   E2's up-to-201× compactness is on **recursive / reconvergent** workloads where NPCS's flat strings

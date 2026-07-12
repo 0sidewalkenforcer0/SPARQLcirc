@@ -1,4 +1,4 @@
 query,answers,struct_T_string,struct_T_circ,struct_share,serial_npcs_bytes,serial_ours_bytes,serial_byte_ratio,npcs_eval_ms,ours_eval_ms
-P2-path,13,39,65,0.6,1726,22770,0.08,7,6
-P2-unbound,149998,449994,749990,0.6,19935124,262765318,0.08,3306,28852
-S-star,2,162,272,0.6,2587,36488,0.07,4,15
+P2-path,13,26,65,0.4,1836,22770,0.08,6,6
+P2-unbound,149998,299996,749990,0.4,20835144,262765318,0.08,3247,28899
+S-star,2,162,272,0.6,2730,36488,0.07,4,10
