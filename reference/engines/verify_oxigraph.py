@@ -45,7 +45,7 @@ def canon(nt):
     return "\n".join(sorted({l for l in nt.splitlines() if l.strip().endswith(" .")}))
 
 def main():
-    queries = ["join", "minus", "minus_chain", "minus_union", "optional", "opt_left", "union", "distinct"]
+    from _gallery_shapes import E1_NONPATH as queries   # full E1 correctness set (byte-identity == E1 coverage)
     allok = True
     print(f"Oxigraph {__import__('pyoxigraph').__version__} vs in-memory RDF4J — byte-identical circuit?\n")
     for q in queries:

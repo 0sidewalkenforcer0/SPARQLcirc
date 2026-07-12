@@ -60,8 +60,8 @@ def main():
             print("\nengine lacks SHA256 -> cannot materialize the content-addressed circuit"); sys.exit(1)
     except Exception as ex:
         print(f"  [SHA256 support] ERROR posting to endpoint: {ex}"); sys.exit(1)
-    # (1) byte-identity per gallery query
-    queries = ["join", "minus", "minus_chain", "minus_union", "optional", "opt_left", "union", "distinct"]
+    # (1) byte-identity per gallery query — the FULL E1 correctness set (so byte-identity ⊇ E1 coverage)
+    from _gallery_shapes import E1_NONPATH as queries
     allok = True
     for q in queries:
         qf = f"{G}/{q}.sparql"

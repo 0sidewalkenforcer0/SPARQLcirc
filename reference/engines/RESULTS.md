@@ -61,6 +61,17 @@ Harnesses: `reference/engines/verify_oxigraph.py` (in-process pyoxigraph), `refe
 the divergences one might expect (blank-node labeling, UNION multiplicity) do not arise because the
 circuit is content-addressed IRIs and a set of triples.
 
+### Per-engine correctness closure (E10 ⊇ E1)
+
+The byte-identity set is now the **full E1 correctness battery** — all 13 non-path shapes E1 checks
+`WMC == PWE` on (single source of truth: `engines/_gallery_shapes.py`, matching `verify_gallery.py`),
+not the earlier 8. This closes the argument that correctness holds on *every* engine, not just RDF4J:
+**per-engine correctness = (E10 byte-identity: engine circuit == RDF4J circuit) ∘ (E1: WMC(RDF4J circuit)
+== PWE)**, so no shape is left where an engine builds an unverified circuit. **Oxigraph re-verified
+locally: 13/13 byte-identical**, including the 5 shapes the 8-shape set omitted — `atom`,
+`minus_disjoint`, `minus_p2union`, `opt_right`, `opt_disjoint`. *Server to re-run* `verify_http.py`
+(now extended) on **GraphDB / QLever / MillenniumDB** to fill those 5 rows for the other engines.
+
 ## Result 2 — cross-engine build-time (performance)
 
 Same reified WatDiv 10M (32.7 M triples) loaded into every engine as an HTTP endpoint; the SAME
