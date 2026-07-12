@@ -1,0 +1,4 @@
+encoding,bytes,vs_raw,b_per_fact,triples_per_fact
+raw_nt,11669750,1.0,116,1
+standard,32236420,2.762,322,3
+sparql_star,17058640,1.462,170,1
