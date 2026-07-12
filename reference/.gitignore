@@ -6,3 +6,5 @@ pso_q
 engines/_empty.ttl
 __pycache__/
 *.pyc
+dates_q
+num_q

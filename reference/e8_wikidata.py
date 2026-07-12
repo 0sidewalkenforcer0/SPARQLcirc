@@ -61,6 +61,9 @@ def main():
     qdir = os.environ.get("E8_QDIR")
     out = os.environ.get("E8_OUT", "watdiv/e8_wikidata.csv")
     print(f"E8 - NPCS Wikidata queries on repo '{repo}' (Wikidata scheme, {RUNS}-run avg)\n")
+    cols = ["category", "query", "status", "plan", "build_ms", "deriv", "gates", "edges", "answers", "share", "wmc_pwe"]
+    fh = open(out, "w", newline=""); w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval="")
+    w.writeheader(); fh.flush()
     rows = []
     for cat in ("single", "multiple", "optional"):
         files = sorted(glob.glob(f"{qdir}/{cat}/*.sparql"))
@@ -68,7 +71,7 @@ def main():
         for i, f in enumerate(files):
             name = f"{cat}/{os.path.splitext(os.path.basename(f))[0]}"
             r = run_query(cat, name, open(f).read(), do_wmc=(i < 3))   # WMC-check first 3 per cat
-            rows.append(r)
+            rows.append(r); w.writerow(r); fh.flush()                  # incremental: survive a timeout kill
             if r["status"] == "ok":
                 okc += 1
                 print(f"  [{name:14}] build={r['build_ms']:>6}ms deriv={r['deriv']:>4} gates={r['gates']:>5} "
@@ -77,9 +80,7 @@ def main():
             else:
                 print(f"  [{name:14}] {r['status']}")
         print(f"  --- {cat}: {okc}/{len(files)} ok ---\n")
-    cols = ["category", "query", "status", "plan", "build_ms", "deriv", "gates", "edges", "answers", "share", "wmc_pwe"]
-    with open(out, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval=""); w.writeheader(); w.writerows(rows)
+    fh.close()
     ok = sum(1 for r in rows if r["status"] == "ok")
     print(f"wrote {out}  ({ok}/{len(rows)} queries ran)")
 

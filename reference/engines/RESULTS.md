@@ -90,6 +90,17 @@ E8's Wikidata preload during this run, so it was not re-measured here). Absolute
 comparability + relative construction speed, not a precise benchmark. Byte-identity (Result 1) is the
 clean, machine-independent headline; build-time confirms it is *practical* on every engine.
 
+### Scaling to WatDiv 100 M (QLever)
+
+Same circuit machinery on the 100 M reified WatDiv graph (`engines/overnight/e10_qlever_100m.csv`):
+- **S-star** (bound): 855 derivations, **42 ms** — the star grew ~16× vs 10 M (54 deriv) with the data,
+  build stayed tens of ms.
+- **P2-unbound** (all purchases): **288 205 derivations** (2× the 10 M count), circuit built until the
+  QLever 30 s query timeout — construction-bound at this size, same shape as the 10 M run.
+
+Portability + comparable build cost hold at 100 M, i.e. the content-addressed circuit is engine- and
+scale-robust across the E1–E10 range.
+
 ## Caveats
 
 - **Read-only engines** (QLever, MillenniumDB) run the whole E1–E9 *base* (read path) but not the

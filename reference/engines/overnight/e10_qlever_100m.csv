@@ -1,0 +1,3 @@
+query,bound,status,build_ms,plain_ms,c_overhead,deriv,gates,edges,answers,T_string,T_circ,share
+w100m_P2-unbound,False,ok,30127,18425,1.64,288205,576410,864615,288204,576410,1441025,0.4
+w100m_S-star,False,ok,42,11,3.89,855,1710,3420,855,2565,5130,0.5

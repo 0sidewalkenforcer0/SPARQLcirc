@@ -77,3 +77,26 @@ unit, not a triple), the same ⊕/⊗/⊖ construction:
   (`c_mktsegment = "BUILDING"`, `l_returnflag = "R"`) are kept as they change the join witnesses.
 - **Per-row (`naryrel`) granularity** — a tuple is the uncertain unit, matching ProvSQL and
   SPARQLprov; contrast E1–E8, where a *triple* (statement) is the unit.
+
+## Construction scaling — SF 0.01 → 0.1 → 1 (QLever, clean build_ms)
+
+Same skeletons, TPC-H direct mapping at three scale factors (1.26 M → 12.5 M → **125 M** triples),
+built on QLever (fast read-only engine; a 600 s query timeout + 20 M-triple client cap for SF 1).
+`engines/overnight/e9_qlever_sf*.csv`.
+
+| skeleton | SF 0.01 (1.26 M) | SF 0.1 (12.5 M) | SF 1 (125 M) | SF 1 circuit |
+|----------|------:|------:|------:|---|
+| Q3     |  158 ms | 1110 ms | **11.4 s** | 1.21 M deriv / 2.43 M gates |
+| Q5     |  183 ms |  363 ms |  **3.2 s** | 0.24 M deriv / 0.48 M gates |
+| Q10    |  189 ms | 1499 ms | **15.1 s** | 1.48 M deriv / 2.96 M gates |
+| Mminus |  242 ms | 2048 ms | **20.2 s** | 1.53 M deriv / **6.16 M gates** (⊖) |
+| Q9 (6-way) | 683 ms | ~30 s | circuit > 20 M triples | join explosion |
+
+- **Orders-of-magnitude scaling**: derivations grow ~10× per SF (as the data does); build stays
+  seconds-to-tens-of-seconds up to 125 M triples. **Mminus** at SF 1 is a **1.5 M-derivation
+  non-monotone** circuit (6.16 M gates) built in 20 s.
+- **Q9 (6-way join) is the outlier** — the join multiplies at scale and the circuit exceeds 20 M
+  triples at SF 1 (materialisation-bound, not construction-bound). This is the expected behaviour of a
+  wide star/snowflake join and mirrors the WatDiv P2-unbound result in E10.
+- QLever builds the naryrel circuits **faster than GraphDB** at equal SF (e.g. Q9 SF 0.01: 683 ms vs
+  20 386 ms) — consistent with E10's cross-engine finding.

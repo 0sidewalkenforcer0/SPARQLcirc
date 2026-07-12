@@ -171,6 +171,25 @@ user, so we bound it and note it).
   (polynomial) while the number of simple paths is `~e·(n−2)!` (factorial). The circuit stays
   polynomial where enumeration is intractable — the property-path claim.
 
+## E8 — Wikidata (NPCS comparison at native-statement scale)
+
+**Goal.** Native Wikidata **statement reification** (engine's `Wikidata` scheme = NPCS's *Wikidatareal*)
++ NPCS's Basic query set on a real Wikidata graph — construction at Wikidata scale.
+
+**Infrastructure result.** Official truthy dump → filtered to the query predicates → statement-reified
+= **2.13 B statement-triples**, loaded into GraphDB (`importrdf preload`). 28 g heap OOM'd; **80 g
+succeeded** — the pipeline runs at full Wikidata scale.
+
+**Construction result** (partial, `single` category, 2 h cap): **31 queries build circuits on the
+2.13 B graph** — build min 4 ms / median 28 ms / max 62 s, circuits up to **773 k derivations**;
+**WMC == PWE Δ = 2.2e-16** on a live Wikidata circuit ✅. Selective NPCS queries build in tens of ms;
+non-selective ones (millions of matches) hit the caps — a breadth artifact of our filter (WDBench's
+curated graph gives the like-for-like comparison).
+
+**Paths at Wikidata scale** — the 60 M-edge P279/P131 iterative fixpoint exhausts heap (future work);
+property-path provenance is verified at moderate scale in **Round 3** (WatDiv/synthetic, WMC == PWE).
+*Full write-up:* [`wikidata/RESULTS.md`](../wikidata/RESULTS.md).
+
 ## E9 — TPC-H (relational-derived RDF, per-row provenance)
 
 **Goal.** The circuit machinery is not WatDiv-specific: the same ⊕/⊗/⊖ construction works on

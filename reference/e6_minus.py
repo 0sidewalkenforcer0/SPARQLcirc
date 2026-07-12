@@ -19,6 +19,8 @@ EMPTY = tempfile.NamedTemporaryFile("w", suffix=".ttl", delete=False); EMPTY.wri
 RUNS = int(os.environ.get("E6_RUNS", "5"))
 BOUND = os.environ.get("E6_BOUND", "1") != "0"       # bound=selective; 0=raw unbound query
 MAXTRIP = int(os.environ.get("E6_MAXTRIP", "4000000"))  # safety cap on the collected circuit
+POST_TIMEOUT = int(os.environ.get("E6_POST_TIMEOUT", "300"))  # per-CONSTRUCT HTTP timeout (s); lower it
+# to bound huge/non-selective queries at Wikidata scale (they are recorded as errors, not hung on)
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"; C = "urn:circuit:"
 
 def plan_constructs(bound_query):
@@ -38,7 +40,7 @@ def plan_constructs(bound_query):
 def post(construct, accept="application/n-triples"):
     req = U.Request(e3_run.EP, data=construct.encode(), method="POST")
     req.add_header("Content-Type", "application/sparql-query"); req.add_header("Accept", accept)
-    t = time.time(); body = U.urlopen(req, timeout=300).read(); return (time.time() - t) * 1000, body
+    t = time.time(); body = U.urlopen(req, timeout=POST_TIMEOUT).read(); return (time.time() - t) * 1000, body
 
 def build(constructs):
     """POST each plan CONSTRUCT, accumulate the DEDUPED triple set; return (build_ms, triples, capped)."""
