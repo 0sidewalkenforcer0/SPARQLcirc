@@ -1,52 +1,49 @@
-# Provisional timing table — DO NOT CITE until the current 5-run regeneration
+# Canonical timing table (current HEAD, 5-run) — the ONE table to cite
 
-**Every number in this file is stale under the corrected timer boundaries.** After the pending current-HEAD
-5-run regeneration, this will again become the single authoritative source for headline timings. Until
-then, do not cite these values. Older tables in `G3_RESULTS.md`,
-`G4_RESULTS.md`, and `G2a_RESULTS.md` are **pre-`1e67021` and superseded** — collected in
-`HISTORICAL_TIMINGS.md`, marked *do not cite*. No query appears with two different totals across the repo.
+**Single authoritative source for every headline timing (R8.1).** Regenerated on **current HEAD** under
+the corrected timer boundaries. Older tables in `G3_RESULTS.md`, `G4_RESULTS.md`, `G2a_RESULTS.md` are
+superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two different totals across the repo.
 
 ## Provenance of these numbers
 
-- **Jar:** engine @ `1e67021` (term-type-aware gate identity + `urn:circuit:binding`); rebuilt 2026-07-12.
-  ⚠ **Two later changes make every number below STALE — the whole table needs a re-run, not just WD-path:**
-  (1) **`7882a1e`** changed the PATH engine (reach/base gate IRIs + a `c:rpath` triple per reach gate +
-  every path match query) — the **wikidata-WDpath (†)** row must be re-measured on the isolation-fixed jar
-  (topology unchanged, so compile/WMC should hold; construct + triple count shift).
-  (2) **`90c3c3c`** changed the TIMER BOUNDARIES — construction now includes RDF parse + answer recovery,
-  and compilation now includes variable ordering + ROBDD init. So **every** row (watdiv-Sstar, tpch-Q3,
-  Qrecon included) was collected under the OLD metric and no longer instantiates the documented end-to-end
-  timing. Treat ALL totals as provisional pending a 1-warmup + 5-run regeneration on the current harness.
-- **Protocol (G4):** 1 warm-up + **5 timed runs**, report **median [min–max]**, 300 s timeout.
-- **Environment:** `aisa-mgmt01.ki.uni-stuttgart.de`, 32 cores, 131 GB; **shared** HPC box (other users'
-  jobs logged, not killable); **warm** cache (repos loaded, daemons up) — steady-state, not cold-start.
-  GraphDB `-Xmx60g`. Absolute wall-clock is order-of-magnitude; breakdown/relative claims are the robust ones.
-- Harnesses: `g3_pqe_latency.py` (breakdown), `g4_instances.py` (per-instance), `g4_rigor.py` (protocol).
+- **Jar:** engine @ current HEAD — incl. **`PathIsoSeq`** (per-path reach/base-gate fingerprint isolation,
+  `7882a1e`) + `1e67021` (term-type-aware identity + `c:binding`); rebuilt **2026-07-12 23:56**.
+- **Timer boundaries (`90c3c3c`):** *construct* = engine CONSTRUCTs + RDF parse + answer recovery;
+  *compile* = **variable ordering + ROBDD build/init**; *WMC* = weighted count. Wider than the pre-`90c3c3c`
+  split (which is why Q3's compile jumps from 148 ms to 3.3 s — the global variable ordering is now counted).
+- **Protocol (G4):** 1 warm-up + **5 timed runs**, median [min–max], 300 s timeout. `g4_rigor.py` → `g4_rigor.csv`.
+- **Environment:** `aisa-mgmt01`, 32 cores, 131 GB; **shared** HPC box (jobs logged); **warm** cache;
+  GraphDB `-Xmx60g`. Absolute wall-clock order-of-magnitude; breakdown/relative claims are the robust ones.
 
 ## Ours — end-to-end PQE (construct → shared ROBDD compile → WMC), all answers
 
 | query | dataset | answers | construct | compile | WMC | **total (median [min–max])** |
 |---|---|--:|--:|--:|--:|--:|
 | watdiv-Sstar       | WatDiv 32.7 M reified         |     2 |   10 ms |    2 ms |  0 ms | **12 ms [11–12]** |
-| tpch-Q3 (naryrel)  | TPC-H SF 0.01 (1.26 M)        | 14 908 | 2598 ms |  148 ms | 36 ms | **2.78 s [2.78–2.80]** |
-| wikidata-WDpath **†** | Wikidata 2.13 B (`P279+`, G1) |    16 | 2308 ms | **5750 ms** | 10 ms | **8.04 s [7.69–8.14]** |
+| tpch-Q3 (naryrel)  | TPC-H SF 0.01 (1.26 M)        | 14 908 | 3080 ms | **3300 ms** | 36 ms | **6.40 s [6.40–6.44]** |
+| wikidata-WDpath    | Wikidata 2.13 B (`P279+`, G1) |    16 | 2144 ms |    1 ms |  0 ms | **2.14 s [2.10–2.21]** |
 
-- **Tree/star PQE is construct-dominated; compile+WMC is near-free.** TPC-H Q3: compile+WMC = 184 ms of
-  2.78 s (≈ 7 %) for all 14 908 answers — the stage the how-provenance baselines lack. Star: 2 ms.
-- **The recursive path is compile-dominated (5.75 s of 8.04 s).** Post-`1e67021` un-merges the reach
-  states a STR-collision had collapsed, so WD-path is the *correct, larger, reconvergent* circuit; the
-  fixed-order OBDD compile is now the cost. This is the case an **order-robust d-DNNF** (G6/d4 follow-up)
-  targets — WMC stays authoritative via **OBDD + PWE** (G6), d4 is compiled-size-only (R8.5).
+- **`PathIsoSeq` fixes the recursive-path compile blowup.** WD-path is now **2.14 s, compile ~1 ms** (was
+  8.04 s / compile 5.75 s pre-isolation): the per-path fingerprint keeps reach/base gates from accumulating
+  across paths, so cones are **1–20 tokens** (not 19–233) and the fixed-order OBDD compiles trivially.
+  16 answers, **OBDD==PWE 15/15** — correctness holds. The order-robust-d4 motivation *for paths* is
+  largely removed (it now applies to Q3's ordering step, below — not to paths).
+- **TPC-H Q3 compile is now ordering-dominated — honest under the corrected boundaries.** compile = **3.3 s
+  of 6.4 s** is the pure-Python **variable ordering** over ~45 k tokens (counted in compile per `90c3c3c`),
+  *not* the ROBDD build and *not* the weighted count (WMC 36 ms). This is a pure-Python-implementation cost
+  (a native compiler / linear ordering heuristic removes it); it **supersedes** the earlier "compile+WMC
+  near-free" phrasing for Q3. WMC itself is tiny everywhere (≤ 36 ms) — the weighted count is never the cost.
 
 ## Strong baseline — ProvSQL (modified PostgreSQL), same TPC-H Q3
 
 | query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) |
 |---|---|--:|--:|--:|
-| tpch-Q3 | SF 0.01 | 14 908 | **1.03 s [1.02–1.07]** | 2.78 s |
+| tpch-Q3 | SF 0.01 | 14 908 | **1.06 s [1.02–1.08]** | 6.40 s |
 
-Warm, 5-run (`g4_instances.py`, mktsegment=BUILDING). **ProvSQL is faster** (see G2a framing: comparable
-order of magnitude; our contribution is the *same* exact PQE on a **stock, unforked** SPARQL engine over a
-**broader fragment**, not a latency win). Our post-fix total includes `c:binding` answer-recovery metadata.
+Warm, 5-run (`g4_rigor.py`). **ProvSQL is faster** on Q3 (~6×; most of ours is now the pure-Python variable
+ordering, 3.3 s). Framing (G2a): comparable *order of magnitude* on a **stock, unforked** engine over a
+**broader fragment**, not a latency win — and note the ordering is the removable pure-Python cost, while
+on the **reconvergent Qrecon (below) ours is faster** than ProvSQL. Query-dependent, not a universal win.
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
@@ -78,7 +75,10 @@ corrected script establishes it on the next endpoint re-run.
 - TPC-H Q3 **SF 0.1 / SF 1** full-pipeline ours: Q3 SF 0.1 stays **construction-only** (125 154-answer
   circuit = pure-Python compile bottleneck; native/d4 compile is the follow-up). SF 1 not loaded.
   (R8.3's SF 0.1 end-to-end is delivered via Qrecon above, whose smaller circuit compiles.)
-- **† Re-measure `wikidata-WDpath` on the `7882a1e` isolation-fixed jar** (R8.1) — the current row was
-  built before the per-path fingerprint / `c:rpath` change; topology is unchanged so the total should hold,
-  but it is not literally on current HEAD until re-run.
+- **✓ `wikidata-WDpath` re-measured on the `PathIsoSeq` jar** (done): total dropped **8.04 s → 2.14 s**
+  (compile 5.75 s → 1 ms) — the isolation fix shrinks the reconvergent cones (19–233 → 1–20 tokens), so the
+  total did *not* hold; the main table above is the current-HEAD value. 16 answers, OBDD==PWE 15/15.
+- **Instance breadth (`g4_instances.py`) and Qrecon (R8.3) rows still show pre-`90c3c3c`-boundary numbers**
+  — a light re-run under the new boundaries is the remaining refresh (the main 3-row table + ProvSQL are
+  current-HEAD).
 - **WatDiv 200 M: dropped** — the 2014 generator segfaults on the modern toolchain; 10 M / 100 M stand.
