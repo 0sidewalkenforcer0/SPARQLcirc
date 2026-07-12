@@ -51,9 +51,12 @@ grows with the circuit). Framing (G2a): the *same* exact PQE (parity verified) a
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
-- **TPC-H Q3 × 5 mktsegments:** both ours and ProvSQL instance timings are pending the corrected
-  `g4_instances.py` re-run (the old ProvSQL target could be pruned).
-- **WatDiv S-star × 5 users**: 20 → 659 ms, tracking answer count; within-instance sd 0–8 ms.
+- **TPC-H Q3 × 5 mktsegments** (5-run each; ProvSQL now forced-eval): ours median-of-medians **4.5 s**
+  (mean 4.6 ± 1.1 s, range 3.5–6.4 s), ProvSQL **6.0 s** (mean 6.0 ± 1.0 s, 5.0–7.6 s) — **ours faster on
+  all 5 segments**. The old "ProvSQL faster" (mean 858 ms) was the pruned `count(*)` target; the honest
+  forced-`sum(probability_evaluate)` numbers put ours ahead here.
+- **WatDiv S-star × 5 users**: median-of-medians **131 ms** (20 → 665 ms, tracking answer count);
+  within-instance sd 0–8 ms.
 
 ## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `R8_3_RESULTS.md`
 
