@@ -1,0 +1,3 @@
+scale,answers,provsql_pqe_ms,ours_pqe_ms,provsql_p,ours_p,note
+0.01,14908,3601,1684,0.125,0.125,ours=G3 construct1500+compile149+wmc35
+0.1,125154,29440,12643,0.125,0.125,ours SF0.1 = engine construct only (876k-triple circuit); python compile is client artifact (G6/d4 removes)
