@@ -12,38 +12,29 @@ Findings:
 arm64 build -- so SDD stands in as the real d-DNNF-family compiler on M4.)
 """
 import rdflib
-import gates, factor, compile_bdd, compile_sdd, wmc, verify_all
+import gates, factor, compile_bdd, compile_sdd, wmc, verify_all, circuit_io
 
-C = rdflib.Namespace("urn:circuit:"); D = "urn:d:"
-def short(x): return str(x).replace(D, "")
-
-def to_circ(nt):
-    typ, feeds, tin, minus, ans = verify_all.load(nt)
-    circ = {}
-    for t, ls in tin.items():
-        for l in ls: circ[l] = ("leaf", short(l))
-    for n, tp in typ.items():
-        if tp == C.Times:  circ[n] = ("times", tuple(sorted(tin.get(n, ()))))
-        elif tp == C.Plus: circ[n] = ("plus", tuple(sorted(feeds.get(n, ()))))
-        elif tp == C.Minus: m = minus[n]; circ[n] = ("minus", (m["m"], m["s"]))
-    ref = set()
-    for op, pl in circ.values():
-        if op in ("times", "plus"): ref |= set(pl)
-        elif op == "minus": ref |= {pl[0], pl[1]}
-    for r in ref: circ.setdefault(r, ("plus", ()))
-    return circ, ans
+def _truth(s):   # term-aware PWE keys (matching circuit_io.answer_key over c:binding)
+    out = {}
+    for k, p in wmc.pwe(s["q"], s["sel"], s["base"], s["P"]).items():
+        d = dict(k)
+        out[circuit_io.answer_key({sv.lstrip("?"): (circuit_io.canon_iri("urn:d:" + d[sv]) if sv in d else "u")
+                                   for sv in s["sel"]})] = p
+    return out
 
 print("=== (1) SDD == OBDD == PWE on engine-materialized circuits ===")
 for name in ["drug", "selfjoin", "minus", "optional"]:
-    s = verify_all.REG[name]; circ, ans = to_circ(s["nt"]); P = s["P"]
-    truth = {frozenset((v.lstrip("?"), vv) for v, vv in k): p
-             for k, p in wmc.pwe(s["q"], s["sel"], s["base"], P).items()}
-    for root, key in ans.items():
-        ps, ss = compile_sdd.compile(circ, root, P)
-        pb, sb = compile_bdd.probability(circ, root, P)
-        k = verify_all.parse_key(key); tp = truth.get(k, 0.0)
+    s = verify_all.REG[name]
+    circ, answers, bindings = circuit_io.parse(open(s["nt"]).read())
+    Pf = {"urn:d:" + k: v for k, v in s["P"].items()}                 # circuit leaves are urn:d: token IRIs
+    truth = _truth(s)
+    for g in answers:
+        key = circuit_io.answer_key(bindings[g])
+        ps, ss = compile_sdd.compile(circ, g, Pf)
+        pb, sb = compile_bdd.probability(circ, g, Pf)
+        tp = truth.get(key, 0.0)
         ok = abs(ps - pb) < 1e-9 and abs(ps - tp) < 1e-9
-        print(f"  [{name:8}] {str(dict(k)):24} SDD={ps:.6f}(sz{ss}) OBDD={pb:.6f}(sz{sb}) PWE={tp:.6f} {'OK' if ok else 'FAIL'}")
+        print(f"  [{name:8}] {key:26} SDD={ps:.6f}(sz{ss}) OBDD={pb:.6f}(sz{sb}) PWE={tp:.6f} {'OK' if ok else 'FAIL'}")
 
 print("\n=== (2) bounded-treewidth (shared hub): both compilers polynomial ===")
 def hub(N):

@@ -12,7 +12,7 @@ import os, re, sys, time, subprocess, tempfile, csv, itertools, random
 import urllib.request as U, urllib.parse as UP
 import e3_run                                           # bind_source uses e3_run.EP (set by WATDIV_REPO)
 from watdiv_run import get_npcs
-import compile_bdd
+import compile_bdd, circuit_io
 
 JAR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "engine", "target", "npcs-rewrite.jar"))
 EMPTY = tempfile.NamedTemporaryFile("w", suffix=".ttl", delete=False); EMPTY.write(""); EMPTY.close()
@@ -56,26 +56,13 @@ def build(constructs):
     return ms, triples, capped
 
 def parse_circuit(triples):
-    """triples (N-Triples strings) -> circ dict {id:(op,payload)} + answer map, for WMC/counting."""
-    typ, feeds, tin, minu, subt, ans = {}, {}, {}, {}, {}, {}
-    for line in triples:
-        s, p, o = line[:-2].split(None, 2); s = s.strip("<>"); p = p.strip("<>"); o = o.strip()
-        if p == RS + "type": typ[s] = o.strip("<>")
-        elif p == C + "feeds": feeds.setdefault(o.strip("<>"), set()).add(s)
-        elif p == C + "in": tin.setdefault(s, set()).add(o.strip("<>"))
-        elif p == C + "minuend": minu[s] = o.strip("<>")
-        elif p == C + "subtrahend": subt[s] = o.strip("<>")
-        elif p == C + "answer": ans[s] = o
-    circ = {}
-    for n, t in typ.items():
-        if t.endswith("Times"): circ[n] = ("times", tuple(sorted(tin.get(n, ()))))
-        elif t.endswith("Plus"): circ[n] = ("plus", tuple(sorted(feeds.get(n, ()))))
-        elif t.endswith("Minus"): circ[n] = ("minus", (minu.get(n), subt.get(n)))
-    ref = set()
-    for op, pl in circ.values():
-        ref |= set(pl) if op in ("times", "plus") else {pl[0], pl[1]}
-    for r in ref:
-        circ.setdefault(r, ("leaf", r))
+    """triples (N-Triples lines) -> (circ, ans, typ) via the shared circuit_io parser. `ans` is now
+    keyed gate -> TERM-AWARE answer key (circuit_io.answer_key over c:binding), so consumers that invert
+    it (g3/g8: {key: gate}) no longer re-merge two distinct answers that share a c:answer STRING. This
+    one function backs e6_minus + g3 + g8 + g4 + g6 + e8 + e9."""
+    circ, answers, bindings = circuit_io.parse(triples)
+    ans = {g: circuit_io.answer_key(bindings[g]) for g in answers}
+    typ = {g: op.capitalize() for g, (op, _) in circ.items()}          # counts() checks .endswith('Times')/...
     return circ, ans, typ
 
 def counts(circ, ans, typ):

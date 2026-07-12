@@ -91,40 +91,32 @@ def cnf_wmc_bruteforce(nvars, clauses, weights):
 
 
 if __name__ == "__main__":
-    import rdflib, verify_all, compile_bdd, wmc
-    C = rdflib.Namespace("urn:circuit:"); D = "urn:d:"
-    def to_circ(nt):
-        typ, feeds, tin, minus, ans = verify_all.load(nt)
-        c = {}
-        for t, ls in tin.items():
-            for l in ls: c[l] = ("leaf", str(l).replace(D, ""))
-        for n, tp in typ.items():
-            if tp == C.Times: c[n] = ("times", tuple(sorted(tin.get(n, ()))))
-            elif tp == C.Plus: c[n] = ("plus", tuple(sorted(feeds.get(n, ()))))
-            elif tp == C.Minus: m = minus[n]; c[n] = ("minus", (m["m"], m["s"]))
-        ref = set()
-        for op, pl in c.values():
-            if op in ("times", "plus"): ref |= set(pl)
-            elif op == "minus": ref |= {pl[0], pl[1]}
-        for r in ref: c.setdefault(r, ("plus", ()))
-        return c, ans
+    import verify_all, compile_bdd, wmc, circuit_io
+    def _truth(s):   # term-aware PWE keys (matching circuit_io.answer_key over c:binding)
+        out = {}
+        for k, p in wmc.pwe(s["q"], s["sel"], s["base"], s["P"]).items():
+            d = dict(k)
+            out[circuit_io.answer_key({sv.lstrip("?"): (circuit_io.canon_iri("urn:d:" + d[sv]) if sv in d else "u")
+                                       for sv in s["sel"]})] = p
+        return out
 
     print("verify CNF encoding: brute CNF-WMC == OBDD-WMC == PWE")
     import os
     os.makedirs("cnf", exist_ok=True)
     manifest = []
     for name in ["drug", "selfjoin", "minus", "optional"]:
-        s = verify_all.REG[name]; circ, ans = to_circ(s["nt"]); P = s["P"]
-        truth = {frozenset((v.lstrip("?"), vv) for v, vv in k): p
-                 for k, p in wmc.pwe(s["q"], s["sel"], s["base"], P).items()}
-        for root, key in ans.items():
-            e = export(circ, root, P)
+        s = verify_all.REG[name]
+        circ, answers, bindings = circuit_io.parse(open(s["nt"]).read())
+        Pf = {"urn:d:" + k: v for k, v in s["P"].items()}             # circuit leaves are urn:d: token IRIs
+        truth = _truth(s)
+        for g in answers:
+            key = circuit_io.answer_key(bindings[g])
+            e = export(circ, g, Pf)
             cnf_wmc = cnf_wmc_bruteforce(e["nvars"], e["clauses"], e["weights"])
-            obdd = compile_bdd.probability(circ, root, P)[0]
-            obdd_size = compile_bdd.probability(circ, root, P)[1]
-            tp = truth.get(verify_all.parse_key(key), 0.0)
+            obdd, obdd_size = compile_bdd.probability(circ, g, Pf)
+            tp = truth.get(key, 0.0)
             tag = "OK" if abs(cnf_wmc - obdd) < 1e-9 and abs(cnf_wmc - tp) < 1e-9 else "FAIL"
-            lbl = f"{name}_{sorted(dict(verify_all.parse_key(key)).items())}".replace(" ", "").replace("'", "")[:60]
+            lbl = (name + "_" + key).replace("|", "_").replace("=", "").replace("\x1f", "").replace(":", "")[:60]
             fn = "cnf/" + lbl + ".cnf"
             open(fn, "w").write(e["dimacs"])
             manifest.append({"instance": lbl, "cnf": os.path.basename(fn), "nvars": e["nvars"],
