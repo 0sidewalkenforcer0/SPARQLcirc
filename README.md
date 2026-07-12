@@ -93,23 +93,34 @@ See `engine/README.md` and `reference/README.md` for details.
 
 The rewritten query is a **CONSTRUCT**, so the engine returns an RDF graph rather than a
 result table — but the SELECT bindings are not lost. Each answer's root ⊕ (`c:Plus`) gate
-carries a `c:answer` literal that encodes the projected variables:
+carries its projected binding as **structured RDF** that preserves the exact RDF term
+(IRI vs literal, datatype, language tag, bound/unbound):
 
 ```
-<urn:g:a:…> a c:Plus ; c:answer "A|y=…Bob|c=…Rome" .    # ?y=Bob, ?c=Rome
-<urn:g:a:…> a c:Plus ; c:answer "A|y=…Carol|c=NULL" .   # ?y=Carol, ?c unbound
+<urn:g:a:…> a c:Plus ;
+    c:binding [ c:var "y" ; c:val <…#Bob>  ] ,
+              [ c:var "c" ; c:val <…#Rome> ] .            # ?y=Bob,   ?c=Rome
+<urn:g:a:…> a c:Plus ;
+    c:binding [ c:var "y" ; c:val <…#Carol> ] ,
+              [ c:var "c" ] .                             # ?y=Carol, ?c UNBOUND (no c:val)
 ```
 
-Format `A|<var>=<value>|…` (unbound OPTIONALs → `NULL`); the gate IRI is `hash(answer_key)`,
-so the key is injective on the binding — two answers never collide. The client step is:
+The gate IRI is a **collision-resistant, term-type-aware identity hash** (`SHA256` of a
+kind-tagged, per-part-hashed serialization of the binding), so two answers that differ only by
+term type — an IRI `<…#foo>` vs a literal `"…#foo"`, `"1"^^xsd:integer` vs `"1"^^xsd:string`,
+`@en` vs `@fr`, or bound vs unbound — get **distinct** gates. The client step is:
 
-1. find every gate with a `c:answer` property → the answer roots;
-2. parse the literal → the SELECT binding for that row;
+1. find every gate with `c:binding` (equivalently, a `c:answer` label) → the answer roots;
+2. for each, read its `c:binding` nodes → `c:var` (the variable) and `c:val` (the RDF term);
+   a binding with **no `c:val` means that variable is unbound** (e.g. an unmatched OPTIONAL);
 3. compile the sub-circuit rooted there and weighted-model-count it → that row's probability.
 
-This reconstructs the ordinary SELECT table plus a probability column — the CONSTRUCT output
-is a **superset** of the SELECT output (bindings in `c:answer` + the provenance circuit).
-`reference/watdiv_run.py` and `reference/verify_gallery.py` do exactly this.
+This reconstructs the ordinary SELECT table plus a probability column — the CONSTRUCT output is a
+**superset** of the SELECT output. Each gate *also* carries a readable
+**`c:answer "A|var=value|…"`** literal, but that is a **display/debug label only**: it is built
+from `STR()` and is **not** injective (an IRI and a same-lexical literal render identically), so
+**do not use `c:answer` to identify or de-duplicate answers** — use the gate IRI / `c:binding`.
+`reference/verify_gallery.py` and `reference/verify_answer_keys.py` do exactly this.
 
 ## Reproducing the evaluation
 

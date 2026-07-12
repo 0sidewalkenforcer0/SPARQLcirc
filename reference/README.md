@@ -89,9 +89,13 @@ canonicalization (#Times-gates == #distinct child-multisets ⇒ no congruent ⊗
 [minus]    correctness=OK  Times=4 distinct-multisets=4 canonical=YES
 [optional] correctness=OK  Times=6 distinct-multisets=6 canonical=YES
 ```
-Remaining hardening: ⊕/answer/group keys use delimiter-joined term values
-(injective for well-formed IRIs; hash the values to be airtight against delimiter
-injection). Answer keys stay readable so the client can recover each answer's bindings.
+⊕/answer/group/reach gate keys are now **collision-resistant + term-type-aware**: each binding is
+kind-tagged (IRI/literal/blank/unbound) and per-part `SHA256`-hashed before concatenation (`termHash`,
+same discipline as the product-gate key), so distinct RDF terms — IRI vs same-lexical literal, differing
+datatype/language tag, or bound-vs-unbound — never collapse to one gate. Answer **recovery** is via the
+structured `c:binding`/`c:var`/`c:val` nodes (which preserve the RDF term losslessly); the readable
+`c:answer "A|var=value|…"` literal is a **debug label only** — it is `STR()`-based and *not* injective, so
+do not key or de-duplicate on it. Regression: `verify_answer_keys.py`; term-aware oracle: `verify_gallery.py`.
 
 ## Knowledge compilation (d-DNNF via ROBDD) — done ✅
 
