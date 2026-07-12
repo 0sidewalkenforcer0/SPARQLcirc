@@ -100,7 +100,7 @@ compilation.
 - **Prediction:** sub-second→low-seconds at 10⁶–10⁷ (pilot: 420 ms / 13.5k triples); **byte-identical circuits across engines** (deterministic content-addressing); `c` a small constant.
 - **Success:** near-linear scaling, `c` reported explicitly. **Risk:** if `SHA256` in SPARQL is slow on an engine, `c` could be several×; measure and report per engine.
 
-## E4 — Compilation + WMC vs treewidth  *(status: NEW — needs `gen_families.py` + d4 on Linux/x86)*
+## E4 — Compilation + WMC vs treewidth  *(status: piloted — OBDD/SDD on synthetic families done (`e4_results.csv`); the d4-on-Linux/x86 leg is staged (`d4_pipeline.py`, `D4_ON_LINUX.md`), and d4 WMC is currently compiled-size-only on real path circuits (8/16 vs OBDD/PWE — see G6))*
 
 - **Proves:** D — treewidth is the tractability parameter; a real d-DNNF compiler realizes it.
 - **Families (from `reference/gen_families.py`):** bounded-tw growing-n (`layered(depth↑, width=2)`, `chain`); growing-tw (`layered(depth=3, width=k↑)`, `grid(k)`).
@@ -125,7 +125,7 @@ compilation.
 - **Setup:** MINUS/OPTIONAL-heavy queries on real + synthetic; WMC vs PWE; report plan cost (MINUS: guarded DIFF, one sub-plan per overlapping UNION branch; OPTIONAL: AND-branch + DIFF; composite operands reduced by normalize) and circuit size.
 - **Prediction:** exact; ⊖/sub gates add cost linear in operand sizes; tractability class unchanged (⊖→a∧¬b compiles like any Boolean). **Qualitative:** SPARQLprov (monotone semiring) and NPCS (strings, no PQE) can't produce these probabilities — a "we can, they can't" result.
 
-## E7 — End-to-end vs baselines  *(status: NEW — needs `provsql/` harness)*
+## E7 — End-to-end vs baselines  *(status: piloted — toy ProvSQL head-to-head done (`e7_results.csv`, 3 instances); the at-scale comparison folds into G2a/G3 and is in flight on the server)*
 
 - **Proves:** A + B + C together.
 - **Metric:** total time & space **to the exact answer probability**, plus a qualitative "requires engine modification?" column.

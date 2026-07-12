@@ -293,10 +293,13 @@ collapses the per-user existential cross-product, WMC provably unchanged:
 2.9× on star / 1.8× on snowflake, scaling with how existential the shape is — the
 factored contribution motivated on real WatDiv, not just synthetic layered graphs.
 
-## Not yet (next steps)
-1. **Scale study — remaining**: ~~real KGs (WatDiv)~~ ✅ done (above); still open —
-   Wikidata slice from `pilot/`, and a head-to-head with SPARQLprov (decode cost) and
-   ProvSQL (relational encoding).
-2. **d4 scaling figure** on a Linux/x86 box (CNFs + pipeline are ready).
-3. Port `factor_native` passes into the Java `npcs.circuit` package (flat γ is Java;
-   factored passes are currently Python/rdflib-driven SPARQL).
+## Not yet (next steps)  — gap IDs defined in `SERVER_TASK.md` (ROUND 6/8)
+1. **Scale study — remaining**: ~~real KGs (WatDiv)~~ ✅; ~~Wikidata 2.13B statement graph~~ ✅ (E8);
+   still open — **property paths at Wikidata scale = G1** (the frontier-only reachable-subgraph loop has
+   landed; the large-reachable-set run is still pending — current path results are on *small* reachable
+   subgraphs), and head-to-heads with **SPARQLprov decode cost = G5** and **ProvSQL at scale = G2a/G3**.
+2. **d4 scaling figure** on a Linux/x86 box (CNFs + pipeline ready) = **G6**; note d4 WMC is
+   compiled-size-only on real path circuits until the 8/16-vs-OBDD/PWE discrepancy is resolved.
+3. **Factored construction into the Java `npcs.circuit` pipeline** — flat γ is Java; the factored
+   (variable-elimination) passes are currently Python/rdflib-driven SPARQL. Until integrated, factored
+   construction is a **reference/prototype optimization**, not a default of the end-to-end Java system.

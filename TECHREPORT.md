@@ -370,10 +370,10 @@ axes: **data scale** (KG size — only construction/deployability cares) and **p
 | E1 correctness | exactness | tiny enumerable + `gen_families` | ≤25 tokens | **[impl]** `verify_gallery`/`verify_engine_native` |
 | E2 compactness | shared circuit ≪ strings | WatDiv 100M + `gen_families` deep | 100M; 10⁶ deriv | **[pilot]** `bench.py` (201× deep) |
 | E3 construction scaling | deployability | WatDiv 10M/100M/1B + real KG | up to 1B | **[pilot]** `bench_engine.py` (GraphDB, 2-hop + 51k) |
-| E4 compile vs tw | tractability | `gen_families` only (layered/grid) | tw 1→~25 | **[planned]** needs d4 on Linux |
+| E4 compile vs tw | tractability | `gen_families` only (layered/grid) | tw 1→~25 | **[impl]** OBDD/SDD (`e4_results.csv`); **[planned]** d4 on Linux |
 | E5 factored vs flat | poly construction | WatDiv 100M star/snowflake + `gen_families` | 100M | **[pilot]** `watdiv_factor.py` |
-| E6 non-monotone | exact ⊖ | enumerable + WatDiv/real MINUS/OPTIONAL | ≤25 + 100M | **[impl]** small; **[planned]** scale |
-| E7 vs baselines | overall thesis | WatDiv 10M–100M (baseline-limited) + real KG | ≤ what ProvSQL finishes | **[planned]** `provsql/` harness |
+| E6 non-monotone | exact ⊖ | enumerable + WatDiv/real MINUS/OPTIONAL | ≤25 + 100M | **[impl]** small **and** 10M/100M/TPC-H SF1 (`e6_minus_*.csv`) |
+| E7 vs baselines | overall thesis | WatDiv 10M–100M (baseline-limited) + real KG | ≤ what ProvSQL finishes | **[pilot]** toy ProvSQL (`e7_results.csv`); **[planned]** at scale = G2a/G3 |
 
 **"E7 baseline-limited."** A fair head-to-head runs at the largest scale *every* system finishes;
 that ceiling is set by the baselines (ProvSQL isn't billion-scale; NPCS/SPARQLprov strings blow up
@@ -460,10 +460,12 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 11. **Property-path loop cost** — `CircuitRun` bounds the reach loop by `|V_s|−1` rounds, where `V_s` is
     the source's *reachable* subgraph (discovered live from the reach gates), **not** the global node
     count — so a bounded/sparse-reach path query is feasible and stays *exact* (a simple path in the
-    reachable subgraph has ≤ `|V_s|−1` edges). Residual costs: the all-pairs base relation is still
-    materialized once (`O(|E|)` in a single CONSTRUCT), and a densely-connected reachable set still needs
-    `~|V_s|` rounds (inherent to exact reachability provenance). Not yet done: a source-restricted base
-    (materialize base only for reachable edges) and nested closures.
+    reachable subgraph has ≤ `|V_s|−1` edges). For a **bound source** the base is now materialized **only
+    from the reachable subgraph** (G1: a live client-side frontier BFS discovers `V_s`, then a
+    `VALUES ?u {…}` clause restricts each base CONSTRUCT — the all-pairs base is never built, avoiding the
+    KG-scale OOM). Residual costs: a **variable** source still materializes the all-pairs base (`O(|E|)`),
+    and a densely-connected reachable set still needs `~|V_s|` rounds (inherent to exact reachability
+    provenance). Not yet done: nested closures, and reducing the variable-source all-pairs base.
 
 ---
 
