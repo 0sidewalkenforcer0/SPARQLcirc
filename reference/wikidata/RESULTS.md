@@ -37,19 +37,30 @@ matches) are expensive: the circuit reaches millions of gates and hits the `too-
 That breadth is an artifact of our predicate filter (broader than WDBench's curated graph); the clean
 NPCS comparison would use WDBench's curated subset (what NPCS itself measured).
 
-## Result 2 — property paths at Wikidata scale (limitation)
+## Result 2 — property paths at Wikidata scale ✅ (G1 fix)
 
 Extracted **P279 (subclass, 5.2 M edges) + P131 (contained-in, 14.9 M edges)** from the truthy graph,
 Standard-reified (60 M triples), loaded into a `wdpaths` repo. WD-path (`Q7397 wdt:P279+`, software's
 superclasses) and WD-path2 (`Q60 wdt:P131+`, NYC's administrative containment) via the client-driven
-iterative fixpoint (endpoint mode). The sources exist (Q7397 → 4 P279 edges, Q60 → 1 P131 edge), but
-both **exhausted heap** (`OutOfMemoryError`): the per-round queries over 60 M Standard-reified triples
-plus client-side circuit accumulation do not scale to this size.
+iterative fixpoint (endpoint mode).
 
-**Status:** property-path provenance is demonstrated + **verified (WMC == PWE)** at moderate scale on
-real WatDiv `friendOf` and synthetic ring/clique graphs (Round 3 — where naive walk enumeration is
-factorial/infinite and the circuit stays polynomial). Scaling the iterative protocol to a 60 M-edge
-Wikidata relation (streaming rounds, frontier-only queries, bounded accumulation) is future work.
+**Root cause of the earlier OOM (now fixed):** `pathQuery()` materialized the **all-pairs base
+relation** — *every* edge of the predicate (all 5.2 M P279 / 14.9 M P131) became a base gate — before
+any source restriction. **G1 fix (`CircuitRun` + `CircuitRewriter`):** for a *bound* source, first
+discover its reachable subgraph by a read-only client BFS, then restrict the base to edges **FROM
+reachable nodes** (VALUES-inline) and bound the loop by `|V_s|-1`. The composition protocol is
+unchanged, so provenance stays exact; the base is now ∝ the (tiny) reachable subgraph, not the whole
+relation.
+
+| path | before | G1 | reachable `|V_s|` | answers | vs ground truth |
+|---|---|---|---:|---:|---|
+| WD-path (`Q7397 P279+`)  | OOM | builds ✓ | 17 | 16 | **16 = 16 ✓** |
+| WD-path2 (`Q60 P131+`)   | OOM | 838 ms | 3 | 2 | **{Q30, Q1384} exact ✓** |
+
+Both run at 8 GB heap on the **2.13 B-triple** GraphDB; answers verified against an independent
+ground-truth BFS. **Property-path provenance now scales to a real KG** — the unique contribution that
+previously did not. (Correctness also holds on the small WMC == PWE battery, `verify_engine_paths.py`.)
+Read-only-engine paths (VALUES-inline the prior round instead of INSERT) remain the next step.
 
 ## Caveats
 

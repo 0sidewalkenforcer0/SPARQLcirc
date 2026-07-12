@@ -186,8 +186,10 @@ succeeded** — the pipeline runs at full Wikidata scale.
 non-selective ones (millions of matches) hit the caps — a breadth artifact of our filter (WDBench's
 curated graph gives the like-for-like comparison).
 
-**Paths at Wikidata scale** — the 60 M-edge P279/P131 iterative fixpoint exhausts heap (future work);
-property-path provenance is verified at moderate scale in **Round 3** (WatDiv/synthetic, WMC == PWE).
+**Paths at Wikidata scale ✅ (G1)** — the earlier OOM was the *all-pairs base* (every predicate edge).
+Fixed: for a bound source, a read-only BFS finds the reachable subgraph, then the base is restricted to
+its edges. `Q7397 P279+` (16 answers) and `Q60 P131+` (2, exact) now build on the 2.13 B graph, verified
+vs ground truth. Property-path provenance scales to a real KG.
 *Full write-up:* [`wikidata/RESULTS.md`](../wikidata/RESULTS.md).
 
 ## E9 — TPC-H (relational-derived RDF, per-row provenance)

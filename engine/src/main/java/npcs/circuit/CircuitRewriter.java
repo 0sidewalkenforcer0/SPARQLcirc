@@ -532,9 +532,11 @@ public class CircuitRewriter {
         // CONSTRUCT per UNION alternative, each a ⊗ over the branch's reified patterns. reach^0 is then
         // seeded FROM the base (see PathQuery.init), restricted to the source when it is bound.
         List<String> baseC = new ArrayList<>();
+        List<String> branchWheres = new ArrayList<>();           // reified branch WHEREs (bind ?u,?v) — reused for the G1 BFS
         for (List<StatementPattern> br : branches) {
             List<String> toks = new ArrayList<>();
             StringBuilder where = reify(br, "a", toks);          // binds ?u,?v (+ intermediates) and the tokens
+            branchWheres.add(where.toString());
             String tkey = emitSortedProdKey(where, toks);
             StringBuilder q = new StringBuilder(PRE);
             q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base")).append(" .\n  ?t a c:Times ;");
@@ -543,7 +545,7 @@ public class CircuitRewriter {
              .append(PathQuery.reachIri("?u", "?v", "base")).append(bindIri("?t", "urn:g:t:", tkey)).append("}\n");
             baseC.add(q.toString());
         }
-        return new PathQuery(baseC, endOf(s, subjName), endOf(o, objName), star, W);
+        return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName), star, W);
     }
 
     private static PathQuery.End endOf(Var v, String name) {
@@ -579,10 +581,33 @@ public class CircuitRewriter {
             String pat(String v) { return isVar ? v : iri; }     // SPARQL term to match this endpoint
         }
         private final List<String> baseConstructs;               // the all-pairs base relation (rlvl "base")
+        private final List<String> branchWheres;                 // reified sub-path branches (bind ?u,?v), for the BFS
         private final End subj, obj; private final boolean star;
         private final List<String> W;
-        PathQuery(List<String> baseConstructs, End subj, End obj, boolean star, List<String> W) {
-            this.baseConstructs = baseConstructs; this.subj = subj; this.obj = obj; this.star = star; this.W = W;
+        private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
+        PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj, boolean star, List<String> W) {
+            this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
+            this.subj = subj; this.obj = obj; this.star = star; this.W = W;
+        }
+        /** G1: is the path source a bound constant? (only then can we restrict the base to a reachable subgraph). */
+        public boolean boundSource() { return !subj.isVar; }
+        public String sourceValue() { return subj.iri.replaceAll("^<|>$", ""); }   // bare source IRI
+        public void setReachable(java.util.Set<String> r) { this.reachable = r; }
+        /** G1 BFS step: the sub-path targets ?v reachable in ONE hop from ?u ∈ frontier (read-only). */
+        public String frontierStepQuery(java.util.Collection<String> frontier) {
+            StringBuilder q = new StringBuilder(PRE).append("SELECT DISTINCT ?v WHERE {\n").append(valuesClause(frontier));
+            for (int i = 0; i < branchWheres.size(); i++)
+                q.append(i == 0 ? "  { " : "  UNION { ").append(branchWheres.get(i)).append(" }\n");
+            return q.append("}\n").toString();
+        }
+        private static String valuesClause(java.util.Collection<String> nodes) {
+            StringBuilder sb = new StringBuilder("  VALUES ?u {");
+            for (String n : nodes) sb.append(" <").append(n).append(">");
+            return sb.append(" }\n").toString();
+        }
+        private static String injectValues(String construct, String vals) {   // insert VALUES right after WHERE {
+            int i = construct.indexOf("WHERE {\n");
+            return i < 0 ? construct : construct.substring(0, i + 8) + vals + construct.substring(i + 8);
         }
         // A BOUND source restricts reach^0 (and zero-length) to (source, .) -> single-source
         // O(|V_s|.|E_s|); a variable source keeps all pairs. The from-var in reach heads is ?u.
@@ -613,7 +638,13 @@ public class CircuitRewriter {
         /** Materialize the base relation, then seed reach^0 from it (restricted to the source),
          *  plus the zero-length pairs for :p*. */
         public List<String> init() {
-            List<String> out = new ArrayList<>(baseConstructs);   // all-pairs base (rlvl "base")
+            List<String> out = new ArrayList<>();
+            if (reachable != null && !reachable.isEmpty()) {      // G1 bound source: base only FROM reachable nodes
+                String vals = valuesClause(reachable);            // (never materialize the all-pairs base = OOM)
+                for (String b : baseConstructs) out.add(injectValues(b, vals));
+            } else {
+                out.addAll(baseConstructs);                       // variable source: all-pairs base (unchanged)
+            }
             out.add(seedReach0());                                // reach^0 = base, restricted to the source
             if (star) out.add(zeroLenConstruct());                // + zero-length at the source (for :p*)
             return out;

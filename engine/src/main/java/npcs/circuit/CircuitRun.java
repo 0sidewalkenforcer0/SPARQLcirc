@@ -113,11 +113,35 @@ public final class CircuitRun {
                 // reach gates' c:rfrom/c:rto). A simple path in the reachable subgraph has <= |V_s|-1
                 // edges, so |V_s|-1 rounds capture every simple path -> exact provenance -- while
                 // |V_s| << the global node count keeps a bounded/sparse query feasible.
-                int nGlobal;
-                try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
-                    nGlobal = ((Literal) r.next().getValue("c")).intValue();
+                int cap;
+                if (pathq.boundSource()) {
+                    // G1: discover the source's REACHABLE subgraph by a read-only client BFS, then restrict
+                    // the base relation to edges FROM reachable nodes (in pathq.init below). This avoids ever
+                    // materializing the all-pairs base (every predicate edge = the OOM at KG scale); the
+                    // composition protocol is unchanged, so provenance stays exact (all simple paths in V_s).
+                    java.util.Set<String> reach = new java.util.LinkedHashSet<>();
+                    java.util.Set<String> frontier = new java.util.LinkedHashSet<>();
+                    reach.add(pathq.sourceValue()); frontier.add(pathq.sourceValue());
+                    while (!frontier.isEmpty()) {
+                        java.util.Set<String> next = new java.util.LinkedHashSet<>();
+                        try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
+                            while (r.hasNext()) {
+                                org.eclipse.rdf4j.model.Value v = r.next().getValue("v");
+                                if (v != null && reach.add(v.stringValue())) next.add(v.stringValue());
+                            }
+                        }
+                        frontier = next;
+                    }
+                    pathq.setReachable(reach);
+                    cap = Math.max(1, reach.size() - 1);       // |V_s|-1 bounds every simple path in the reachable subgraph
+                    System.err.println("# ---- G1 reachable-subgraph BFS: |V_s| = " + reach.size() + " ----");
+                } else {
+                    int nGlobal;                               // variable source (all-pairs): fall back to the global bound
+                    try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
+                        nGlobal = ((Literal) r.next().getValue("c")).intValue();
+                    }
+                    cap = Math.max(1, nGlobal - 1);
                 }
-                int cap = Math.max(1, nGlobal - 1);            // global upper bound (safety net)
                 java.util.Set<String> reachNodes = new java.util.HashSet<>();
                 for (String c : pathq.init()) runFeed(con, circuit, reachNodes, c);
                 int k = 0, lastLevel = 0;
@@ -128,7 +152,7 @@ public final class CircuitRun {
                 }
                 for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
                 System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
-                    + ", rounds=" + lastLevel + " (global-N cap=" + cap + ") ----");
+                    + ", rounds=" + lastLevel + " (cap=" + cap + ") ----");
             } else {
                 java.util.List<String> planQueries = rw.plan(query);
                 System.err.println("# ---- circuit construction plan: " + planQueries.size() + " CONSTRUCT(s) ----");
