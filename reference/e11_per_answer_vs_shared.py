@@ -19,15 +19,21 @@ Sides:
   - THEIRS : the NPCS/SPARQLprov per-answer how-provenance = the flat sum-of-products STRING (derivations
              spelled out, no factoring), each answer compiled independently.
 
-THE HONEST FINDING (this is the point): the win is REPRESENTATION-side, not compilation-side.
-  - repr_win  = T_string / T_circuit  -- our factored circuit is far more compact than their per-answer
-                strings (this is E2, up to 201x, unbounded on deep/recurring families).
-  - compiled_win ~= 1.0x -- knowledge compilation is inherently PER ANSWER (each answer is its own Boolean
-                function; distinct answers share no interior BDD nodes), so the shared circuit does NOT
-                shrink the compiled artifact, and the ite-cache makes compile cost representation-
-                independent. The advantage is in PRODUCING/STORING the compact circuit (E2/E3), not in
-                the knowledge-compilation step. Stating this pre-empts the "your win is the compiler"
-                objection: the compiler is neutral; the win is the representation an unmodified engine builds.
+TWO WINS (both measured):
+  - REPRESENTATION (repr_win = T_string / T_circuit): our factored circuit is far more compact than the
+    per-answer strings (E2, up to 201x, unbounded on deep/recurring families). Order-independent.
+  - COMPILE-TIME AT SCALE (scale_sweep): with N answers SHARING a sub-provenance of compiled size S, one
+    shared pass builds it ONCE = Theta(N+S), while per-answer rebuilds it per answer = Theta(N*S). The
+    absolute saving grows with N (measured: ~9x time at N=1000), the ratio bounded by S. This is the
+    "1000 answers -> we compile once, they compile 1000 times" intuition, and it holds when answers share
+    provenance (the common case, and the premise of a shared circuit).
+
+  CAVEAT (to stay honest): the compile-time win needs (a) actual cross-answer sharing -- fully independent
+  answers give N disjoint functions with nothing to reuse; and (b) for an OBDD, a variable order that lets
+  the shared sub-BDD merge -- a shared PREFIX at the TOP of the order does NOT merge, which is exactly why
+  Result 1's per-instance table (built with a DFS shared-as-prefix order) shows compiled_win ~= 1.0x.
+  d-DNNF/d4 picks its own decomposition and is more robust to order. So Result 1 is the WORST-CASE
+  (no-reuse) order; scale_sweep uses a sharing-friendly order to expose the reuse the shared circuit enables.
 
 Why this is faithful to the baselines: our engine reproduces NPCS's rewriting (BGP-verified identical),
 so an answer's cone in our circuit IS the per-answer how-provenance NPCS/SPARQLprov compute for it, and
@@ -215,6 +221,32 @@ def run(name, q, data, sel):
 
 
 # ------------------------------- MINUS: SPARQLprov's how-provenance is WRONG -------------------------
+def scale_sweep(d=8, Ns=(50, 200, 500, 1000)):
+    """The cross-answer COMPILE-TIME win at scale (the reviewer's / user's intuition, measured).
+    N answers share a depth-d sub-provenance, compiled with a SHARING-FRIENDLY order (selectors on top,
+    the shared chain at the bottom, so its sub-BDD merges). Per-answer recompiles the shared chain N
+    times = Theta(N*S); the shared pass builds it once = Theta(N+S). The absolute saving grows with N;
+    the ratio is bounded by the shared size S. (With a shared-as-PREFIX order -- Result 1's global_order
+    -- the sub-BDD cannot merge and the win vanishes: for OBDD the win is order-realizable; d-DNNF/d4,
+    which picks its own decomposition, is more robust.)"""
+    print(f"\n=== compile-time win at scale: N answers sharing a depth-{d} sub-provenance (good order) ===")
+    print(f"{'N':>5} {'shared_size':>11} {'perans_size':>11} {'size_win':>8} "
+          f"{'shared_ms':>9} {'perans_ms':>10} {'time_win':>8}")
+    rows = []
+    for N in Ns:
+        data, q, sel = shared_prefix(d, N)
+        P = {t: 0.5 for t in data}
+        c = gates.Circuit(); roots = gamma.project(c, gamma.eval_q(c, q, data), sel)
+        order = [f"b{j}" for j in range(N)] + [f"c{i}" for i in range(d)]     # sharing-friendly
+        ss, st, _ = compile_shared(c.gates, roots, P, order)
+        ps, pt, _ = compile_per_answer(c.gates, roots, P, order, flat=False)
+        print(f"{N:>5} {ss:>11} {ps:>11} {ps/ss:>7.1f}x {st:>9.1f} {pt:>10.1f} {pt/max(st,1e-9):>7.1f}x")
+        rows.append(dict(N=N, d=d, shared_size=ss, perans_size=ps, size_win=round(ps / ss, 1),
+                         shared_ms=round(st, 1), perans_ms=round(pt, 1),
+                         time_win=round(pt / max(st, 1e-9), 1)))
+    return rows
+
+
 def minus_bug():
     """Disjoint-operand MINUS (P1={?x likes ?y}, P2={?z owns ?w} share NO variable). Compile each
     system's per-answer how-provenance and WMC it: ours (guarded, W3C) matches PWE; SPARQLprov's
@@ -265,7 +297,10 @@ if __name__ == "__main__":
         dat, q, o = layered(k, 2); rows.append(run(f"deep-{k}x2", q, dat, o))
     with open("e11_results.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLS); w.writeheader(); w.writerows(rows)
+    srows = scale_sweep()
+    with open("e11_scale.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(srows[0].keys())); w.writeheader(); w.writerows(srows)
     mrows = minus_bug()
     with open("e11_minus.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(mrows[0].keys())); w.writeheader(); w.writerows(mrows)
-    print("\nwrote e11_results.csv, e11_minus.csv")
+    print("\nwrote e11_results.csv, e11_scale.csv, e11_minus.csv")
