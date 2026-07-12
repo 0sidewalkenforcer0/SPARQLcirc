@@ -51,7 +51,11 @@ def env_log():
 
 def parse_provsql_checks(stdout, expected_runs):
     """Parse and validate tagged Q3 count/sum rows; sum forces and checks probability evaluation."""
-    checks = [(int(n), float(s)) for n, s in re.findall(r"^R\|(\d+)\|([\d.eE+-]+)$", stdout, re.M)]
+    # tolerate this ProvSQL build's aggregate-provenance display: sum()/count() over probability rows print
+    # as "14908 (*)|1863.5 (*)|<uuid>" (agg_token markers + a trailing provenance-UUID column). Capture the
+    # count and sum; ignore the optional " (*)" suffix and any trailing columns. Clean output matches too.
+    checks = [(int(n), float(s)) for n, s in
+              re.findall(r"^R\|(\d+)(?: \(\*\))?\|([\d.eE+-]+)", stdout, re.M)]
     if len(checks) != expected_runs:
         raise RuntimeError(f"ProvSQL: expected {expected_runs} consumed-probability rows, got {len(checks)}")
     if any(n <= 0 or abs(total - 0.125 * n) > 1e-6 * max(1, n) for n, total in checks):

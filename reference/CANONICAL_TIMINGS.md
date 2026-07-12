@@ -38,13 +38,16 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
 
 | query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) |
 |---|---|--:|--:|--:|
-| tpch-Q3 | SF 0.01 | 14 908 | **pending corrected 5-run** | 6.40 s |
+| tpch-Q3 | SF 0.01 | 14 908 | **7.46 s [7.28–7.53]** | 6.45 s |
 
-The previous 1.06 s G4 row is retired: its `count(*)` wrapper did not consume the projected probability and
-could let PostgreSQL prune `probability_evaluate`. `g4_rigor.py` now selects `count(*),sum(p)`; re-run its
-ProvSQL row before making a Q3 speed claim. The independent G2a `CREATE TEMP TABLE ... probability_evaluate`
-artifact did consume probabilities, but it used different historical timer boundaries and is not substituted
-into this canonical table.
+**Comparable — ours slightly faster.** The previous 1.06 s row was a PostgreSQL **pruning artifact**: with
+`count(*)` alone the planner dropped the unused probability column and timed only the relational join.
+`g4_rigor.py` now forces evaluation via `sum(probability_evaluate(provenance()))`, giving the honest
+**7.46 s** (5-run, current HEAD; consumed-probability checksum `sum = 0.125·n` verified per run). So on Q3,
+ours (**6.45 s**, mostly the removable pure-Python variable ordering) and ProvSQL (7.46 s) are comparable;
+on the reconvergent **Qrecon (below) ours is clearly faster**. Framing (G2a): the *same* exact PQE at
+comparable latency on a **stock, unforked** engine over a **broader fragment** — the contribution, not a
+per-query race.
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
