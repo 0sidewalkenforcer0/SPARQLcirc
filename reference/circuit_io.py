@@ -16,6 +16,29 @@ C = "urn:circuit:"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
 RDF_LANGSTRING = RS + "langString"
 US = "\x1f"                                                        # unit separator (never in our terms)
+_NT_ESC = {"t": "\t", "b": "\b", "n": "\n", "r": "\r", "f": "\f", '"': '"', "'": "'", "\\": "\\", "/": "/"}
+
+
+def _nt_unescape(s):
+    """Decode N-Triples/Turtle string escapes (\\t \\n \\r \\" \\\\ \\uXXXX \\UXXXXXXXX ...) to the actual
+    lexical value, so a literal's canonical key matches rdflib's (which stores the decoded value)."""
+    if "\\" not in s:
+        return s
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c != "\\":
+            out.append(c); i += 1; continue
+        nx = s[i + 1] if i + 1 < n else ""
+        if nx == "u":
+            out.append(chr(int(s[i + 2:i + 6], 16))); i += 6
+        elif nx == "U":
+            out.append(chr(int(s[i + 2:i + 10], 16))); i += 10
+        elif nx in _NT_ESC:
+            out.append(_NT_ESC[nx]); i += 2
+        else:
+            out.append(nx); i += 2                                  # unknown escape: keep the escaped char
+    return "".join(out)
 
 
 def canon_term(tok):
@@ -28,7 +51,7 @@ def canon_term(tok):
     if tok.startswith("_:"):
         return "b" + US + tok[2:]
     if tok.startswith('"'):
-        i = tok.rindex('"'); lex, suf = tok[1:i], tok[i + 1:]
+        i = tok.rindex('"'); lex, suf = _nt_unescape(tok[1:i]), tok[i + 1:]   # decode escapes -> real lexical value
         if suf.startswith("^^<") and suf.endswith(">"):
             return "l" + US + lex + US + suf[3:-1] + US
         if suf.startswith("@"):

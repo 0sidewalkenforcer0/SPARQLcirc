@@ -17,21 +17,26 @@ one triple-term per fact instead of three reification triples, and the base trip
 directly queryable. (Bytes shrink 1.89× rather than 3× because each SPARQL-star line still spells out
 `s`, `p`, `o` once, whereas Standard repeats the token IRI 3× plus three `rdf:` predicates.)
 
-## The circuit is reification-independent (verified)
+## The circuit is reification-independent (verified on the actual RDF circuit)
 
-Same query built under **both** schemes on the paper example (`example.standard.ttl` vs
-`example.star.ttls`), RDF-star parsed as Turtle-star by the engine:
+`reference/verify_g7_circuit_equiv.py` runs the **full `CircuitRun` pipeline** (CircuitRewriter → RDF
+circuit, *not* the per-answer NpcsRewriter string) on the paper example under **both** schemes
+(`example.standard.ttl` vs `example.star.ttls`, RDF-star parsed as Turtle-star) and canonical-diffs the
+emitted circuits — sorted N-Triples byte-identity **and** identical gate DAG via the shared parser:
 
-| query | SPARQL-star provenance | Standard provenance | identical? |
-|---|---|---|:--:|
-| `and` (monotone)      | `⊕((⊗u1,u3,) (⊗u2,u3,))` | `⊕((⊗u1,u3,) (⊗u2,u3,))` | ✓ |
-| `minus` (non-monotone)| `⊕((⊖⊕((⊗u1,)(⊗u2,)),⊕((⊗u3,)),))` … | identical | ✓ |
-| `optional`            | 3 answers, `⊗`/`⊕`/`⊖` over u1–u4 | identical | ✓ |
+| query | operator class | circuit triples | Standard ⟺ SPARQL-star circuit |
+|---|---|--:|:--:|
+| `and`      | monotone conjunction | 13 | **byte-identical + struct-identical** ✓ |
+| `union`    | monotone disjunction | 30 | **byte-identical + struct-identical** ✓ |
+| `optional` | non-monotone (OPTIONAL) | 60 | **byte-identical + struct-identical** ✓ |
+| `minus`    | non-monotone (MINUS) | 40 | **byte-identical + struct-identical** ✓ |
 
-Same ⊕/⊗/⊖ gate structure, same tokens `u1…u4` — only answer *ordering* differs (set iteration). The
-reification scheme changes **how base facts are addressed in the store**, not the provenance structure
-the CONSTRUCTs build. So everything downstream (compile, WMC, PQE, byte-identity across engines) is
-unchanged.
+The gate IRIs are content-addressed by the token IRIs (`ex:u_i`), which are identical in both encodings,
+so the *entire* circuit — every `⊕`/`⊗`/`⊖` gate and edge — coincides byte-for-byte (no reliance on
+iteration order). The reification scheme changes **how base facts are addressed in the store**, not the
+provenance structure the CONSTRUCTs build. So everything downstream (compile, WMC, PQE, byte-identity
+across engines) is unchanged. (`RunExample` separately shows the NpcsRewriter *string* provenance also
+matches — a weaker, string-level corroboration of the same fact.)
 
 ## Findings
 
