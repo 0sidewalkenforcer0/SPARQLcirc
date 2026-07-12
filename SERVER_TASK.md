@@ -341,3 +341,24 @@ Note: **G5 (NPCS side) is now partly done** — `g2b_npcs_vs_ours.py` runs the *
 3. **G4** rigor pass (quiescent env) over headline timings. 4. **E10 13-shape** finish (cheap). 5. **G2b/G5**
 (real NPCS/SPARQLprov artifacts), **G6** (d4 on real circuits), **G10** (C + 200M), G7, G8.
 Non-server (author decisions): paper positioning (systems vs foundations) and **G9** aggregation scope.
+
+---
+
+# FIX NOTE (answer-key collision) — regenerate gate-IRI references
+
+`CircuitRewriter` answer/group/reach gate IRIs now use a **collision-resistant, term-type-aware** identity
+key (`termHash`: kind-tagged + per-part-hashed, distinguishes IRI/literal/datatype/lang/unbound), and
+answer gates additionally emit **`c:binding`/`c:var`/`c:val`** recovery nodes (real RDF term preserved).
+`c:answer` is kept as a readable label. Fixes distinct SPARQL solutions merging into one gate (was:
+IRI-vs-literal / datatype / lang / delimiter / unbound-vs-"NULL"). Regression: `reference/verify_answer_keys.py`.
+
+**Impact on in-flight runs:**
+- **Probabilities / WMC / answer *counts* are UNCHANGED** on the benchmark queries (all project distinguishing
+  IRIs — see BASELINE analysis); this only *fixes* the latent collision + adds recoverable bindings.
+- **`urn:g:a:` / `urn:g:r:` / group-gate IRIs CHANGED** (new key) and **circuit triple counts shifted**
+  (+`c:binding` nodes). So: **regenerate any stored E10 byte-identity reference hashes** and expected
+  triple counts. Cross-engine byte-identity **still holds** (the new key is standard-SPARQL-1.1 +
+  deterministic — verified on Oxigraph); the E10 13-shape re-run should just use the NEW hashes.
+- `urn:g:t:` product-gate IRIs are unchanged.
+Verified green after the fix: tests.py 171/171, verify_gallery, verify_oxigraph (byte-identical),
+verify_engine_paths (WMC==PWE), verify_engine_agnostic (SPARQL-1.1-only), verify_answer_keys (6/6).
