@@ -1,11 +1,17 @@
 """G3 — end-to-end PQE latency (ROUND 6). ONE harness measuring the FULL probabilistic-query-evaluation
-wall-clock as a single number with its breakdown: CONSTRUCT (engine builds the shared circuit) ->
-COMPILE (d4 -> d-DNNF, per answer) -> WMC (d4 weighted model count). Previously E3 timed construction
-and E4/E11 timed compile+WMC apart; this joins them. NPCS/SPARQLprov stop after producing provenance
-(the CONSTRUCT/decode analogue) and compute NO probability -> the compile+WMC columns are the PQE stage
-they lack. Runs on the loaded GraphDB repos (WatDiv / TPC-H / Wikidata incl. a property path via G1).
+wall-clock as a single number with its breakdown: CONSTRUCT (engine builds the shared circuit + the
+client-side RDF parse / answer recovery) -> COMPILE (OUR shared ROBDD `compile_bdd`, one pass over all
+answers, incl. variable ordering + ROBDD init) -> WMC (weighted model count over that ROBDD). Previously
+E3 timed construction and E4/E11 timed compile+WMC apart; this joins them. NPCS/SPARQLprov stop after
+producing provenance (the CONSTRUCT/decode analogue) and compute NO probability -> the compile+WMC columns
+are the PQE stage they lack. Runs on the loaded GraphDB repos (WatDiv / TPC-H / Wikidata incl. a path via G1).
 
-  D4=.../d4 LD_LIBRARY_PATH=$CONDA_PREFIX/lib python3 g3_pqe_latency.py
+NOTE ON THE COMPILER: this end-to-end number uses OUR ROBDD (`compile_bdd`), which is PWE-validated (G6)
+and arm64-portable. The public d-DNNF compiler **d4** is x86-only (its PATOH partitioner has no arm64
+build) and is used only as a COMPARISON backend in E4 (compiler scaling) and G6 (real-circuit d-DNNF),
+NOT here. See `D4_ON_LINUX.md`.
+
+  python3 g3_pqe_latency.py
 """
 import os, sys, time, subprocess, tempfile, csv, re
 sys.setrecursionlimit(1_000_000)

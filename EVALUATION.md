@@ -100,7 +100,7 @@ compilation.
 - **Prediction:** sub-second→low-seconds at 10⁶–10⁷ (pilot: 420 ms / 13.5k triples); **byte-identical circuits across engines** (deterministic content-addressing); `c` a small constant.
 - **Success:** near-linear scaling, `c` reported explicitly. **Risk:** if `SHA256` in SPARQL is slow on an engine, `c` could be several×; measure and report per engine.
 
-## E4 — Compilation + WMC vs treewidth  *(status: piloted — OBDD/SDD on synthetic families done (`e4_results.csv`); the d4-on-Linux/x86 leg is staged (`d4_pipeline.py`, `D4_ON_LINUX.md`), and d4 WMC is currently compiled-size-only on real path circuits (8/16 vs OBDD/PWE — see G6))*
+## E4 — Compilation + WMC vs treewidth  *(status: DONE on synthetic families — `watdiv/e4_results.csv`, run with **d4** on the Linux/x86 server. Shows the predicted scaling: at bounded treewidth the d-DNNF stays small (≤ 5 270 nodes at n = 254) while the fixed-order OBDD blows up (299 k nodes at n = 94, `obdd-timeout` by n ≥ 126); at growing treewidth both hit the #P wall; `d4_wmc == expected` on every tractable instance. This is the public-compiler / knowledge-compilation win, and it delivered. Open follow-ups: (a) d4-**v1** over-counts LARGE real reconvergent cones, so G6 keeps d4 size-only there — refresh those with **d4-v2**; (b) pin the ProvSQL comparison to the same compiler stack. See SERVER_TASK "E4 / compiler".)*
 
 - **Proves:** D — treewidth is the tractability parameter; a real d-DNNF compiler realizes it.
 - **Families (from `reference/gen_families.py`):** bounded-tw growing-n (`layered(depth↑, width=2)`, `chain`); growing-tw (`layered(depth=3, width=k↑)`, `grid(k)`).

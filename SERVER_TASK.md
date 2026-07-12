@@ -482,3 +482,61 @@ need a re-run** — please regenerate these on the endpoint:
 Scope boundaries now stated in public docs (not just code): property paths are **IRI-frontier only**
 (README §Scope, TECHREPORT §4.6 item 11); `CIRCUIT_CLEANUP=1` is **scratch-endpoint only** (unsafe for a
 shared content-addressed store) — behaviour unchanged, warning added.
+
+---
+
+# E4 / compiler alignment — adopt ProvSQL's compilation stack for the comparison (d4-v2)
+
+**CORRECTION to an earlier note in this file: E4 is NOT missing.** `watdiv/e4_results.csv` is committed
+and was run with **d4** on the Linux server; it shows the predicted scaling (bounded-tw d-DNNF ≤ 5 270
+nodes at n = 254 while the OBDD hits 299 k and `obdd-timeout` by n ≥ 126; growing-tw both blow up, and on
+the *grid* family d4's d-DNNF is even smaller than the OBDD), with `d4_wmc == expected` on every tractable
+instance. So the public-compiler / knowledge-compilation payoff **was** delivered (E4). Disregard the prior
+"E4 has no committed results" text.
+
+**The real remaining issue is the COMPARISON stack, not E4.** The *authoritative end-to-end* numbers
+(G3/G4) use OUR ROBDD, and the ProvSQL runs called bare `probability(provenance())` = ProvSQL's *cost-ranked
+exact portfolio* (independent → tree-decomposition → possible-worlds → … → external d-DNNF compiler only as
+a fallback), which for our small per-answer circuits picks a **cheap exact method, NOT d4**. So we compared
+our-ROBDD vs ProvSQL's-tree-decomposition — *different* engines — while `provsql/README.md` claims "same d4
+backend." **Decision taken (dev): align our compilation with ProvSQL's** — use the SAME logic and the SAME
+external compiler so the compiler is a shared, non-contentious component and the only difference is the data
+model (stock SPARQL/RDF vs forked PostgreSQL/relations).
+
+## Use **d4-v2**, not d4-v1
+d4-**v1**'s *weighted* model count **over-counts** large reconvergent cones (our WD-path cones up to 233
+tokens) — that's why G6 kept d4 size-only there, and it's the reason `e4_results.csv` was produced with v1's
+model count that we should re-confirm. d4-**v2** (`github.com/crillab/d4v2`, `./build.sh`) fixes the weighted
+path; `d4_pipeline.py` already has the v2 invocation (`D4V2=1`). Build v2 and use it below.
+
+## E4.1 — refresh the scaling figure on d4-v2 (confirmation, not from scratch)
+Re-run `D4=/path/to/d4v2 D4V2=1 LD_LIBRARY_PATH=$CONDA_PREFIX/lib python3 e4_sweep.py` and diff against the
+committed `watdiv/e4_results.csv`: the d-DNNF **sizes** should be essentially unchanged; the point is to
+confirm d4-v2's **weighted counts** match `expected` on the instances where v1's WMC was suspect. Keep the
+existing figure if v2 agrees; note any delta.
+
+## E4.2 — d4-v2 on the real LARGE reconvergent cones (fixes the G6 gap)
+Re-run `g6_d4_real.py` with d4-v2 on the WD-path cones **> 40 tokens** (the ones d4-v1 over-counted).
+If d4-v2's WMC now matches OBDD/PWE, record it — that makes d4 a *trustworthy* second oracle exactly where
+the fixed-order OBDD is expensive (G3: 3.9 s WD-path compile), and supports "d-DNNF is the order-robust
+compile for reconvergent paths."
+
+## E4.3 — adopt ProvSQL's compilation METHOD + LOGIC (the chosen direction)
+Rather than defend a bespoke ROBDD against ProvSQL, we use the **same knowledge-compilation stack** so the
+compiler is a shared component and the only difference is the data model (stock SPARQL/RDF vs forked
+PostgreSQL/relations). Two levels — dev builds the wrapper, server runs both:
+- **Level 1 (same compiler + encoding).** Ours: `export_cnf.py` (Tseitin CNF, already matches ProvSQL's
+  non-read-once path) → **d4-v2** → WMC. ProvSQL: `probability_evaluate(provenance(), 'compilation')` with
+  `SET provsql.fallback_compiler='d4';` (confirm the GUC/registry name in your build — dispatch chooses
+  among `d4/c2d/minic2d/dsharp`). Same Boolean function, same compiler → the prediction "compile+WMC is
+  essentially the same work" becomes directly testable.
+- **Level 2 (same method-selection logic).** Dev will add a `compile_portfolio.py` that mirrors ProvSQL's
+  cost-ranked exact portfolio on our circuit — read-once/independent → (tree-decomposition) → Tseitin CNF →
+  d4-v2 — so *both* systems make the same algorithmic choice per instance. Then G3/G2a/R8.3 report "same
+  portfolio, same compiler," and the contribution is cleanly the **no-engine-fork / native-RDF** axis.
+- **Keep OBDD + PWE as the INDEPENDENT correctness oracle.** PWE (no compiler, no variable order) and our
+  ROBDD stay the ground-truth cross-check (E1/G6) — do NOT drop them; they are how we validate the shared
+  stack, and they remain the portable/arm64 path when d4 (x86-only) is unavailable.
+Trade-off to accept: the ProvSQL-comparison headline numbers become **Linux/x86-only** (d4's PATOH), and
+`provsql/README.md`'s "same d4 backend" wording becomes *true* rather than aspirational. Update G2a/R8.3/G3
+framing to "identical compilation stack; difference is the engine/data model, not the compiler."

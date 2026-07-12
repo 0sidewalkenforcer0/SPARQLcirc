@@ -377,7 +377,7 @@ axes: **data scale** (KG size — only construction/deployability cares) and **p
 | E1 correctness | exactness | tiny enumerable + `gen_families` | ≤25 tokens | **[impl]** `verify_gallery`/`verify_engine_native` |
 | E2 compactness | shared circuit ≪ strings | WatDiv 100M + `gen_families` deep | 100M; 10⁶ deriv | **[pilot]** `bench.py` (201× deep) |
 | E3 construction scaling | deployability | WatDiv 10M/100M/1B + real KG | up to 1B | **[pilot]** `bench_engine.py` (GraphDB, 2-hop + 51k) |
-| E4 compile vs tw | tractability | `gen_families` only (layered/grid) | tw 1→~25 | **[impl]** OBDD/SDD (`e4_results.csv`); **[planned]** d4 on Linux |
+| E4 compile vs tw | tractability | `gen_families` only (layered/grid) | tw 1→~25 | **[done]** OBDD + **d4** (`watdiv/e4_results.csv`, d4 on the Linux server; `d4_wmc == expected`) |
 | E5 factored vs flat | poly construction | WatDiv 100M star/snowflake + `gen_families` | 100M | **[pilot]** `watdiv_factor.py` |
 | E6 non-monotone | exact ⊖ | enumerable + WatDiv/real MINUS/OPTIONAL | ≤25 + 100M | **[impl]** small **and** 10M/100M/TPC-H SF1 (`e6_minus_*.csv`) |
 | E7 vs baselines | overall thesis | WatDiv 10M–100M (baseline-limited) + real KG | ≤ what ProvSQL finishes | **[pilot]** toy ProvSQL (`e7_results.csv`); **[planned]** at scale = G2a/G3 |
