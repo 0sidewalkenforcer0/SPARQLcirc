@@ -41,18 +41,24 @@ RDF4J reference. `SHA256` smoke test first (content-addressing depends on it).
 
 | query shape | circuit triples | GraphDB | Oxigraph | QLever | MillenniumDB |
 |---|---:|:--:|:--:|:--:|:--:|
+| atom            | 10 | ✓ | ✓ | ✓ | ✓ |
 | join (BGP)      |  6 | ✓ | ✓ | ✓ | ✓ |
+| union           | 13 | ✓ | ✓ | ✓ | ✓ |
 | minus           | 27 | ✓ | ✓ | ✓ | ✓ |
-| minus_chain     | 32 | ✓ | ✓ | ✓ | ✓ |
+| minus_disjoint  | 10 | ✓ | ✓ | ✓ | ✓ |
 | minus_union     | 30 | ✓ | ✓ | ✓ | ✓ |
+| minus_p2union   | 32 | ✓ | ✓ | ✓ | ✓ |
+| minus_chain     | 32 | ✓ | ✓ | ✓ | ✓ |
 | optional        | 33 | ✓ | ✓ | ✓ | ✓ |
 | opt_left        | 44 | ✓ | ✓ | ✓ | ✓ |
-| union           | 13 | ✓ | ✓ | ✓ | ✓ |
+| opt_right       | 27 | ✓ | ✓ | ✓ | ✓ |
+| opt_disjoint    | 40 | ✓ | ✓ | ✓ | ✓ |
 | distinct        | 10 | ✓ | ✓ | ✓ | ✓ |
-| **`SHA256` fn** | — | ✓ | ✓ | ✓ (live) | ✓ (live) |
+| **`SHA256` fn** | — | ✓ (live) | ✓ | ✓ (live) | ✓ (live) |
 
-**All four engines produce the byte-identical content-addressed circuit** — Java/RDF4J, Rust,
-read-only C++ index, and a C++ path-engine — with zero changes to the SPARQLcirc engine. The
+**All four engines produce the byte-identical content-addressed circuit on all 13 E1 shapes** —
+Java/RDF4J, Rust, read-only C++ index, and a C++ path-engine — with zero changes to the SPARQLcirc
+engine (**52 byte-identity checks, all ✓**). The
 divergences one might expect (blank-node labeling, UNION multiplicity, literal formatting) do not
 arise: the circuit is a SET of content-addressed IRI triples, so identity is a pure SHA256 of content.
 
@@ -67,10 +73,11 @@ The byte-identity set is now the **full E1 correctness battery** — all 13 non-
 `WMC == PWE` on (single source of truth: `engines/_gallery_shapes.py`, matching `verify_gallery.py`),
 not the earlier 8. This closes the argument that correctness holds on *every* engine, not just RDF4J:
 **per-engine correctness = (E10 byte-identity: engine circuit == RDF4J circuit) ∘ (E1: WMC(RDF4J circuit)
-== PWE)**, so no shape is left where an engine builds an unverified circuit. **Oxigraph re-verified
-locally: 13/13 byte-identical**, including the 5 shapes the 8-shape set omitted — `atom`,
-`minus_disjoint`, `minus_p2union`, `opt_right`, `opt_disjoint`. *Server to re-run* `verify_http.py`
-(now extended) on **GraphDB / QLever / MillenniumDB** to fill those 5 rows for the other engines.
+== PWE)**, so no shape is left where an engine builds an unverified circuit. **All four engines now
+verified 13/13 byte-identical** — the 5 shapes the earlier 8-shape set omitted (`atom`,
+`minus_disjoint`, `minus_p2union`, `opt_right`, `opt_disjoint`) confirmed on **GraphDB, QLever, and
+MillenniumDB** (`verify_http.py`, live SHA256) in addition to Oxigraph. So per-engine correctness now
+holds on the *entire* E1 battery for every engine, not just RDF4J. (`e10_byte_identity.csv`.)
 
 ## Result 2 — cross-engine build-time (performance)
 
