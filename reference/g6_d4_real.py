@@ -29,7 +29,9 @@ import d4_pipeline as d4p
 D4    = os.environ.get("D4", "/mnt/nfs/home/ac145595/workspace/tools/d4/d4")
 PLEAF = 0.5
 GDB   = "http://localhost:7200/repositories"
-PWE_MAX_TOK = 20                                            # brute-force PWE only when feasible
+PWE_MAX_TOK = 20                                            # brute-force PWE + OBDD only when feasible
+D4_MAX_TOK  = 40                                            # d4 only on small/medium cones (big reconvergent
+                                                            # path CNFs are slow AND d4-v1 over-counts them)
 TMP   = os.environ.get("G6_TMP", "/tmp/claude-1719315658/-mnt-nfs-home-ac145595-workspace-SPARQLcirc/6879f43c-9751-4cc7-9af6-556eeade5854/scratchpad/g6cnf")
 os.makedirs(TMP, exist_ok=True)
 
@@ -71,29 +73,36 @@ def main():
             print(f"  {name}: construct failed: {type(ex).__name__}: {ex}"); continue
         P = {circ[n][1]: PLEAF for n in circ if circ[n][0] == "leaf"}
         roots = sample_roots(ans, k)
-        pwe_ok = pwe_tot = d4_ok = 0; dsizes = []; dms = []
+        pwe_ok = pwe_tot = d4_ok = d4_tot = 0; dsizes = []; dms = []
         for i, (node, key) in enumerate(roots):
-            obdd, osize = compile_bdd.probability(circ, node, P)
             ntok = len(compile_bdd.leaf_order(circ, node))
-            pwe = compile_bdd.wmc_enum(circ, node, P) if ntok <= PWE_MAX_TOK else None
-            if pwe is not None:
+            # OBDD/PWE only for small cones — post-1e67021 path cones reach 200+ tokens where a
+            # fixed-order ROBDD (and brute PWE = 2^tok) blow up; those are reported by d4 (d-DNNF) only.
+            small = ntok <= PWE_MAX_TOK
+            obdd = compile_bdd.probability(circ, node, P)[0] if small else None
+            pwe = compile_bdd.wmc_enum(circ, node, P) if small else None
+            if pwe is not None and obdd is not None:
                 pwe_tot += 1; pwe_ok += (abs(pwe - obdd) < 1e-9)
-            try:
-                dn, de, dwmc, dt, _ = d4_ddnnf_wmc(circ, node, P, f"{name}_{i}")
-                dsizes.append(dn); dms.append(dt)
-                d4_ok += (dwmc is not None and abs(dwmc - obdd) < 1e-6)
-            except Exception:
-                dn = de = dwmc = dt = None
-            rows.append(dict(query=name, idx=i, ntok=ntok, obdd_wmc=round(obdd, 9),
+            dn = de = dwmc = dt = None
+            if ntok <= D4_MAX_TOK:
+                try:
+                    dn, de, dwmc, dt, _ = d4_ddnnf_wmc(circ, node, P, f"{name}_{i}")
+                    dsizes.append(dn); dms.append(dt)
+                    if obdd is not None:
+                        d4_tot += 1; d4_ok += (dwmc is not None and abs(dwmc - obdd) < 1e-6)
+                except Exception:
+                    dn = de = dwmc = dt = None
+            rows.append(dict(query=name, idx=i, ntok=ntok,
+                             obdd_wmc=(round(obdd, 9) if obdd is not None else None),
                              pwe=(round(pwe, 9) if pwe is not None else None),
                              obdd_eq_pwe=(None if pwe is None else abs(pwe - obdd) < 1e-9),
                              ddnnf_nodes=dn, d4_wmc=(round(dwmc, 9) if dwmc is not None else None),
-                             d4_eq_obdd=(None if dwmc is None else abs(dwmc - obdd) < 1e-6)))
+                             d4_eq_obdd=(None if (dwmc is None or obdd is None) else abs(dwmc - obdd) < 1e-6)))
         med = lambda xs: sorted(xs)[len(xs)//2] if xs else 0
-        note = "OBDD==PWE ✓" if pwe_ok == pwe_tot and pwe_tot else "CHECK"
-        if d4_ok < len(roots): note += f"; d4 -mc unreliable ({d4_ok}/{len(roots)}) — see caveat"
-        print(f"{name:18} {len(ans):>5} {f'{pwe_ok}/{pwe_tot}':>10} {f'{d4_ok}/{len(roots)}':>9} {med(dsizes):>17} {med(dms):>10.1f}  {note}")
-        summ.append((name, pwe_ok, pwe_tot, d4_ok, len(roots)))
+        note = "OBDD==PWE ✓" if pwe_ok == pwe_tot and pwe_tot else ("(no small cone to PWE)" if not pwe_tot else "CHECK")
+        if d4_tot and d4_ok < d4_tot: note += f"; d4 -mc unreliable ({d4_ok}/{d4_tot} small cones) — see caveat"
+        print(f"{name:18} {len(ans):>5} {f'{pwe_ok}/{pwe_tot}':>10} {f'{d4_ok}/{d4_tot}':>9} {med(dsizes):>17} {med(dms):>10.1f}  {note}")
+        summ.append((name, pwe_ok, pwe_tot, d4_ok, d4_tot))
     with open("g6_d4.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     print("\nwrote g6_d4.csv")

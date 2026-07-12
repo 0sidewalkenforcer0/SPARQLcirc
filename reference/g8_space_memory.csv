@@ -1,5 +1,5 @@
 query,answers,gates_edges,circuit_bytes,npcs_bytes,space_win,shared_obdd_nodes,peak_rss_mb,heap,graph,wall_s
-wikidata-WDpath,,,,,,,134,8g,2.13B,2.3
-watdiv-Sstar,2,272,35641,2587,0.1,34,,,,
-watdiv-P2unbound,149998,749990,133633608,19935124,0.1,,,,,
-tpch-Q3,14908,89448,15378810,,,44724,,,,
+wikidata-WDpath,,,,,,,161,8g,2.13B,2.6
+watdiv-Sstar,2,272,36488,2587,0.1,34,,,,
+watdiv-P2unbound,149998,749990,262765318,19935124,0.1,,,,,
+tpch-Q3,14908,89448,28000288,,,44724,,,,
