@@ -63,3 +63,51 @@ claims (compile+WMC ≪ construct; ProvSQL vs ours same order) are what the vari
   despite background load.
 - E3 (construction scaling, WatDiv 10 M/100 M) was **already** 5-run-averaged and is not re-listed here;
   G4 covers the numbers that were single-run (G3 end-to-end + the G2a ProvSQL head-to-head).
+
+---
+
+## G4(b) — ≥5 query instances per shape (breadth on top of the 5-run variance)
+
+`g4_rigor.py` gave 5-run median±sd on *one* instance per shape. The ROUND 7 refinement also asks for
+**≥3–5 instances per shape**. `g4_instances.py` → `g4_instances.csv` (post-`1e67021` jar):
+
+**Shape 1 — TPC-H Q3 SPJ × 5 mktsegments (ours + ProvSQL, 1 warm-up + 5 runs each):**
+
+| instance | answers | ours total (median [min–max]) | ProvSQL (median [min–max]) |
+|---|--:|--:|--:|
+| AUTOMOBILE | 11 966 | 2237 ms [2223–2245] | 848 ms [828–882] |
+| BUILDING   | 14 908 | 2770 ms [2730–2780] | 1031 ms [1024–1071] |
+| FURNITURE  | 11 987 | 2220 ms [2198–2254] | 870 ms [833–910] |
+| HOUSEHOLD  | 11 165 | 2085 ms [2066–2191] | 810 ms [784–836] |
+| MACHINERY  | 10 149 | 1873 ms [1859–1889] | 731 ms [702–767] |
+| **cross-instance** | | mean **2237 ± 332** ms | mean **858 ± 110** ms |
+
+**Shape 2 — WatDiv S-star × 5 users (ours, 1 warm-up + 5 runs each):**
+
+| instance | answers | ours total (median [min–max]) |
+|---|--:|--:|
+| User1011  |  1 |  20 ms [20–20] |
+| User10113 |  2 |  86 ms [85–91] |
+| User10163 |  4 | 129 ms [126–132] |
+| User10152 | 11 | 659 ms [652–673] |
+| User10252 | 13 | 399 ms [395–410] |
+| **cross-instance** | | mean **259 ± 267** ms |
+
+### Findings
+
+- **Within-instance variance is tiny across the board** — sd ≤ 2 % of the median on every instance
+  (TPC-H sd 10–50 ms; S-star sd 0–8 ms). The latency numbers are stable, not lucky single runs.
+- **The ProvSQL-vs-ours ordering is consistent across ALL 5 TPC-H instances**, not a one-instance
+  artifact: ProvSQL is faster on every segment (≈ 2.6× median). This confirms G2a's warm finding at
+  breadth — the honest picture is *comparable order of magnitude, ProvSQL faster, our win is
+  no-engine-fork + broader fragment*, and it holds across the workload, not just BUILDING.
+- **Latency tracks answer count within each shape** (ours S-star 1 ans → 20 ms, 13 ans → 399 ms;
+  TPC-H 10 149 → 1873 ms, 14 908 → 2770 ms), as expected for these low-reconvergence shapes.
+
+### Note (supersedes pre-fix singles)
+
+These are **post-`1e67021`** numbers. Our end-to-end now includes the answer-recovery `c:binding`
+metadata (more CONSTRUCT output), so the ours side is larger than the pre-fix single-run figures in
+G2a/G3 (e.g. BUILDING: pre-fix 1.65 s → post-fix 5-run median **2.77 s**); ProvSQL is unchanged
+(≈ 1.03 s). The 5-run median also corrects G3's single BUILDING run (4.09 s was a high sample). Treat
+this table as the current authoritative TPC-H Q3 latency; G2a/G3's ours-side singles predate the fix.

@@ -1,0 +1,11 @@
+shape,instance,answers,ours_median_ms,ours_min_ms,ours_max_ms,ours_sd_ms,provsql_median_ms,provsql_sd_ms,runs
+tpch-Q3-SPJ,AUTOMOBILE,11966,2237.2,2223.2,2245.2,9.5,847.8,21.1,5
+tpch-Q3-SPJ,BUILDING,14908,2770.5,2730.0,2780.0,21.6,1030.5,19.9,5
+tpch-Q3-SPJ,FURNITURE,11987,2220.4,2198.2,2254.4,23.1,870.4,30.7,5
+tpch-Q3-SPJ,HOUSEHOLD,11165,2085.1,2066.4,2191.4,50.0,810.3,20.3,5
+tpch-Q3-SPJ,MACHINERY,10149,1873.2,1858.9,1889.2,12.3,731.3,27.0,5
+watdiv-Sstar,User10113,2,86,85,91,2,,,5
+watdiv-Sstar,User1011,1,20,20,20,0,,,5
+watdiv-Sstar,User10152,11,659,652,673,8,,,5
+watdiv-Sstar,User10163,4,129,126,132,2,,,5
+watdiv-Sstar,User10252,13,399,395,410,7,,,5
