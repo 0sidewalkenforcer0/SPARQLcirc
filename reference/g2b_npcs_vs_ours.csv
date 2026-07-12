@@ -1,0 +1,4 @@
+query,answers,npcs_eval_ms,npcs_bytes,ours_eval_ms,circuit_size,size_win
+P2-path,13,40,1726,8,65,26.55
+P2-unbound,149998,9302,19935124,16652,749990,26.58
+S-star,2,7,2587,11,272,9.51
