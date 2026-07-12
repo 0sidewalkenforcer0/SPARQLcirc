@@ -1,5 +1,14 @@
 # SPARQLcirc — server experiment task (read me first)
 
+> **⇒ START HERE (2026-07-13). The current executable task is the `# RE-RUN CHECKLIST` section near the END
+> of this file.** ROUND 1–8 and the numbered experiments below it are a **historical log** (kept for
+> provenance) — do NOT execute them top-to-bottom; several statements are superseded. When the log and the
+> RE-RUN CHECKLIST disagree, **the CHECKLIST wins.** Superseded facts to know up front:
+> • **WatDiv 200 M is DROPPED** (the 2014 generator segfaults; 10 M / 100 M stand — ignore "200 M" in §2).
+> • **G2b is NOT a byte-size win** — ROUND 7's "10–27× more compact" is retracted; the RDF N-Triples circuit
+>   is usually byte-*larger*, compactness is *structural* only.
+> • The **canonical 5-run timing table is already regenerated on current HEAD** (`5b34378`) — don't re-run it.
+
 **You are a coding agent on a server** that has the resources the dev laptop lacked: disk
 for large WatDiv, CPU, a Linux/x86 box (for d4), and ideally **GraphDB** and **PostgreSQL+ProvSQL**.
 Your job: run the SPARQLcirc **evaluation** — especially the parts that were blocked on a laptop —
@@ -562,30 +571,58 @@ framing to "identical compilation stack; difference is the engine/data model, no
 | **ansKey BOUND-safe + c:binding detection** (`90c3c3c`) | `c:answer` now always emitted (incl. unbound-projected answers); WMC values UNCHANGED | **E10 stored hashes/counts** for OPTIONAL/MINUS/UNION shapes (the *property* still holds); nothing numeric |
 | **compile_portfolio + d4-v2** (`b33d26e` + direction) | new same-stack compilation for the ProvSQL comparison | **NEW runs:** G3/G2a/R8.3 same-stack; E4 d4-v2 confirm; G6 large cones |
 
-## MUST re-run (numbers are stale/invalid — block citing)
-- [ ] **G3 canonical timings** — `python3 g3_pqe_latency.py` (1 warm-up + 5 runs) → `g3_pqe.csv`; rewrite the
-      `CANONICAL_TIMINGS.md` table. ✔ check: totals now include parse+ordering (larger than the old ones); no
-      query appears with two totals anywhere.
-- [ ] **G4 rigor + instances** — `python3 g4_instances.py`, `python3 g4_rigor.py` → `g4_instances.csv`,
-      `g4_rigor.csv` (they import g3's timers, so they inherit the boundary change).
-- [ ] **R8.3 reconvergent** — `python3 r8_3_reconvergent.py` → `r8_3_reconvergent.csv`. ✔ check: `cf_maxerr`
-      and `max_abs_error` columns present; ours == closed form (independent K) and == ProvSQL per `c_custkey`.
+## ALREADY DONE — do NOT re-run (status corrected)
+`5b34378` already re-ran the **5-run CANONICAL table on current HEAD** (post-90c3c3c timer boundaries):
+the 3-row main table (watdiv-Sstar, tpch-Q3, wikidata-WDpath) + `g4_rigor.csv` are current — see
+`CANONICAL_TIMINGS.md` ("current HEAD, 5-run"). Notable shifts it found: **WD-path 8.04 s → 2.14 s**
+(PathIsoSeq fingerprint shrank the reconvergent cones; compile 5.75 s → ~1 ms) and **tpch-Q3 → 6.40 s**
+(the 90c3c3c boundary now counts variable ordering). So the main table / `g4_rigor` do **not** need re-running.
+
+## MUST re-run (still stale)
+- [ ] **g4_instances.py** — `python3 g4_instances.py` → `g4_instances.csv` (instance-breadth rows are still
+      pre-boundary; it imports g3's timers). ‼ The 1-warm-up + 5-run protocol lives in **`g4_rigor.py` /
+      `g4_instances.py`** — `g3_pqe_latency.py` runs each query **once** (a breakdown probe) and is NOT the
+      source of the canonical table; do not use it for the 5-run numbers.
+- [ ] **R8.3** — `python3 r8_3_reconvergent.py` → `r8_3_reconvergent.csv` (**CSV writer now added**). ✔ check:
+      columns `keys_match, k_keys_match, max_abs_error, cf_maxerr, agree` present; ours == closed form
+      (independent K) and == ProvSQL per `c_custkey`. NOTE: ours-side timing here is single-construct
+      (`compile_wmc` IS the shared compile); if you want 1+5 timing on it too, wrap it like `g4_rigor`.
 - [ ] **G2b** — `python3 g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`; rewrite the `G2b_RESULTS.md` table. ✔
-      check: three separate metrics (structural / serialized-bytes / compiled), NO `size_win`, raw-payload bytes.
+      three separate metrics (structural / serialized-bytes / compiled), NO `size_win`, raw-payload bytes.
 - [ ] **G8** — `python3 g8_space_memory.py` → `g8_space_memory.csv` (UTF-8 bytes).
 
-## COMPILER ALIGNMENT (the new same-stack direction — see "E4 / compiler" above)
-- [ ] Build **d4-v2**; `export D4=/path/to/d4v2 D4V2=1`.
-- [ ] Route **G3 / G2a / R8.3** ours-side compile through `compile_portfolio.probability(circ, root, P)`;
-      pin **ProvSQL** to `probability_evaluate(provenance(),'compilation')` + `provsql.fallback_compiler='d4'`.
-      Then the head-to-head is genuinely same-portfolio, same-compiler → re-emit G2a/R8.3.
-- [ ] **E4.1** — refresh `e4_sweep.py` with d4-v2 (sizes should match; confirms v2 weighted counts) → `watdiv/e4_results.csv`.
-- [ ] **E4.2 / G6** — `g6_d4_real.py` with d4-v2 on the **>40-token** WD-path cones (d4-v1 over-counted) → `g6_d4.csv`.
+## COMPILER ALIGNMENT — a DESIGN DECISION is required first (do NOT run as previously worded)
+The earlier wording ("route ours through `compile_portfolio` AND pin ProvSQL to `'compilation'`/d4, call it
+'same portfolio, same compiler'") is **methodologically inconsistent** — do not run it verbatim:
+- our `compile_portfolio` **auto-selects** (read-once / PWE / d4 / OBDD) while ProvSQL would be **pinned to
+  compilation-only** → not the same choice;
+- `compile_portfolio` has **no tree-decomposition** stage → it is ProvSQL-*inspired*, not identical;
+- `compile_portfolio.probability()` is **per-root**, but G3's canonical number compiles **all answers into
+  ONE shared ROBDD** — per-answer portfolio calls lose that sharing and change both meaning and cost.
+
+Pick ONE and state it (author decision — do NOT run the comparison until chosen):
+- **Level 1 — same external compiler:** force BOTH sides to CNF → d4 (ours via `export_cnf` → d4; ProvSQL via
+  `probability_evaluate(...,'compilation')` + `provsql.fallback_compiler='d4'`). Legitimately "same compiler"
+  — but state explicitly whether it is **per-answer** or **shared-batch**, identically on both sides.
+- **Level 2 — same portfolio:** both auto-select; only valid AFTER `compile_portfolio` gains the same
+  tree-decomposition stage, thresholds, and selection order as ProvSQL. Until then do NOT claim "same portfolio."
+OBDD + PWE remain the independent oracle either way.
+
+## d4-v2 — VERIFY (do not presume "d4-v2 fixes it")
+- [ ] **E4.1 / G6 with d4-v2 is a *verification*** of whether d4-v2 fixes d4-v1's weighted over-count — NOT a
+      preset fact. Refresh `e4_sweep.py` (sizes should match; confirm the weighted counts) and re-run
+      `g6_d4_real.py`; RECORD whether v2 agrees with OBDD/PWE.
+- [ ] ⚠ **The large reconvergent WD-path cones may no longer exist.** Per `5b34378`, PathIsoSeq collapsed the
+      WD-path cones to 1–20 tokens (compile ~1 ms) — so "d4-v2 on the **>40-token** WD-path cones" is likely
+      **moot** and the order-robust-d4-*for-paths* motivation is largely gone. First CHECK whether any
+      >40-token path cone still exists; if none, drop that sub-task and note it. (E4's synthetic high-treewidth
+      families remain the real d4 case.)
 
 ## CHEAP reference regen (the property still holds — just refresh stored values)
-- [ ] **E10 byte-identity** — re-run the 4-engine diff on the CURRENT jar and regenerate the stored hashes /
-      triple counts for any shape that projects an OPTIONAL/UNION variable (the ansKey fix added a `c:answer`
-      triple there). The claim (all engines byte-identical on one jar) is UNAFFECTED — only the stored numbers move.
+- [ ] **E10 byte-identity** — diff each shape's current-jar N-Triples against its stored reference and refresh
+      **only the shapes that actually changed** (an answer with an unbound projected var now gains a `c:answer`
+      triple). Do NOT blanket-refresh all OPTIONAL/MINUS/UNION shapes. The property (all engines byte-identical
+      on one jar) is UNAFFECTED — only the stored hashes/counts move for the handful of affected shapes.
 
 ## DO NOT re-run (unaffected — do not spend server time)
 - **E1 correctness** — validated locally (171/171 + all verifiers green); identity/recovery changed, WMC values did not.

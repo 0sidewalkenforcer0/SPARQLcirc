@@ -15,7 +15,7 @@ ProvSQL: GROUP BY c_custkey with probability(provenance()) (its semiring (+)-agg
 
   LD_LIBRARY_PATH=$CONDA_PREFIX/lib PGHOST=$WS/pgsock PGPORT=54320 python3 r8_3_reconvergent.py
 """
-import os, sys, time, subprocess
+import os, sys, time, subprocess, csv
 sys.setrecursionlimit(1_000_000)
 import g3_pqe_latency as g3, compile_bdd
 
@@ -95,7 +95,11 @@ def parity(o, p):
                 agree=(o.get("valid", True) and all_keys_match and err is not None and err < 1e-6
                        and cf is not None and cf < 1e-6))
 
+def _r(x, n=9):
+    return None if x is None else round(x, n)
+
 if __name__ == "__main__":
+    rows = []
     for repo, schema, sf in [("tpch001", "g2a", "0.01"), ("tpch01", "g2a1", "0.1")]:
         o = ours(repo); p = provsql(schema); par = parity(o, p)
         print(f"SF{sf}: OURS answers={o['answers']} total={o['total']}ms (construct {o['construct']}+compile "
@@ -104,3 +108,15 @@ if __name__ == "__main__":
               f"k_keys_match={par['k_keys_match']} (only-ours {par['only_ours']}, only-provsql {par['only_provsql']}, "
               f"missing-K {par['missing_k']}, extra-K {par['extra_k']}) max_abs_error={par['max_abs_error']} "
               f"| ours==closed-form(indep K)? maxerr={par['cf_maxerr']}")
+        rows.append(dict(sf=sf, ours_answers=o["answers"], provsql_answers=p["answers"],
+                         ours_total_ms=o["total"], provsql_total_ms=p["total"],
+                         construct_ms=o["construct"], compile_ms=o["compile"], wmc_ms=o["wmc"],
+                         ours_valid=o["valid"], keys_match=par["keys_match"], k_keys_match=par["k_keys_match"],
+                         only_ours=par["only_ours"], only_provsql=par["only_provsql"],
+                         missing_k=par["missing_k"], extra_k=par["extra_k"],
+                         max_abs_error=_r(par["max_abs_error"]), cf_maxerr=_r(par["cf_maxerr"]),
+                         agree=par["agree"]))
+    out = os.environ.get("R8_3_OUT", "r8_3_reconvergent.csv")   # the keyed-parity evidence file the task needs
+    with open(out, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
+    print(f"\nwrote {out}  (sf, answers, timings, keys_match, k_keys_match, max_abs_error, cf_maxerr, agree)")

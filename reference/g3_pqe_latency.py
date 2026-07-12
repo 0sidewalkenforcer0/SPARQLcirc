@@ -28,10 +28,14 @@ def plan(scheme, qtext):
     qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(qtext); qf.close()
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", scheme, EMPTY.name, qf.name],
                        capture_output=True, text=True)
+    if r.returncode != 0:                                  # FAIL-FAST: a failed rewrite must stop, not
+        raise RuntimeError(f"CircuitRun rewrite failed (rc={r.returncode}, scheme={scheme}): {r.stderr[-500:]}")
     out = []
     for ch in re.split(r"# --- step \d+ ---", r.stderr)[1:]:
         ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
         if ch.startswith(("PREFIX", "CONSTRUCT")): out.append(ch)
+    if not out:                                            # ... produce a bogus 0-answer timing row
+        raise RuntimeError(f"empty CONSTRUCT plan (rewrite produced nothing, scheme={scheme}): {r.stderr[-500:]}")
     return out
 
 def construct_bgp(endpoint, scheme, qtext):
@@ -43,15 +47,21 @@ def construct_bgp(endpoint, scheme, qtext):
         triples.update(l for l in body.decode("utf-8", "replace").splitlines() if l.endswith(" ."))
     circ, ans, _ = parse_circuit(triples)                  # RDF decode + answer recovery IS part of construction
     ms = (time.time() - t) * 1000                          # (NOTE: the Java rewrite in plan() above is not timed)
+    if not ans:                                            # FAIL-FAST: an empty/failed circuit is not a 0ms result
+        raise RuntimeError(f"BGP construct produced 0 answer gates (endpoint {endpoint}, scheme {scheme})")
     return circ, ans, ms
 
 def construct_path(endpoint, qfile):
     t = time.time()
     r = subprocess.run(["java", "-Xmx8g", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
                         EMPTY.name, qfile, endpoint], capture_output=True, text=True)
+    if r.returncode != 0:                                  # FAIL-FAST on a failed path build (writable-endpoint,
+        raise RuntimeError(f"CircuitRun path build failed (rc={r.returncode}): {r.stderr[-500:]}")  # OOM, etc.)
     triples = set(l for l in r.stdout.splitlines() if l.endswith(" ."))
     circ, ans, _ = parse_circuit(triples)                  # include RDF decode in the timed construction
     ms = (time.time() - t) * 1000                          # (path mode DOES include the JVM+rewrite; BGP does not)
+    if not triples or not ans:                             # FAIL-FAST: empty path circuit / 0 answers is an error
+        raise RuntimeError(f"path build produced empty circuit / 0 answers ({qfile})")
     return circ, ans, ms
 
 def compile_wmc(circ, ans):
