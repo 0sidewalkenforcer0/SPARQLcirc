@@ -435,6 +435,20 @@ public class CircuitRewriter {
           + " \"x\"))))";                                         // "x" = non-1.1 term (e.g. RDF-star quoted triple)
         return "SHA256(CONCAT(\"" + label + "=\", " + enc + "))";
     }
+    /** Deterministic hex SHA-256 of a string, computed HERE at rewrite time (not in SPARQL). Used only
+     *  for the per-path gate fingerprint (a compile-time constant), so it stays a plain hex token safe to
+     *  embed in a CONSTRUCT literal. Deterministic => same path query stays byte-identical/idempotent. */
+    private static String sha256hex(String s) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                       .digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : d) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);                         // SHA-256 is guaranteed on every JVM
+        }
+    }
     /** Gate-IDENTITY key: CONCAT("tag", termHash(v1), termHash(v2), ...). Replaces raw-STR ansKey for
      *  every gate IRI; bound/unbound is decided at RUNTIME by BOUND() inside termHash. */
     private static String idKey(List<String> vars, String tag) {
@@ -588,21 +602,33 @@ public class CircuitRewriter {
         // Materialize the all-pairs BASE relation (rlvl "base") here (reify needs the instance): one
         // CONSTRUCT per UNION alternative, each a ⊗ over the branch's reified patterns. reach^0 is then
         // seeded FROM the base (see PathQuery.init), restricted to the source when it is bound.
-        List<String> baseC = new ArrayList<>();
         List<String> branchWheres = new ArrayList<>();           // reified branch WHEREs (bind ?u,?v) — reused for the G1 BFS
+        List<StringBuilder> whereFull = new ArrayList<>();        // + sort-network binds (drives the base ⊗ key)
+        List<List<String>> tokss = new ArrayList<>();
+        List<String> tkeys = new ArrayList<>();
         for (List<StatementPattern> br : branches) {
             List<String> toks = new ArrayList<>();
             StringBuilder where = reify(br, "a", toks);          // binds ?u,?v (+ intermediates) and the tokens
-            branchWheres.add(where.toString());
-            String tkey = emitSortedProdKey(where, toks);
+            branchWheres.add(where.toString());                  // clean reify WHERE (pre sort-network) = the path IDENTITY
+            tkeys.add(emitSortedProdKey(where, toks));           // now `where` also carries the sort-network binds
+            whereFull.add(where); tokss.add(toks);
+        }
+        // Per-path FINGERPRINT: a deterministic hash of the reified sub-path. Threaded into every reach/base
+        // gate IRI AND matched via a c:rpath guard on every step/seed/project pattern, so two DIFFERENT path
+        // queries on the SAME writable endpoint can never compose with (or collapse onto) each other's
+        // persisted reach/base gates. Same query => same fp => byte-identical, idempotent re-runs.
+        String fp = sha256hex(String.join("", branchWheres));
+        List<String> baseC = new ArrayList<>();
+        for (int i = 0; i < branches.size(); i++) {
+            StringBuilder where = whereFull.get(i);
             StringBuilder q = new StringBuilder(PRE);
-            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base")).append(" .\n  ?t a c:Times ;");
-            for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
+            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base", fp)).append(" .\n  ?t a c:Times ;");
+            for (String t : tokss.get(i)) q.append(" c:in ?").append(t).append(" ;");
             q.append(" c:feeds ?rg .\n}\nWHERE {\n").append(where)
-             .append(PathQuery.reachIri("?u", "?v", "base")).append(bindIri("?t", "urn:g:t:", tkey)).append("}\n");
+             .append(PathQuery.reachIri("?u", "?v", "base", fp)).append(bindIri("?t", "urn:g:t:", tkeys.get(i))).append("}\n");
             baseC.add(q.toString());
         }
-        return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName), star, W);
+        return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName), star, W, fp);
     }
 
     private static PathQuery.End endOf(Var v, String name) {
@@ -641,11 +667,14 @@ public class CircuitRewriter {
         private final List<String> branchWheres;                 // reified sub-path branches (bind ?u,?v), for the BFS
         private final End subj, obj; private final boolean star;
         private final List<String> W;
+        private final String fp;                                 // per-path fingerprint (isolates reach/base gates)
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
-        PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj, boolean star, List<String> W) {
+        PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj, boolean star, List<String> W, String fp) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
-            this.subj = subj; this.obj = obj; this.star = star; this.W = W;
+            this.subj = subj; this.obj = obj; this.star = star; this.W = W; this.fp = fp;
         }
+        /** The per-path fingerprint (for logging / cross-checking gate isolation). */
+        public String fingerprint() { return fp; }
         /** G1: is the path source a bound constant? (only then can we restrict the base to a reachable subgraph). */
         public boolean boundSource() { return !subj.isVar; }
         public String sourceValue() { return subj.iri.replaceAll("^<|>$", ""); }   // bare source IRI
@@ -669,22 +698,23 @@ public class CircuitRewriter {
         // A BOUND source restricts reach^0 (and zero-length) to (source, .) -> single-source
         // O(|V_s|.|E_s|); a variable source keeps all pairs. The from-var in reach heads is ?u.
         private String sourceFilter() { return subj.isVar ? "" : "  FILTER(?u = " + subj.iri + ")\n"; }
-        static String reachIri(String from, String to, String lvl) {   // reach gate IRI = f(level, from, to)
-            return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|\", SHA256(\"" + lvl + "\"), \"|\", "
+        static String reachIri(String from, String to, String lvl, String fp) {  // reach gate IRI = f(path fp, level, from, to)
+            return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|\", \"" + fp + "|\", SHA256(\"" + lvl + "\"), \"|\", "
                  + termHash("f", from) + ", " + termHash("t", to) + ")))) AS ?rg)\n";
         }
-        static String reachHead(String lvl) {
-            return "?rg a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rfrom ?u ; c:rto ?v";
+        static String reachHead(String lvl, String fp) {                          // gate carries its path fp for the c:rpath guard
+            return "?rg a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rpath \"" + fp + "\" ; c:rfrom ?u ; c:rto ?v";
         }
+        private String rpathGuard() { return " ; c:rpath \"" + fp + "\""; }       // append to any reach/base match pattern
         static String comp2(String c0, String c1, String out) {  // content-addressed 2-child ⊗ gate
             return "  BIND(SHA256(STR(" + c0 + ")) AS ?h0)\n  BIND(SHA256(STR(" + c1 + ")) AS ?h1)\n"
                  + "  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n"
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS " + out + ")\n";
         }
         String zeroLenConstruct() {                              // reach^0(u,u) = OR of tokens mentioning u
-            return PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?tg a c:Times ; c:in ?z ; c:feeds ?rg .\n}\nWHERE {\n"
+            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp) + " .\n  ?tg a c:Times ; c:in ?z ; c:feeds ?rg .\n}\nWHERE {\n"
                  + "  { ?z <" + RDF_S + "> ?u . } UNION { ?z <" + RDF_O + "> ?u . }\n"
-                 + "  BIND(?u AS ?v)\n" + sourceFilter() + reachIri("?u", "?u", "0")
+                 + "  BIND(?u AS ?v)\n" + sourceFilter() + reachIri("?u", "?u", "0", fp)
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?z)))))) AS ?tg)\n}\n";
         }
         /** Distinct-node count over the reified data, to size the loop (rounds = N-1 simple-path bound). */
@@ -708,22 +738,22 @@ public class CircuitRewriter {
         }
         // reach^0(u,v) fed by base(u,v); sourceFilter() makes it single-source when the source is bound.
         private String seedReach0() {
-            return PRE + "CONSTRUCT {\n  " + reachHead("0") + " .\n  ?rb c:feeds ?rg .\n}\nWHERE {\n"
-                 + "  ?rb a c:Plus ; c:rlvl \"base\" ; c:rfrom ?u ; c:rto ?v .\n"
-                 + sourceFilter() + reachIri("?u", "?v", "0") + "}\n";
+            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp) + " .\n  ?rb c:feeds ?rg .\n}\nWHERE {\n"
+                 + "  ?rb a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom ?u ; c:rto ?v .\n"
+                 + sourceFilter() + reachIri("?u", "?v", "0", fp) + "}\n";
         }
         /** reach^{k+1} from reach^k: (A) compose reach^k(u,w) ⊗ reach^0(w,v), (B) carry forward. */
         public List<String> step(int k) {
             String kL = "\"" + k + "\"", k1 = Integer.toString(k + 1);
             List<String> out = new ArrayList<>();
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
+            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
                   + "  ?comp a c:Times ; c:in ?rk ; c:in ?rb ; c:feeds ?rg .\n}\nWHERE {\n"
-                  + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?w .\n"
-                  + "  ?rb a c:Plus ; c:rlvl \"base\" ; c:rfrom ?w ; c:rto ?v .\n"
-                  + reachIri("?u", "?v", k1) + comp2("?rk", "?rb", "?comp") + "}\n");
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1) + " .\n  ?rk c:feeds ?rg .\n}\nWHERE {\n"  // (B) carry
-                  + "  ?rk a c:Plus ; c:rlvl " + kL + " ; c:rfrom ?u ; c:rto ?v .\n"
-                  + reachIri("?u", "?v", k1) + "}\n");
+                  + "  ?rk a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom ?u ; c:rto ?w .\n"
+                  + "  ?rb a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom ?w ; c:rto ?v .\n"
+                  + reachIri("?u", "?v", k1, fp) + comp2("?rk", "?rb", "?comp") + "}\n");
+            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp) + " .\n  ?rk c:feeds ?rg .\n}\nWHERE {\n"  // (B) carry
+                  + "  ?rk a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom ?u ; c:rto ?v .\n"
+                  + reachIri("?u", "?v", k1, fp) + "}\n");
             return out;
         }
         /** Project reach^{lastLevel} to answer gates, filtering bound endpoints and keying by the free ones. */
@@ -746,7 +776,7 @@ public class CircuitRewriter {
             }
             rk.append(")"); idk.append(")");
             String q = PRE + "CONSTRUCT {\n  ?rg c:feeds ?ans .\n  ?ans a c:Plus ; c:answer ?anskey .\n" + ctor + "}\nWHERE {\n"
-                     + "  ?rg a c:Plus ; c:rlvl \"" + lastLevel + "\" ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n"
+                     + "  ?rg a c:Plus ; c:rlvl \"" + lastLevel + "\"" + rpathGuard() + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n"
                      + "  BIND(" + rk + " AS ?anskey)\n"
                      + "  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(" + idk + "))) AS ?ans)\n" + binds + "}\n";
             return java.util.Collections.singletonList(q);

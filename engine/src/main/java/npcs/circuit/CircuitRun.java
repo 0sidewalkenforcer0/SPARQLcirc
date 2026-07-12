@@ -152,7 +152,9 @@ public final class CircuitRun {
                 }
                 for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
                 System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
-                    + ", rounds=" + lastLevel + " (cap=" + cap + ") ----");
+                    + ", rounds=" + lastLevel + " (cap=" + cap + "), path fp=" + pathq.fingerprint() + " ----");
+                System.err.println("# reach/base gates are fingerprinted (urn:g:r: + c:rpath) so distinct path "
+                    + "queries on a shared writable endpoint never compose with each other's persisted gates.");
             } else {
                 java.util.List<String> planQueries = rw.plan(query);
                 System.err.println("# ---- circuit construction plan: " + planQueries.size() + " CONSTRUCT(s) ----");
@@ -168,6 +170,18 @@ public final class CircuitRun {
             }
             Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
             System.err.println("# circuit triples: " + circuit.size());
+            // Opt-in hygiene for a PERSISTENT endpoint: remove THIS run's provenance gates now that the
+            // circuit is emitted. Correctness never depends on this (the per-path fingerprint already
+            // isolates concurrent queries); it just reclaims space. Best-effort — the output is already out,
+            // and `circuit` holds only urn:g:*/urn:circuit:* gate triples, so the loaded data is untouched.
+            if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
+                try {
+                    con.remove(circuit);
+                    System.err.println("# CIRCUIT_CLEANUP: removed " + circuit.size() + " gate triples from the endpoint");
+                } catch (RuntimeException e) {
+                    System.err.println("# CIRCUIT_CLEANUP failed (non-fatal, circuit already emitted): " + e.getMessage());
+                }
+            }
         }
         repo.shutDown();
     }
