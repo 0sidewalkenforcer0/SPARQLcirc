@@ -1,7 +1,8 @@
-# Canonical timing table (post-`1e67021`, 5-run) — the ONE table to cite
+# Provisional timing table — DO NOT CITE until the current 5-run regeneration
 
-**This is the single authoritative source for every headline timing number (R8.1).** Any timing quoted
-in the paper / EVALUATION / TECHREPORT must come from here. Older tables in `G3_RESULTS.md`,
+**Every number in this file is stale under the corrected timer boundaries.** After the pending current-HEAD
+5-run regeneration, this will again become the single authoritative source for headline timings. Until
+then, do not cite these values. Older tables in `G3_RESULTS.md`,
 `G4_RESULTS.md`, and `G2a_RESULTS.md` are **pre-`1e67021` and superseded** — collected in
 `HISTORICAL_TIMINGS.md`, marked *do not cite*. No query appears with two different totals across the repo.
 

@@ -474,8 +474,11 @@ need a re-run** — please regenerate these on the endpoint:
    `r8_3_reconvergent.csv` with the `cf_maxerr` / `max_abs_error` / parity fields; `R8_3_RESULTS.md` no
    longer claims keyed parity until then. (Verify the `_custkey` extraction matches your naryrel customer
    IRIs; adjust the regex if `?cust` is not a trailing-integer term.)
-3. **G2b/G8 bytes** — NPCS side now measures the **raw HTTP response payload** (`len(body_bytes)`), symmetric
-   with ours' N-Triples byte count; re-run to refresh `g2b_npcs_vs_ours.csv` / `g8_*`.
+   Offline guard: `verify_experiment_harness.py` checks the shared-WMC return contract, rejects missing-K
+   and customer-key mismatches, and tests the explicitly tagged ProvSQL row parser without an endpoint.
+3. **G2b/G8 bytes** — NPCS now measures its complete final CSV body (`len(body_bytes)`); ours measures the
+   final deduplicated N-Triples circuit model. These are final serialized-representation sizes in the same
+   byte unit, not symmetric multi-request network traffic. Re-run to refresh `g2b_npcs_vs_ours.csv` / `g8_*`.
 Scope boundaries now stated in public docs (not just code): property paths are **IRI-frontier only**
 (README §Scope, TECHREPORT §4.6 item 11); `CIRCUIT_CLEANUP=1` is **scratch-endpoint only** (unsafe for a
 shared content-addressed store) — behaviour unchanged, warning added.

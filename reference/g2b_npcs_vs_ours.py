@@ -2,8 +2,8 @@
 running the ACTUAL rewriters (not just E2's cost model), same query + same engine + same data.
 
 NPCS side : `App Standard query` -> the NPCS rewrite = a SELECT that GROUP_CONCATs each answer's
-            derivations into a per-answer provenance STRING; we POST it and measure eval time + total
-            output bytes (Σ per-answer string lengths = the real T_string).
+            derivations into a per-answer provenance STRING; we POST it and measure eval time + the final
+            CSV representation bytes (the complete response body).
 Ours side : the CircuitRewriter CONSTRUCT plan -> the shared circuit; POST it, measure eval time +
             circuit size (gates+edges) + serialized N-Triples bytes.
 
@@ -38,9 +38,10 @@ def run_select(select):
 def npcs_side(qtext):
     sel = npcs_rewrite(qtext)
     ms, rows, raw_bytes = run_select(sel)
-    # SERIALIZED bytes = the FULL raw CSV response payload (header + rows + newlines), so it is a strict
-    # bytes-vs-bytes comparison with ours' N-Triples serialization (which also counts its line terminators).
-    # This fixes the earlier char-count + row-only measure (NPCS provenance has multi-byte ⊕/⊗/⊖).
+    # Final SERIALIZED representation bytes = full CSV body (header + rows + newlines). This fixes the
+    # earlier char-count + row-only measure (NPCS provenance has multi-byte ⊕/⊗/⊖). The ours side measures
+    # its final deduplicated N-Triples model, not multi-CONSTRUCT network traffic; both columns therefore
+    # compare final representation sizes in bytes, not symmetric raw HTTP transfer volume.
     return ms, len(rows), raw_bytes                                   # eval_ms, answers, serialized payload bytes
 
 def ours_side(qtext):
@@ -57,7 +58,7 @@ def ours_side(qtext):
     # arity — a 2-pattern P2 product contributes 2, a 3-pattern S-star product contributes 3).
     t_string = sum(1 for _, (op, pl) in circ.items() if op == "times"
                    for c in pl if circ.get(c, ("",))[0] == "leaf")
-    ours_bytes = sum(len(l.encode("utf-8")) + 1 for l in triples)  # SERIALIZED: real N-Triples byte size
+    ours_bytes = sum(len(l.encode("utf-8")) + 1 for l in triples)  # final deduplicated N-Triples representation
     return ms, answers, gates_edges, t_string, ours_bytes
 
 def main():

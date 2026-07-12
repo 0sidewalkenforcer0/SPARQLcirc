@@ -33,9 +33,32 @@ def _custkey(answer_key):
 def ours(repo):
     circ, ans, cms = g3.construct_bgp(f"{GDB}/{repo}", "naryrel", open(Q).read())
     comp, wmc, n, ok, probs = g3.compile_wmc(circ, ans)              # probs = the TIMED SHARED-compile WMC map
-    per = {_custkey(key): round(p, 6) for key, p in probs.items()}   # keyed by c_custkey (NOT sorted values)
+    per = {}
+    for key, probability in probs.items():                           # keyed by c_custkey (NOT sorted values)
+        ck = _custkey(key)
+        if ck in per:
+            raise ValueError(f"customer-key collision while decoding answer bindings: {ck}")
+        per[ck] = probability                                        # keep full precision until final reporting
     return dict(answers=len(probs), construct=round(cms), compile=round(comp), wmc=round(wmc),
                 total=round(cms + comp + wmc), per=per, valid=ok == n)
+
+def _parse_provsql_rows(stdout):
+    """Parse explicitly tagged `P|custkey|probability` / `K|custkey|count` rows.
+
+    Tags make the protocol unambiguous even when a probability happens to be exactly 0 or 1; the old
+    integer-vs-float inference could misclassify such a probability as an order count.
+    """
+    p_by, k_by = {}, {}
+    for line in stdout.splitlines():
+        m = re.match(r"^([PK])\|(\d+)\|([\d.eE+-]+)$", line.strip())
+        if not m:
+            continue
+        kind, ck, raw = m.groups()
+        target = p_by if kind == "P" else k_by
+        if ck in target:
+            raise ValueError(f"duplicate ProvSQL {kind} row for customer {ck}")
+        target[ck] = float(raw) if kind == "P" else int(raw)
+    return p_by, k_by
 
 def provsql(schema):
     # Per-customer probability AND an INDEPENDENT order count K (so the closed-form check is not circular).
@@ -44,31 +67,33 @@ def provsql(schema):
     sql = (f"SET search_path={schema},public,provsql;\n\\timing on\n"
            f"CREATE TEMP TABLE r AS SELECT c.c_custkey, probability(provenance()) p {base};\n\\timing off\n"
            f"\\pset format unaligned\n\\pset tuples_only on\n\\pset fieldsep '|'\n"
-           f"SELECT c_custkey, p FROM r ORDER BY c_custkey;\n"
-           f"SELECT c.c_custkey, count(*) k {base} ORDER BY c.c_custkey;\n")   # independent K per customer
+           f"SELECT 'P', c_custkey, p FROM r ORDER BY c_custkey;\n"
+           f"SELECT 'K', c.c_custkey, count(*) k {base} ORDER BY c.c_custkey;\n")  # independent K per customer
     env = dict(os.environ)
     r = subprocess.run([os.path.join(env.get("CONDA_PREFIX", ""), "bin", "psql"), "-d", "provsqltest"],
                        input=sql, capture_output=True, text=True, env=env, timeout=300)
+    if r.returncode != 0:
+        raise RuntimeError(f"ProvSQL query failed (exit {r.returncode}): {r.stderr[-500:]}")
     ms = [float(m) for m in re.findall(r"Time:\s+([\d.]+)\s+ms", r.stdout)]      # CREATE TABLE = the real work
-    p_by, k_by = {}, {}
-    for line in r.stdout.splitlines():                              # p rows are non-integer floats; K rows are ints
-        m = re.match(r"^(\d+)\|([\d.eE+-]+)$", line.strip())
-        if not m: continue
-        ck, val = m.group(1), float(m.group(2))
-        (k_by if val == int(val) else p_by)[ck] = (int(val) if val == int(val) else round(val, 6))
+    if not ms:
+        raise RuntimeError("ProvSQL query produced no timing record")
+    p_by, k_by = _parse_provsql_rows(r.stdout)
     return dict(total=round(ms[0]) if ms else None, answers=len(p_by), per=p_by, korder=k_by)
 
 def parity(o, p):
     """RIGOROUS: same customer-key SET, per-customer probability agreement, and a non-circular closed-form
     check using ProvSQL's INDEPENDENT order count K."""
-    ok, pk = set(o["per"]), set(p["per"])
+    ok, pk, kk = set(o["per"]), set(p["per"]), set(p.get("korder", {}))
     common = ok & pk
     err = max((abs(o["per"][k] - p["per"][k]) for k in common), default=None)
-    cf = max((abs(o["per"][k] - 0.5 * (1 - 0.5 ** p["korder"][k]))                 # K from ProvSQL, not the circuit
-              for k in o["per"] if k in p.get("korder", {})), default=None)
-    return dict(keys_match=(ok == pk), only_ours=len(ok - pk), only_provsql=len(pk - ok),
+    all_keys_match = ok == pk == kk
+    cf = (max(abs(o["per"][k] - 0.5 * (1 - 0.5 ** p["korder"][k]))                 # K from ProvSQL, not the circuit
+              for k in ok) if all_keys_match and ok else None)
+    return dict(keys_match=(ok == pk), k_keys_match=(ok == kk),
+                only_ours=len(ok - pk), only_provsql=len(pk - ok), missing_k=len(ok - kk), extra_k=len(kk - ok),
                 max_abs_error=err, cf_maxerr=cf,
-                agree=(ok == pk and err is not None and err < 1e-6 and cf is not None and cf < 1e-6))
+                agree=(o.get("valid", True) and all_keys_match and err is not None and err < 1e-6
+                       and cf is not None and cf < 1e-6))
 
 if __name__ == "__main__":
     for repo, schema, sf in [("tpch001", "g2a", "0.01"), ("tpch01", "g2a1", "0.1")]:
@@ -76,5 +101,6 @@ if __name__ == "__main__":
         print(f"SF{sf}: OURS answers={o['answers']} total={o['total']}ms (construct {o['construct']}+compile "
               f"{o['compile']}+wmc {o['wmc']})  |  PROVSQL answers={p['answers']} total={p['total']}ms")
         print(f"       PARITY ours==ProvSQL per-customer? {par['agree']}  keys_match={par['keys_match']} "
-              f"(only-ours {par['only_ours']}, only-provsql {par['only_provsql']}) max_abs_error={par['max_abs_error']} "
+              f"k_keys_match={par['k_keys_match']} (only-ours {par['only_ours']}, only-provsql {par['only_provsql']}, "
+              f"missing-K {par['missing_k']}, extra-K {par['extra_k']}) max_abs_error={par['max_abs_error']} "
               f"| ours==closed-form(indep K)? maxerr={par['cf_maxerr']}")

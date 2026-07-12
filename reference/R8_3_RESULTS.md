@@ -26,10 +26,10 @@ which **varies with K in [0.375, 0.5]** (not a constant). A naive per-answer pro
 
 - **Shared-circuit WMC on genuinely reconvergent lineage.** The answer's provenance is a *sum of products
   sharing a base token* (not Q3's single product), so this exercises correct shared-lineage handling.
-  **Verification status (do not overstate):** ours is checked against the closed form `0.5·(1−0.5ᴷ)` per
-  answer, and `r8_3_reconvergent.py` now compares the per-customer probability map to ProvSQL's
-  `probability(provenance())` keyed by `c_custkey` (with K taken from an independent count, not from the
-  circuit under test). ⚠ **The numbers in the table above PREDATE that keyed check** — the earlier
+  **Verification status (do not overstate):** on the pending endpoint re-run, the corrected script will
+  check ours against the closed form `0.5·(1−0.5ᴷ)` per answer, and compare the per-customer probability
+  map to ProvSQL's `probability(provenance())` keyed by `c_custkey` (with K taken from an independent
+  count, not from the circuit under test). ⚠ **The numbers in the table above PREDATE that keyed check** — the earlier
   artifact read only ProvSQL `count(*)` and compared *sorted* probability lists (which cannot prove
   identical answer sets or per-customer parity). The keyed ours==ProvSQL parity is established on the next
   endpoint re-run, **not yet** by the committed CSV.
@@ -41,8 +41,9 @@ which **varies with K in [0.375, 0.5]** (not a constant). A naive per-answer pro
   so our pure-Python compile handles the full pipeline. In this **single, provisional** run ours was
   faster (2.76 s vs 6.45 s) — but that is one observation, not a 5-run result, and it predates the
   corrected timer boundaries (which fold RDF parse + variable ordering into our totals), so **do not cite
-  the speed ordering** until re-run. The durable, framing-level claim is *same probabilities on a stock,
-  unforked engine* (G2a) — latency ordering is query-dependent and secondary.
+  the speed ordering** until re-run. The target framing-level claim is *same probabilities on a stock,
+  unforked engine* (already established for G2a; still pending here for the reconvergent query) — latency
+  ordering is query-dependent and secondary.
 
 ## Caveats / notes
 

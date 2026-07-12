@@ -27,7 +27,7 @@ def ours_end_to_end(ep, scheme, q):
     totals, ans_n = [], None
     for i in range(WARMUP + RUNS):
         circ, ans, cms = g3.construct_bgp(ep, scheme, q)
-        comp, wmc, n, ok = g3.compile_wmc(circ, ans)
+        comp, wmc, n, ok, _ = g3.compile_wmc(circ, ans)
         if i >= WARMUP: totals.append(cms + comp + wmc)
         ans_n = len(ans)
     return ans_n, st(totals)

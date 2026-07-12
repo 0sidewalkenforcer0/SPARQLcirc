@@ -56,7 +56,7 @@ def ours_runs(name, ep, scheme, qf, is_path):
         try:
             if is_path: circ, ans, cms = g3.construct_path(ep, qf)
             else:       circ, ans, cms = g3.construct_bgp(ep, scheme, open(qf).read())
-            comp, w, n, ok = g3.compile_wmc(circ, ans)
+            comp, w, n, ok, _ = g3.compile_wmc(circ, ans)
         except Exception as ex:
             print(f"  {name} run {i}: {type(ex).__name__}: {ex}"); return None
         if i >= WARMUP:

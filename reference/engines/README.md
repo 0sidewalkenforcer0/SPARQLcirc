@@ -53,6 +53,12 @@ read-only engines (QLever/MillenniumDB) that have no RDF-star support.
 | `CIRCUIT_UPDATE_ENDPOINT` | SPARQL UPDATE URL | `<endpoint>/statements` (GraphDB/RDF4J) |
 | `CIRCUIT_SKIP_LOAD=1` | data already bulk-loaded (don't INSERT the file) | off (loads via `con.add`) |
 | `CIRCUIT_READONLY=1` | engine has no UPDATE (query-only); implies skip-load; refuses paths | off |
+| `CIRCUIT_CLEANUP=1` | remove emitted gates after a run; **scratch endpoint only** | off |
+
+`CIRCUIT_CLEANUP=1` is unsafe on a shared or long-lived content-addressed circuit store: another query
+may rely on an identical Times/answer gate, and concurrent path runs may still need persisted reach state.
+Use per-run named graphs or reference counting for a persistent multi-circuit store; do not enable this
+flag there.
 
 The update-endpoint convention differs per engine — GraphDB `/statements`, Fuseki/Oxigraph `/update`,
 Virtuoso `/sparql`. `engines.json` records each; `run_engine.py` sets the env vars for you.
