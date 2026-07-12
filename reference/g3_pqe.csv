@@ -1,4 +1,4 @@
 query,answers,construct_ms,compile_ms,wmc_ms,total_ms,compiled,wmc_ok
-watdiv-Sstar,2,13,2,0,15,2,2
-tpch-Q3,14908,1500,149,35,1684,14908,14908
-wikidata-WDpath,16,2136,1,0,2137,16,16
+watdiv-Sstar,2,20,2,0,22,2,2
+tpch-Q3,14908,3860,177,57,4094,14908,14908
+wikidata-WDpath,16,3358,3871,7,7236,16,16
