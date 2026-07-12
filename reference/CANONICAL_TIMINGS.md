@@ -45,9 +45,9 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
 `g4_rigor.py` now forces evaluation via `sum(probability_evaluate(provenance()))`, giving the honest
 **7.46 s** (5-run, current HEAD; consumed-probability checksum `sum = 0.125·n` verified per run). So on Q3,
 ours (**6.45 s**, mostly the removable pure-Python variable ordering) and ProvSQL (7.46 s) are comparable;
-on the reconvergent **Qrecon (below) ours is clearly faster**. Framing (G2a): the *same* exact PQE at
-comparable latency on a **stock, unforked** engine over a **broader fragment** — the contribution, not a
-per-query race.
+on the reconvergent **Qrecon (below) ours is faster at SF 0.01, ProvSQL at SF 0.1** (our Python ordering
+grows with the circuit). Framing (G2a): the *same* exact PQE (parity verified) at comparable latency on a
+**stock, unforked** engine over a **broader fragment** — the contribution, not a per-query speed race.
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
@@ -60,19 +60,19 @@ per-query race.
 `SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust }` — per-answer provenance
 `⊕ₖ(cust⊗orderₖ)` with a **shared** cust token (reconvergent; p ∈ [0.375, 0.5], not Q3's 0.125).
 
-| query | scale | answers | ours total ‡ | ProvSQL total ‡ |
-|---|---|--:|--:|--:|
-| Qrecon (reconvergent) | SF 0.01 |  247 | 322 ms | 770 ms |
-| Qrecon (reconvergent) | SF 0.1  | 2086 | 2.76 s | 6.45 s |
+| query | scale | answers | ours total (median [min–max]) | ProvSQL total | faster |
+|---|---|--:|--:|--:|:--:|
+| Qrecon (reconvergent) | SF 0.01 |  247 | **443 ms** [435–457] | 733 ms [730–772] | **ours** |
+| Qrecon (reconvergent) | SF 0.1  | 2086 | 12.9 s [12.8–13.2] | **6.7 s** [6.5–6.8] | ProvSQL |
 
-A naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01) and 2058/2086 (SF 0.1); the shared
-circuit (and ProvSQL) get it right. **‡ These totals are single observations, not the 5-run protocol** —
-treat the ours-vs-ProvSQL speed gap as provisional until re-run under the protocol above.
-**Probability parity:** `r8_3_reconvergent.py` now verifies ours **== the closed form** `0.5·(1−0.5^K)`
-per answer (definitive, key-independent) **and** compares the sorted per-answer probability list against
-ProvSQL's `probability(provenance())` rows (`max_abs_error < 1e-6`). The earlier artifact only read
-ProvSQL's `count(*)`, so the "ours == ProvSQL probabilities" claim was **not** established by it — the
-corrected script establishes it on the next endpoint re-run.
+5-run (1 warm-up + 5), current HEAD. A naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01)
+and 2058/2086 (SF 0.1); the shared circuit (and ProvSQL) get it right.
+**Probability parity — definitively established this run** (`r8_3_reconvergent.py`, keyed by `c_custkey`):
+ours **== the closed form** `0.5·(1−0.5^K)` per answer (independent K, `cf_maxerr = 0.0`) **and** ours
+**== ProvSQL** `probability_evaluate(provenance())` per customer (`max_abs_error = 0.0`, keys_match).
+**Timing is scale-dependent:** ours is faster at SF 0.01 but **ProvSQL is faster at SF 0.1** — under the
+`90c3c3c` boundaries our total now includes the pure-Python variable ordering, which grows with the
+circuit (SF 0.1: ~12 s of ordering). The robust result is the **exact-probability parity**, not the speed.
 
 ## Still open
 

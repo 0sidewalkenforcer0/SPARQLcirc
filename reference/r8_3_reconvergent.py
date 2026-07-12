@@ -52,7 +52,9 @@ def _parse_provsql_rows(stdout):
     """
     p_by, k_by = {}, {}
     for line in stdout.splitlines():
-        m = re.match(r"^([PK])\|(\d+)\|([\d.eE+-]+)$", line.strip())
+        # tolerate this ProvSQL build's aggregate-provenance display: the probability value may print as
+        # "0.375 (*)" with a trailing "|<uuid>" column; capture P/K + custkey + value, ignore the rest.
+        m = re.match(r"^([PK])\|(\d+)\|([\d.eE+-]+)", line.strip())
         if not m:
             continue
         kind, ck, raw = m.groups()

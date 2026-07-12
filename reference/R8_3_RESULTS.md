@@ -15,35 +15,33 @@ Projecting to `?cust`, a building customer with **K orders** has provenance `⊕
 which **varies with K in [0.375, 0.5]** (not a constant). A naive per-answer product-sum
 `Σₖ P(cust)·P(orderₖ) = 0.25·K` **double-counts** the shared `cust` and exceeds 1 for K ≥ 4.
 
-## Results (post-`1e67021` jar; ProvSQL warm) — ‡ SINGLE observations, not the 5-run protocol; pre-date the keyed-parity + corrected-timer-boundary scripts, so treat as provisional
+## Results (current HEAD, 5-run: 1 warm-up + 5 timed; `90c3c3c` timer boundaries)
 
-| scale | answers | ours total ‡ (construct/compile/WMC) | ProvSQL total ‡ | p range | ours valid | naive-would-be > 1 |
+| scale | answers | ours total (construct/compile/WMC) | ProvSQL total | p range | ours valid | naive-would-be > 1 |
 |---|--:|--:|--:|--:|:--:|--:|
-| SF 0.01 |  247 | 322 ms (238 / 81 / 2) | 770 ms | [0.375, 0.500] | 247/247 ✓ | 243/247 |
-| SF 0.1  | 2086 | 2.76 s (1998 / 740 / 22) | 6.45 s | [0.375, 0.500] | 2086/2086 ✓ | 2058/2086 |
+| SF 0.01 |  247 | **443 ms** [435–457] (259 / 182 / 2) | 733 ms [730–772] | [0.375, 0.500] | 247/247 ✓ | 243/247 |
+| SF 0.1  | 2086 | **12.9 s** [12.8–13.2] (2327 / **10600** / 22) | **6.7 s** [6.5–6.8] | [0.375, 0.500] | 2086/2086 ✓ | 2058/2086 |
 
 ## Findings
 
-- **Shared-circuit WMC on genuinely reconvergent lineage.** The answer's provenance is a *sum of products
-  sharing a base token* (not Q3's single product), so this exercises correct shared-lineage handling.
-  **Verification status (do not overstate):** on the pending endpoint re-run, the corrected script will
-  check ours against the closed form `0.5·(1−0.5ᴷ)` per answer, and compare the per-customer probability
-  map to ProvSQL's `probability(provenance())` keyed by `c_custkey` (with K taken from an independent
-  count, not from the circuit under test). ⚠ **The numbers in the table above PREDATE that keyed check** — the earlier
-  artifact read only ProvSQL `count(*)` and compared *sorted* probability lists (which cannot prove
-  identical answer sets or per-customer parity). The keyed ours==ProvSQL parity is established on the next
-  endpoint re-run, **not yet** by the committed CSV.
+- **Shared-circuit WMC on reconvergent lineage — parity now DEFINITIVELY established.** The answer's
+  provenance is a *sum of products sharing a base token* (not Q3's single product). This run's keyed check
+  (`r8_3_reconvergent.py`, by `c_custkey`) shows ours **== ProvSQL** `probability_evaluate(provenance())`
+  per customer (`max_abs_error = 0.0`, `keys_match`, identical answer sets) **and** ours **== the closed
+  form** `0.5·(1−0.5ᴷ)` with K from an independent count (`cf_maxerr = 0.0`). Both at SF 0.01 and SF 0.1.
+  So ours computes exactly the right reconvergent probabilities, verified two independent ways.
 - **A naive per-answer product-sum is provably wrong here.** `0.25·K` exceeds 1 for **243/247** (SF 0.01)
   and **2058/2086** (SF 0.1) answers — impossible probabilities. Both the shared circuit (⊗ with a shared
   `cust` leaf feeding a ⊕ of orders) and ProvSQL's semiring avoid this; a per-derivation baseline that
   multiplied-then-summed would not. This is *why* the shared circuit / real WMC is needed.
-- **SF 0.1 end-to-end is complete on our side (R8.3).** The reconvergent circuit is small (2086 answers)
-  so our pure-Python compile handles the full pipeline. In this **single, provisional** run ours was
-  faster (2.76 s vs 6.45 s) — but that is one observation, not a 5-run result, and it predates the
-  corrected timer boundaries (which fold RDF parse + variable ordering into our totals), so **do not cite
-  the speed ordering** until re-run. The target framing-level claim is *same probabilities on a stock,
-  unforked engine* (already established for G2a; still pending here for the reconvergent query) — latency
-  ordering is query-dependent and secondary.
+- **SF 0.1 end-to-end is complete on our side (R8.3) — full 5-run pipeline.** 2086 answers, ours
+  **12.9 s** vs ProvSQL **6.7 s**. **Latency is scale-dependent:** ours is faster at SF 0.01 (443 ms vs
+  733 ms) but **ProvSQL is faster at SF 0.1** — under the `90c3c3c` boundaries our total now folds in the
+  pure-Python **variable ordering**, which dominates the larger reconvergent circuit (SF 0.1 compile
+  **10.6 s** of the 12.9 s; WMC itself is 22 ms). That ordering is a removable implementation cost (native
+  compiler / linear heuristic), not the method. The robust, framing-level claim is the **same exact
+  probabilities on a stock, unforked engine** (parity verified above); latency ordering is query- and
+  scale-dependent and secondary.
 
 ## Caveats / notes
 
