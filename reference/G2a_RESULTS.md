@@ -3,7 +3,14 @@
 E7 already showed our probabilities match **ProvSQL** — but on **3 toy instances**. G2a upgrades that
 to the **shared TPC-H benchmark** (the relational workload ProvSQL was built for) at **14 908 / 125 154
 answers**, and turns it into a *timed* head-to-head: same data, same query, same per-token weight, exact
-PQE on both sides. This is the last MUST item of the dev's ROUND 6 roadmap.
+PQE on both sides. Per ROUND 7, this folds into G3 (the end-to-end latency story) and is framed as
+**comparable latency without an engine fork — not a speed win** (ProvSQL is a shared-circuit *peer*).
+
+> **Timing note (read first).** All timings here are the **G4-rigorous warm** numbers (1 warm-up + 5
+> timed runs, median [min–max]). An earlier draft of this file quoted a **cold** ProvSQL first-call
+> (3.6 s) and wrongly concluded "ours ~2× faster"; the G4 rigor pass (see `G4_RESULTS.md`) corrected it —
+> warm/steady-state ProvSQL is **~1.05 s** and is in fact *faster* than us. The robust result is
+> **probability parity**, not a latency win.
 
 ## Setup
 
@@ -12,56 +19,53 @@ PQE on both sides. This is the last MUST item of the dev's ROUND 6 roadmap.
   [`tpch/tbl_to_rdf.py`](tpch/tbl_to_rdf.py) and loaded into GraphDB (`tpch001` / `tpch01`) — **per-row**
   (naryrel) provenance, the granularity ProvSQL/SPARQLprov use (a *tuple* is the uncertain unit).
 - **Query.** TPC-H **Q3 SPJ** — `customer ⋈ orders ⋈ lineitem`, `c_mktsegment = 'BUILDING'`, projecting
-  `(o_orderkey, l_linenumber)`. Filter-free / non-aggregate so the measured cost is provenance PQE, not
-  SQL grouping (same skeleton as E9 / G3).
+  `(o_orderkey, l_linenumber)`. Filter-free / non-aggregate (same skeleton as E9 / G3).
 - **Weight.** Per-token **p = 0.5**, uniform, both sides.
 - **ProvSQL PQE.** `add_provenance('tbl')` → `set_prob(provenance(), 0.5)` (per base row) →
-  `probability(provenance())` per answer, inside PostgreSQL (ProvSQL 1.11.0-dev, its C extension +
-  custom aggregates). One timed `CREATE TABLE AS`.
+  `probability(provenance())` per answer, inside PostgreSQL (ProvSQL 1.11.0-dev). [`tpch/g2a_provsql.sql`](tpch/g2a_provsql.sql).
 - **Our PQE.** `CircuitRewriter` naryrel CONSTRUCT → **shared** ROBDD compile (once) → WMC every answer
-  root — the G3 end-to-end pipeline, on a **stock GraphDB** + a client compiler.
+  root — the G3 pipeline, on a **stock GraphDB** + a client compiler.
 
-## Results
+## Results (warm, G4 protocol)
 
 | scale | answers | ProvSQL PQE (modified PG) | ours PQE (stock engine, G3) | ProvSQL p | ours p |
 |---|--:|--:|--:|--:|--:|
-| SF 0.01 (60 k lineitems)  |  14 908 | **3.60 s** | **1.68 s** | 0.1250 | 0.1250 |
-| SF 0.1  (600 k lineitems) | 125 154 | **29.4 s** | **12.6 s** construct (+ compile near-free) | 0.1250 | 0.1250 |
+| SF 0.01 (60 k lineitems)  |  14 908 | **1.05 s** [1.02–1.09] | **1.65 s** [1.64–1.67] | 0.1250 | 0.1250 |
+| SF 0.1  (600 k lineitems) | 125 154 | **9.8 s** [9.4–10.0]   | 12.6 s construct + near-free compile | 0.1250 | 0.1250 |
 
-*(ours SF 0.01 = G3 tpch-Q3: construct 1500 ms + shared compile 149 ms + WMC 35 ms. ours SF 0.1 =
-12.6 s engine construct of the 876 k-triple circuit; the shared compile+WMC is Θ(N+S), near-free in
-principle but our **pure-Python** compiler is the client bottleneck at this size — a native compiler /
-d4 (G6) removes it. Construct is the comparable engine-side term, and it is below ProvSQL's 29.4 s.)*
+*(ours SF 0.01 = G4 tpch-Q3: construct 1471 + compile 149 + WMC 35 ms. ours SF 0.1 = 12.6 s engine
+construct of the 876 k-triple circuit; compile+WMC is Θ(N+S), near-free in principle but our pure-Python
+compiler is the client bottleneck at that size — a native compiler / d4 (G6) removes it.)*
 
 ## Findings
 
-- **Probability parity at benchmark scale.** Both systems return **exactly 0.1250 = 0.5³** for *every*
-  Q3 answer — each answer is `customer ⊗ order ⊗ lineitem`, three independent tokens, so the ⊗ of three
-  0.5-leaves is 0.125. E7 validated this agreement on 3 hand-built instances; G2a shows it holds against
-  ProvSQL's own possible-world semantics across **14 908 and 125 154** real join outputs. Our circuit +
-  WMC computes the *same* number ProvSQL's modified PostgreSQL does.
-- **Competitive — on an *unmodified* engine.** At SF 0.01 our end-to-end PQE (**1.68 s**) is ~2× faster
-  than ProvSQL's (**3.60 s**) for the identical 14 908-answer query. The decisive difference is not the
-  2×: **ProvSQL requires a patched PostgreSQL** (a C extension, custom aggregates, a `provenance()`
-  column type); **ours runs on stock GraphDB** — the emitted CONSTRUCTs are SPARQL-1.1-only and yield a
-  **byte-identical circuit on 4 engines** (E10). Same exact probabilities, no forked database.
-- **Both scale ~linearly with the join output, and ours stays below.** ProvSQL 3.60 s → 29.4 s (≈ 8×)
-  for 10× data (answers 14 908 → 125 154, ≈ 8.4×) — PQE cost tracks #answers, as expected for this
-  tree-join shape (no reconvergence; cf. E11). Our engine-side construct scales the same (1.68 s →
-  12.6 s, ≈ 7.5×) and remains **below** ProvSQL at both scales — on a stock engine.
+- **Probability parity at benchmark scale — the result.** Both systems return **exactly 0.1250 = 0.5³**
+  for *every* Q3 answer (each answer is `customer ⊗ order ⊗ lineitem`, three independent tokens). E7
+  validated this agreement on 3 hand-built instances; G2a shows it holds against ProvSQL's own
+  possible-world semantics across **14 908 and 125 154** real join outputs. Our circuit + WMC computes
+  the *same* number ProvSQL's modified PostgreSQL does, at TPC-H scale.
+- **Comparable latency — ProvSQL is modestly faster (warm), and that's fine.** Same order of magnitude
+  at both scales; warm, ProvSQL is ~1.5× faster (SF 0.01: 1.05 s vs 1.65 s) — as ROUND 7 anticipated.
+  ProvSQL evaluates provenance *inside* a tuned relational engine's operators; we build a circuit over a
+  general-purpose SPARQL engine and compile client-side. We do **not** claim a speed win over ProvSQL.
+- **The advantage is architectural, not latency.** We compute ProvSQL's probabilities on a **stock,
+  unmodified SPARQL engine** — the emitted CONSTRUCTs are SPARQL-1.1-only and yield a **byte-identical
+  circuit on 4 engines** (E10) — versus ProvSQL's **forked PostgreSQL** (a C extension, custom
+  aggregates, a `provenance` column type). And the *fragments* differ: our method covers **property
+  paths + full SPARQL** at KG scale (G1/G3/E10) that a relational engine does not address, while ProvSQL
+  covers relational **aggregation** (our G9, out of scope). Complementary, not a race.
+- **Both scale ~linearly with the join output.** ProvSQL 1.05 → 9.8 s (≈ 9×) and our construct 1.65 →
+  12.6 s (≈ 7.6×) for 10× data (answers ≈ 8.4×) — PQE cost tracks #answers for this tree-join shape
+  (no reconvergence; cf. E11).
 
 ## Caveats
 
-- **The SF 0.1 *compile* is a reference-implementation artifact, not the method.** The 12.6 s SF 0.1
-  number is engine **construct** (measured, directly comparable). The subsequent compile+WMC on the
-  **shared** circuit is Θ(N+S) and near-free in principle (G3: 149 ms for all 14 908 SF 0.01 answers) —
-  but our compiler is **pure Python**, so at SF 0.1 (~375 k tokens) the *client* compile step does not
-  finish in minutes. That is the Python constant, not the algorithm; a native compiler / **d4** (G6)
-  removes it. So the SF 0.1 row compares ProvSQL's end-to-end C number against our engine-side construct
-  (+ an in-principle-near-free compile) — construct alone already sits below ProvSQL.
-- ProvSQL `probability(provenance())` is its exact evaluator; we did not use `probability_evaluate(…,
-  'weightmc')` (its d-DNNF path) here — exact vs exact. Shared box; treat times as order-of-magnitude
-  (E10 note). Single run per cell (latency shape); G4 adds repeats + variance.
-- ProvSQL is the **right** relational baseline (it *does* compute probabilities, unlike NPCS/SPARQLprov
-  which stop at how-provenance — G2b/G3). G2a's point is that we match it **without modifying the
-  engine**.
+- **Cold vs warm matters and is easy to get wrong** (this file's own first draft did). The cited numbers
+  are warm medians over 5 runs after a warm-up; a cold first-call is ~3× slower on the ProvSQL side. G4
+  fixes the protocol for all headline timings.
+- ProvSQL `probability(provenance())` is its exact evaluator; we did not benchmark its `weightmc`
+  d-DNNF path — exact vs exact. Shared HPC box (see `G4_RESULTS.md` env log); treat absolute times as
+  order-of-magnitude. Our SF 0.1 client compile is a pure-Python artifact (see note above).
+- ProvSQL is the **right** relational baseline — it *does* compute probabilities, unlike NPCS/SPARQLprov,
+  which stop at how-provenance (G2b/G3). G2a's point is that we match it **without modifying the engine**
+  and over a **broader query fragment** — not that we beat its latency.
