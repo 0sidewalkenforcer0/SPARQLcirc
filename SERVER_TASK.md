@@ -600,13 +600,19 @@ The earlier wording ("route ours through `compile_portfolio` AND pin ProvSQL to 
 - `compile_portfolio.probability()` is **per-root**, but G3's canonical number compiles **all answers into
   ONE shared ROBDD** — per-answer portfolio calls lose that sharing and change both meaning and cost.
 
-Pick ONE and state it (author decision — do NOT run the comparison until chosen):
-- **Level 1 — same external compiler:** force BOTH sides to CNF → d4 (ours via `export_cnf` → d4; ProvSQL via
-  `probability_evaluate(...,'compilation')` + `provsql.fallback_compiler='d4'`). Legitimately "same compiler"
-  — but state explicitly whether it is **per-answer** or **shared-batch**, identically on both sides.
-- **Level 2 — same portfolio:** both auto-select; only valid AFTER `compile_portfolio` gains the same
-  tree-decomposition stage, thresholds, and selection order as ProvSQL. Until then do NOT claim "same portfolio."
-OBDD + PWE remain the independent oracle either way.
+**DECISION (author, 2026-07-13): Level 1 — PER-ANSWER CNF → d4 on BOTH sides.**
+- **Ours:** for each answer root, force the compilation branch — `compile_portfolio.d4_wmc(circ, root, P)`
+  (i.e. `export_cnf(circ, root, P)` → **d4-v2** → WMC), NOT `probability()` (which would auto-pick a cheaper
+  method). Per-answer, matching ProvSQL's per-group granularity; same Tseitin encoding, same compiler.
+- **ProvSQL:** `probability_evaluate(provenance(), 'compilation')` + `SET provsql.fallback_compiler='d4';`
+  (per `c_custkey` group — already per-answer).
+- Report compile+WMC time per side (summed over answers) + confirm identical probabilities. This is
+  legitimately "same compiler, same encoding, same per-answer granularity"; the only difference is the
+  engine / data model (stock SPARQL·RDF vs forked PostgreSQL·relations).
+- **Do NOT fold in our shared-compile advantage here.** "Compile ONCE for all answers, Θ(N+S) vs per-answer
+  Θ(N·S)" is a SEPARATE result — **E11** — not this head-to-head.
+- OBDD + PWE remain the independent correctness oracle (E1/G6).
+(Level 2 — matching ProvSQL's full auto-portfolio incl. tree-decomposition — is deferred; not needed here.)
 
 ## d4-v2 — VERIFY (do not presume "d4-v2 fixes it")
 - [ ] **E4.1 / G6 with d4-v2 is a *verification*** of whether d4-v2 fixes d4-v1's weighted over-count — NOT a
