@@ -5,13 +5,19 @@ fast. It is our **billion-scale non-path** datapoint — proof that the circuit 
 production-grade engine at the scale a VLDB reviewer expects.
 
 ## Capability boundary (read this first)
-QLever is **read-optimized**: you build an index offline and query it; there is no live SPARQL UPDATE we
-can rely on. So:
+**Update (2026):** QLever added **SPARQL 1.1 Update** in ~2025 (full SPARQL 1.1 compliance; POST
+`application/sparql-update`, `access-token` auth, `--persist-updates` for durability), so it is writable
+*in principle*. **But its update path is slow (~10 ms/op) and OOM-prone at even ~8 M triples**
+([ad-freiburg/qlever#2481](https://github.com/ad-freiburg/qlever/issues/2481)) — not a safe target for our
+high-volume iterative path protocol at billion scale. So we run it **read-only by default** and treat it
+as a fast read-optimized index (build offline, then query):
 - ✅ **Non-path** queries (BGP / UNION / MINUS / OPTIONAL) — one-shot read-only CONSTRUCTs. Run these.
-- ❌ **Property paths** — our iterative protocol INSERTs each round; `CircuitRun` refuses with
-  `CIRCUIT_READONLY=1` (exit 3). Run paths on a writable engine, or wait for the VALUES-inline loop
-  (see `README.md`).
-- Use **Standard** reification (QLever's RDF-star support is limited).
+- ⚠️ **Property paths** — do **not** push them through raw bulk SPARQL UPDATE here (slow + #2481 OOM at
+  scale). Use the **frontier-restricted / `VALUES`-inline** route (`README.md`, gap G1), which minimizes or
+  eliminates writes — that is what makes billion-scale paths feasible on QLever, not the raw UPDATE
+  endpoint. Until that route lands, `CircuitRun` refuses paths here with `CIRCUIT_READONLY=1` (exit 3).
+- Use **Standard** reification (QLever's RDF-star support is limited). If you *do* enable updates, they need
+  `--persist-updates` + an `access-token` (our `CircuitRun` does not send an auth token yet).
 
 ## 1. Build the index (offline, bulk)
 ```bash

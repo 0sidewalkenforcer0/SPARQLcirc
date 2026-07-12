@@ -28,10 +28,10 @@
   "qlever": {
     "role": "Wikidata-scale non-path (billions of triples)",
     "query": "http://localhost:7001",
-    "update": null,
-    "writable": false, "readonly": true, "rdfstar": false,
+    "update": "http://localhost:7001",
+    "writable": true, "readonly": true, "rdfstar": false,
     "reification": ["Standard"], "paths": false, "scale": "10^10 (full Wikidata)",
-    "note": "READ-ONLY: bulk-build the index offline; non-path only (CIRCUIT_READONLY=1). Paths need the VALUES-inline loop (see README)."
+    "note": "SPARQL 1.1 Update IS supported since ~2025 (POST application/sparql-update, needs access-token + --persist-updates) -> writable in principle. BUT its update path is slow (~10ms/op) and OOM-prone at even ~8M triples (github ad-freiburg/qlever#2481), so we keep readonly=true (-> CIRCUIT_READONLY=1) as the SAFE DEFAULT for the high-volume iterative path protocol. Bulk-build the index offline; run non-path here. Paths at scale: frontier-restricted / VALUES-inline route (README, gap G1), NOT raw bulk UPDATE."
   },
   "millenniumdb": {
     "role": "property-path SOTA (WDBench) -- ideal path target once read-only paths land",

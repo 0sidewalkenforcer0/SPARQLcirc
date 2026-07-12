@@ -14,12 +14,17 @@ byte-identity result (E3), now across independent implementations.
 | **GraphDB** | our primary; shared w/ NPCS | ✅ | ✅ | ✅ | 10⁹ | Standard / SPARQL\* |
 | **Fuseki** (Jena) | shared w/ SPARQLprov | ✅ | ✅ | ✅ | ~10⁹ | Standard / SPARQL\* |
 | **Oxigraph** (Rust) | independent lineage → byte-identity | ✅ | ✅ | ✅ | ~10⁸ | Standard / SPARQL\* |
-| **QLever** | Wikidata-scale non-path | ❌ read-only | ✗ | ❌* | 10¹⁰ | Standard |
+| **QLever** | Wikidata-scale non-path | ⚠ update² | ✗ | ❌* | 10¹⁰ | Standard |
 | **MillenniumDB** | property-path SOTA (WDBench) | ❌ read-only | ✗ | ❌* | 10⁹ | Standard |
 | Virtuoso | baseline (SPARQLprov primary) | ✅ | ✗ | ✅ | 10¹⁰ | Standard |
 | Stardog | baseline (NPCS) | ✅ | ✅ | ✅ | 10⁹ | Standard / SPARQL\* |
 
 \* read-only engines run property paths only once the VALUES-inline loop lands (see below).
+
+² QLever gained **SPARQL 1.1 Update** (~2025), so it is writable in principle — but its update path is
+slow (~10 ms/op) and OOM-prone at even ~8 M triples ([ad-freiburg/qlever#2481](https://github.com/ad-freiburg/qlever/issues/2481)),
+so we **default it read-only** and route paths through the frontier-restricted / `VALUES`-inline loop, not
+raw bulk UPDATE. (Updates also need `--persist-updates` + an `access-token`.)
 
 **Reification schemes** (the `--scheme` / first `CircuitRun` arg): `Standard` (plain rdf:subject/…triples,
 loadable anywhere), `SPARQL_Star` (compact, needs an RDF-star engine — avoids the 3× blow-up), and
@@ -33,7 +38,7 @@ read-only engines (QLever/MillenniumDB) that have no RDF-star support.
   **any** SPARQL 1.1 engine, including read-only ones, at full scale.
 - **Property paths** use a **client-driven iterative fixpoint** that **INSERTs each round's reach gates
   back** so the next CONSTRUCT can match them → needs a **writable** endpoint.
-  On read-only engines (QLever, MillenniumDB) `CircuitRun` refuses path queries with a clear error (exit 3).
+  On read-only engines (MillenniumDB, and QLever by default²) `CircuitRun` refuses path queries with a clear error (exit 3).
   - **Planned read-only path route** (not yet implemented): instead of INSERTing each round's gates,
     **inline** the prior round's reach gates via a `VALUES` block in the next CONSTRUCT. For our
     *bounded-reach* path queries (Wikidata `P279+`/`P131+`, small |V_s|) that is cheap and would unlock
