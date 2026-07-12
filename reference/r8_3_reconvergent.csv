@@ -1,0 +1,5 @@
+scale,system,answers,total_ms,construct_ms,compile_ms,wmc_ms,p_min,p_max,naive_gt1
+0.01,ours,247,322,238,81,2,0.375,0.5,243
+0.01,provsql,247,770,,,,0.375,0.5,
+0.1,ours,2086,2760,1998,740,22,0.375,0.5,2058
+0.1,provsql,2086,6447,,,,0.375,0.5,

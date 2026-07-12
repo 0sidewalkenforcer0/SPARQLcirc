@@ -46,10 +46,22 @@ order of magnitude; our contribution is the *same* exact PQE on a **stock, unfor
   ProvSQL faster on all 5; within-instance sd ≤ 2 %.
 - **WatDiv S-star × 5 users**: 20 → 659 ms, tracking answer count; within-instance sd 0–8 ms.
 
-## Still to fold in here (open)
+## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `R8_3_RESULTS.md`
 
-- TPC-H Q3 **SF 0.1 / SF 1** full-pipeline ours (R8.3) — SF 0.1 currently construction-only (pure-Python
-  compile bottleneck; needs native/d4 compile); SF 1 not yet loaded.
-- **WatDiv 200 M** WD-path + all-pairs (R8.1 scale; generator build in progress).
-- ProvSQL **reconvergent** query (R8.3) — Q3's per-answer lineage is a single 3-token product (0.5³);
-  a multi-derivation query is needed to exercise shared-circuit WMC.
+`SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust }` — per-answer provenance
+`⊕ₖ(cust⊗orderₖ)` with a **shared** cust token (reconvergent; p ∈ [0.375, 0.5], not Q3's 0.125).
+
+| query | scale | answers | ours total | ProvSQL total |
+|---|---|--:|--:|--:|
+| Qrecon (reconvergent) | SF 0.01 |  247 | **322 ms** | 770 ms |
+| Qrecon (reconvergent) | SF 0.1  | 2086 | **2.76 s** | 6.45 s |
+
+Ours == ProvSQL probabilities; a naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01) and
+2058/2086 (SF 0.1). SF 0.1 end-to-end is complete here; ours is *faster* on this reconvergent shape.
+
+## Still open
+
+- TPC-H Q3 **SF 0.1 / SF 1** full-pipeline ours: Q3 SF 0.1 stays **construction-only** (125 154-answer
+  circuit = pure-Python compile bottleneck; native/d4 compile is the follow-up). SF 1 not loaded.
+  (R8.3's SF 0.1 end-to-end is delivered via Qrecon above, whose smaller circuit compiles.)
+- **WatDiv 200 M: dropped** — the 2014 generator segfaults on the modern toolchain; 10 M / 100 M stand.
