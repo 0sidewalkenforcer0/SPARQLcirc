@@ -546,3 +546,51 @@ PostgreSQL/relations). Two levels — dev builds the wrapper, server runs both:
 Trade-off to accept: the ProvSQL-comparison headline numbers become **Linux/x86-only** (d4's PATOH), and
 `provsql/README.md`'s "same d4 backend" wording becomes *true* rather than aspirational. Update G2a/R8.3/G3
 framing to "identical compilation stack; difference is the engine/data model, not the compiler."
+
+---
+
+# RE-RUN CHECKLIST (which experiments the recent code changes invalidate)
+
+**Map — code change → what it altered → what it invalidates:**
+| change (commit) | altered | invalidates |
+|---|---|---|
+| **timer boundaries** (`90c3c3c`) | construct now folds in RDF-parse/answer-recovery; compile now folds in variable-ordering + ROBDD init — both were previously *un*timed, so old totals under-counted | **G3, G4, R8.3, G2a** (ours-side timings) |
+| **R8.3 rewrite** (`77d067f`) | keyed per-customer parity + independent K + uses the timed shared-compile map | **R8.3** (committed CSV has no parity fields) |
+| **G2b arity + raw bytes** (`406ddbe`,`fc5e4a1`) | `T_string` = actual per-product tokens; NPCS bytes = raw HTTP payload (UTF-8) | **G2b** |
+| **G8 UTF-8 bytes** (`fc5e4a1`) | N-Triples byte count now UTF-8 | **G8** |
+| **path fingerprint** (`7882a1e`) | reach/base gate IRIs re-namespaced + one `c:rpath` triple/reach-gate; **gates+edges and compile/WMC UNCHANGED**, construct time + byte-identity refs shift | path **byte-identity refs**; WD-path **construct** time (folds into the G3/G4 re-run) |
+| **ansKey BOUND-safe + c:binding detection** (`90c3c3c`) | `c:answer` now always emitted (incl. unbound-projected answers); WMC values UNCHANGED | **E10 stored hashes/counts** for OPTIONAL/MINUS/UNION shapes (the *property* still holds); nothing numeric |
+| **compile_portfolio + d4-v2** (`b33d26e` + direction) | new same-stack compilation for the ProvSQL comparison | **NEW runs:** G3/G2a/R8.3 same-stack; E4 d4-v2 confirm; G6 large cones |
+
+## MUST re-run (numbers are stale/invalid — block citing)
+- [ ] **G3 canonical timings** — `python3 g3_pqe_latency.py` (1 warm-up + 5 runs) → `g3_pqe.csv`; rewrite the
+      `CANONICAL_TIMINGS.md` table. ✔ check: totals now include parse+ordering (larger than the old ones); no
+      query appears with two totals anywhere.
+- [ ] **G4 rigor + instances** — `python3 g4_instances.py`, `python3 g4_rigor.py` → `g4_instances.csv`,
+      `g4_rigor.csv` (they import g3's timers, so they inherit the boundary change).
+- [ ] **R8.3 reconvergent** — `python3 r8_3_reconvergent.py` → `r8_3_reconvergent.csv`. ✔ check: `cf_maxerr`
+      and `max_abs_error` columns present; ours == closed form (independent K) and == ProvSQL per `c_custkey`.
+- [ ] **G2b** — `python3 g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`; rewrite the `G2b_RESULTS.md` table. ✔
+      check: three separate metrics (structural / serialized-bytes / compiled), NO `size_win`, raw-payload bytes.
+- [ ] **G8** — `python3 g8_space_memory.py` → `g8_space_memory.csv` (UTF-8 bytes).
+
+## COMPILER ALIGNMENT (the new same-stack direction — see "E4 / compiler" above)
+- [ ] Build **d4-v2**; `export D4=/path/to/d4v2 D4V2=1`.
+- [ ] Route **G3 / G2a / R8.3** ours-side compile through `compile_portfolio.probability(circ, root, P)`;
+      pin **ProvSQL** to `probability_evaluate(provenance(),'compilation')` + `provsql.fallback_compiler='d4'`.
+      Then the head-to-head is genuinely same-portfolio, same-compiler → re-emit G2a/R8.3.
+- [ ] **E4.1** — refresh `e4_sweep.py` with d4-v2 (sizes should match; confirms v2 weighted counts) → `watdiv/e4_results.csv`.
+- [ ] **E4.2 / G6** — `g6_d4_real.py` with d4-v2 on the **>40-token** WD-path cones (d4-v1 over-counted) → `g6_d4.csv`.
+
+## CHEAP reference regen (the property still holds — just refresh stored values)
+- [ ] **E10 byte-identity** — re-run the 4-engine diff on the CURRENT jar and regenerate the stored hashes /
+      triple counts for any shape that projects an OPTIONAL/UNION variable (the ansKey fix added a `c:answer`
+      triple there). The claim (all engines byte-identical on one jar) is UNAFFECTED — only the stored numbers move.
+
+## DO NOT re-run (unaffected — do not spend server time)
+- **E1 correctness** — validated locally (171/171 + all verifiers green); identity/recovery changed, WMC values did not.
+- **E2 compactness** (`bench.csv`) — structural cost-model, non-path.
+- **E3 construction** (`e3_*.csv`) — size metric is `gates+edges` (excludes `c:binding`/`c:answer`); non-path; timed via `watdiv_run`, not g3.
+- **E5 factored**, **E11** (`e11_*.csv`) — `gates+edges` unaffected by the recovery-triple additions.
+- **G7 reification** — local `CircuitRun` circuit-diff, byte-identical under both schemes; unaffected.
+- **E4 core scaling result** — already done + correct with d4-v1 (`watdiv/e4_results.csv`); the d4-v2 pass above is a *confirmation*, not a redo.
