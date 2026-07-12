@@ -228,3 +228,45 @@ planned VALUES-inline path loop would unlock QLever/MillenniumDB for bounded pat
    construction datapoint). MillenniumDB = same, plus cite it for path-answer performance.
 
 Rebuild the engine first (`cd engine && mvn -q package`) so the env-var support is present, then `git pull`.
+
+---
+
+# ROUND 6 — VLDB gap roadmap (prioritized experiment backlog)
+
+Full status + rationale in the experiment report + `BASELINE_COVERAGE.md` + `EVALUATION.md`. This is the
+actionable backlog. The MUST-HAVEs close the two soft spots a reviewer will probe: the unique property-path
+contribution does not yet scale, and the head-to-head comparisons are toy-scale/partial.
+
+## Must-have (blocking a competitive submission)
+- **G1 — property paths at scale.** Implement the frontier-restricted / VALUES-inline iterative loop
+  (compose only from the newly-reached frontier; bounded accumulation), then re-run `P279+` / `P131+` on
+  Wikidata (currently OOMs, E8). Also unlocks read-only QLever/MillenniumDB. **HIGHEST VALUE.**
+- **G2a — ProvSQL on TPC-H, SF 0.01→1.** Same SPJ/MINUS skeletons as E9; PQE parity + construction time
+  side-by-side up to 125M — upgrades E7 from 3 toy instances (8–24 triples) to the shared benchmark.
+- **G2b — full NPCS on curated WDBench.** NPCS's own graph + full query set; NPCS (reimpl or jar, locally)
+  vs us: construction time + output size (shared circuit vs per-answer strings) at equal scale (E8 is
+  partial: single category, broad predicate filter).
+- **G3 — end-to-end PQE latency.** One harness: construct → compile (d4) → WMC, total wall-clock on
+  WatDiv / TPC-H / Wikidata, tabulated vs baselines (we currently time construction and compile+WMC apart).
+- **G4 — statistical rigor.** ≥3–5 query shapes per pattern, repeated runs (mean/variance); more
+  bound-survivable MINUS shapes (R2A currently 1) and more path shapes (R3).
+
+## Should-have
+- **G5** measured SPARQLprov output numbers — run its released rewriter from the artifact, locally (not
+  shipped), to back the T_string cost model with the real system, not just our NPCS reimpl.
+- **G6** d4 / d-DNNF on the *real* WatDiv / Wikidata / TPC-H circuits at scale (E4 is synthetic tw families);
+  redo E11's compile-time win with d4 so it is order-robust, not OBDD-order-dependent.
+- **G7** SPARQL-star reification at scale on RDF-star engines (E8 used Standard = 3x blowup).
+- **G8** space & memory at scale (on-disk circuit bytes, compiled d-DNNF size, peak RSS).
+- **G10 — comparability completeness.** Add WatDiv **Complex (C)** queries to E3/E6 and a **200M** scale
+  point, so the workload matches NPCS/SPARQLprov exactly (taxonomy L/S/F/C/O; scale 10/100/200M). Cheap.
+
+## Scope decision (state explicitly)
+- **G9 — aggregation.** SPARQLprov (§4.4) and ProvSQL both do it; we do not. Either add a basic aggregation
+  gate, or **declare out of scope with justification** (orthogonal to the shared-circuit/PQE contribution)
+  in the limitations section — a reviewer will ask.
+
+## Dimensions we deliberately do NOT run (see BASELINE_COVERAGE.md)
+Decoding (we emit RDF, not per-answer strings) · aggregate provenance (G9) · TripleProv/GProM baselines
+(same how-provenance/no-PQE class as NPCS/SPARQLprov; cite, don't run) · the R reified-no-provenance query
+version (our overhead is plain-vs-circuit).
