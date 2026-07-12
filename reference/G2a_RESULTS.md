@@ -1,5 +1,7 @@
 # G2a — ProvSQL (modified PostgreSQL) vs ours (stock engine + circuit): PQE head-to-head on TPC-H
 
+> ⚠️ **Timing numbers in this file are SUPERSEDED — cite [`CANONICAL_TIMINGS.md`](CANONICAL_TIMINGS.md).** They predate (or are single-run under) engine fix `1e67021`; the authoritative post-fix 5-run table lives in the canonical file, and the old rows are recorded in [`HISTORICAL_TIMINGS.md`](HISTORICAL_TIMINGS.md). The *methodology/findings* below still stand; only the absolute numbers moved.
+
 E7 already showed our probabilities match **ProvSQL** — but on **3 toy instances**. G2a upgrades that
 to the **shared TPC-H benchmark** (the relational workload ProvSQL was built for) at **14 908 / 125 154
 answers**, and turns it into a *timed* head-to-head: same data, same query, same per-token weight, exact

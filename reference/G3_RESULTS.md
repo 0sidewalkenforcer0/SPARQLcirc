@@ -1,5 +1,7 @@
 # G3 — end-to-end PQE latency (construct → compile → WMC)
 
+> ⚠️ **Timing numbers in this file are SUPERSEDED — cite [`CANONICAL_TIMINGS.md`](CANONICAL_TIMINGS.md).** They predate (or are single-run under) engine fix `1e67021`; the authoritative post-fix 5-run table lives in the canonical file, and the old rows are recorded in [`HISTORICAL_TIMINGS.md`](HISTORICAL_TIMINGS.md). The *methodology/findings* below still stand; only the absolute numbers moved.
+
 NPCS/SPARQLprov produce how-provenance and **stop** — they compute no probability. SPARQLcirc runs the
 full probabilistic-query-evaluation pipeline. E3 timed *construction* and E4/E11 timed *compile+WMC*
 apart; **G3 joins them into one end-to-end wall-clock** (all answers), on the loaded GraphDB repos
