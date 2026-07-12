@@ -301,14 +301,18 @@ already done or already in flight from ROUND 6.
 | E9 TPC-H SF 0.01–1 | `e9_*.csv` |
 | E10 4-engine byte-identity (8 shapes) | `engines/RESULTS.md`, `engines/timing/*.csv` |
 | E11 + E11-real | `e11_*.csv` (reconvergence boundary) |
+| **G2b — WatDiv leg** (just landed) | `g2b_npcs_vs_ours.csv` — **real NpcsRewriter** vs ours on WatDiv 32.7M: **10–27× more compact** (validates E2 on the real system); NPCS ~1.8× faster to build. **Do NOT re-run the WatDiv comparison** — only the WDBench-curated leg remains (below) |
 
 Where a DONE row says "the SCALE version is Gx", that Gx is a **new experiment below**, not a re-run of the
 toy/partial one already done.
 
 ## 🔄 Must-haves — ALREADY in ROUND 6 (continue; do NOT restart if running)
-**G1** paths-at-scale · **G2a** ProvSQL/TPC-H · **G2b** full-NPCS/WDBench · **G3** end-to-end latency ·
+**G1** paths-at-scale · **G2a** ProvSQL/TPC-H · **G2b** *(WatDiv leg DONE ↑; only the WDBench-curated graph
+remains — it was download-blocked, so unblock the graph or descope that leg)* · **G3** end-to-end latency ·
 **G4** rigor · (should-have) **G5 G6 G7 G8 G10** · (scope) **G9**. Definitions unchanged — see ROUND 6 above.
 If you have already started any of these, keep going; the notes below only *refine* them.
+Note: **G5 (NPCS side) is now partly done** — `g2b_npcs_vs_ours.py` runs the *real* NpcsRewriter; only the
+**SPARQLprov** artifact still needs measuring.
 
 ## 🆕 NEW this round — RUN (not in ROUND 6)
 1. **E10 byte-identity — 13-shape re-run on GraphDB / QLever / MillenniumDB.** `verify_http.py` now
