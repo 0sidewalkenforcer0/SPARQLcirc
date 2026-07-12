@@ -51,3 +51,10 @@ does not hold them. This is the memory result behind G1's "paths at KG scale."
   the frontier protocol makes.
 - P2-unbound's shared-OBDD node count is omitted (the pure-Python compile over 149 998 roots is the
   client bottleneck — see G2a/G6; a native compiler / d4 handles it).
+
+> **Engine fix 1e67021 (mid-session):** the term-type-aware gate-identity fix adds `urn:circuit:binding`
+> metadata triples (raising raw circuit/triple counts) and un-merges property-path reach-states the old key
+> wrongly collapsed. The **correctness spine re-verified on the rebuilt jar** — answer counts unchanged
+> (S-star 2, Q3 14908, WD-path 16), OBDD==PWE still holds, E10 byte-identity still 13/13 on 3 engines.
+> **Absolute sizes/times in this file predate the fix** (esp. the property-path row) and should be
+> regenerated in a clean pass; the conclusions are unaffected.

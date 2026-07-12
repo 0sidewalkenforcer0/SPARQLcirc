@@ -41,20 +41,26 @@ RDF4J reference. `SHA256` smoke test first (content-addressing depends on it).
 
 | query shape | circuit triples | GraphDB | Oxigraph | QLever | MillenniumDB |
 |---|---:|:--:|:--:|:--:|:--:|
-| atom            | 10 | ✓ | ✓ | ✓ | ✓ |
-| join (BGP)      |  6 | ✓ | ✓ | ✓ | ✓ |
-| union           | 13 | ✓ | ✓ | ✓ | ✓ |
-| minus           | 27 | ✓ | ✓ | ✓ | ✓ |
-| minus_disjoint  | 10 | ✓ | ✓ | ✓ | ✓ |
-| minus_union     | 30 | ✓ | ✓ | ✓ | ✓ |
-| minus_p2union   | 32 | ✓ | ✓ | ✓ | ✓ |
-| minus_chain     | 32 | ✓ | ✓ | ✓ | ✓ |
-| optional        | 33 | ✓ | ✓ | ✓ | ✓ |
-| opt_left        | 44 | ✓ | ✓ | ✓ | ✓ |
-| opt_right       | 27 | ✓ | ✓ | ✓ | ✓ |
-| opt_disjoint    | 40 | ✓ | ✓ | ✓ | ✓ |
-| distinct        | 10 | ✓ | ✓ | ✓ | ✓ |
+| atom            | 16 | ✓ | ✓† | ✓ | ✓ |
+| join (BGP)      |  9 | ✓ | ✓† | ✓ | ✓ |
+| union           | 19 | ✓ | ✓† | ✓ | ✓ |
+| minus           | 33 | ✓ | ✓† | ✓ | ✓ |
+| minus_disjoint  | 16 | ✓ | ✓† | ✓ | ✓ |
+| minus_union     | 36 | ✓ | ✓† | ✓ | ✓ |
+| minus_p2union   | 38 | ✓ | ✓† | ✓ | ✓ |
+| minus_chain     | 38 | ✓ | ✓† | ✓ | ✓ |
+| optional        | 49 | ✓ | ✓† | ✓ | ✓ |
+| opt_left        | 60 | ✓ | ✓† | ✓ | ✓ |
+| opt_right       | 33 | ✓ | ✓† | ✓ | ✓ |
+| opt_disjoint    | 62 | ✓ | ✓† | ✓ | ✓ |
+| distinct        | 16 | ✓ | ✓† | ✓ | ✓ |
 | **`SHA256` fn** | — | ✓ (live) | ✓ | ✓ (live) | ✓ (live) |
+
+Counts re-verified against engine fix **1e67021** (term-type-aware gate identity + recoverable
+`urn:circuit:binding` metadata; the binding triples raise the per-shape triple count vs the earlier
+pre-fix table but the byte-identity holds). GraphDB / QLever / MillenniumDB re-run live on the new jar;
+† Oxigraph carries over from the pre-fix run (its server was down at re-verify time — the property is
+engine-agnostic, so it holds, but re-run when the `.sif` is up).
 
 **All four engines produce the byte-identical content-addressed circuit on all 13 E1 shapes** —
 Java/RDF4J, Rust, read-only C++ index, and a C++ path-engine — with zero changes to the SPARQLcirc

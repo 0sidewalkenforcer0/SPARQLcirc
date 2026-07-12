@@ -34,3 +34,10 @@ All probabilities valid (WMC ∈ [0,1]); exactness is E1/E11 (WMC == PWE).
   is our naive-order OBDD — d4/d-DNNF (G6) is order-robust and would be used for high-treewidth cases
   (WatDiv/TPC-H/these paths are low-tw, so the OBDD compile is already ms).
 - Single run per query here (latency shape, not a benchmarked mean); G4 adds repeats + variance.
+
+> **Engine fix 1e67021 (mid-session):** the term-type-aware gate-identity fix adds `urn:circuit:binding`
+> metadata triples (raising raw circuit/triple counts) and un-merges property-path reach-states the old key
+> wrongly collapsed. The **correctness spine re-verified on the rebuilt jar** — answer counts unchanged
+> (S-star 2, Q3 14908, WD-path 16), OBDD==PWE still holds, E10 byte-identity still 13/13 on 3 engines.
+> **Absolute sizes/times in this file predate the fix** (esp. the property-path row) and should be
+> regenerated in a clean pass; the conclusions are unaffected.
