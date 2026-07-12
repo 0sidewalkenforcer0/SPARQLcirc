@@ -55,13 +55,19 @@ order of magnitude; our contribution is the *same* exact PQE on a **stock, unfor
 `SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust }` — per-answer provenance
 `⊕ₖ(cust⊗orderₖ)` with a **shared** cust token (reconvergent; p ∈ [0.375, 0.5], not Q3's 0.125).
 
-| query | scale | answers | ours total | ProvSQL total |
+| query | scale | answers | ours total ‡ | ProvSQL total ‡ |
 |---|---|--:|--:|--:|
-| Qrecon (reconvergent) | SF 0.01 |  247 | **322 ms** | 770 ms |
-| Qrecon (reconvergent) | SF 0.1  | 2086 | **2.76 s** | 6.45 s |
+| Qrecon (reconvergent) | SF 0.01 |  247 | 322 ms | 770 ms |
+| Qrecon (reconvergent) | SF 0.1  | 2086 | 2.76 s | 6.45 s |
 
-Ours == ProvSQL probabilities; a naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01) and
-2058/2086 (SF 0.1). SF 0.1 end-to-end is complete here; ours is *faster* on this reconvergent shape.
+A naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01) and 2058/2086 (SF 0.1); the shared
+circuit (and ProvSQL) get it right. **‡ These totals are single observations, not the 5-run protocol** —
+treat the ours-vs-ProvSQL speed gap as provisional until re-run under the protocol above.
+**Probability parity:** `r8_3_reconvergent.py` now verifies ours **== the closed form** `0.5·(1−0.5^K)`
+per answer (definitive, key-independent) **and** compares the sorted per-answer probability list against
+ProvSQL's `probability(provenance())` rows (`max_abs_error < 1e-6`). The earlier artifact only read
+ProvSQL's `count(*)`, so the "ours == ProvSQL probabilities" claim was **not** established by it — the
+corrected script establishes it on the next endpoint re-run.
 
 ## Still open
 

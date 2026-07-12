@@ -150,8 +150,9 @@ content-addressed and, later, lets us recover the SELECT row.
 
 ## 4. Stage D: the engine materializes the circuit
 
-Running that CONSTRUCT on an unmodified engine returns the circuit as **19 N-Triples** (hashes
-abbreviated to 4 hex; the two answers are `e357…`=Omeprazole, `8c73…`=Clopidogrel):
+Running that CONSTRUCT on an unmodified engine returns the circuit as **25 N-Triples** (19 core gate
+triples + 6 `c:binding`/`c:var`/`c:val` answer-recovery triples for the 2 answers; hashes abbreviated to
+4 hex; the two answers are `e357…`=Omeprazole, `8c73…`=Clopidogrel):
 
 ```
 g:t:a977…  a c:Times ; c:in d:p1 ; c:in d:p2 ; c:in d:p3 ; c:feeds g:a:e357…     # ⊗(p1,p2,p3)
@@ -199,9 +200,11 @@ Clopidogrel = P(p1)·P(p6)·P(p7)          = .92·.65·.60  = 0.358800   ✓
 ```
 (These match possible-world enumeration to float precision — `reference/verify_engine_native.py`.)
 
-**Post-processing back to a SELECT answer.** The `CONSTRUCT` output is a graph, but the SELECT table
-is recovered by reading the `c:answer` literals: parse `"A|z=urn:d:Omeprazole"` → `{?z = Omeprazole}`,
-attach the WMC of the sub-circuit rooted at that ⊕. Result:
+**Post-processing back to a SELECT answer.** The `CONSTRUCT` output is a graph, but the SELECT table is
+recovered from the structured `c:binding`/`c:var`/`c:val` nodes on each answer ⊕ — term-aware: a `c:val`
+gives the real RDF term, its absence marks an unbound variable → `{?z = Omeprazole}` — then attach the WMC
+of the sub-circuit rooted at that ⊕. (`c:answer` is only a readable debug label, not the recovery channel.)
+Result:
 
 | ?z | probability |
 |---|---|
@@ -302,7 +305,7 @@ modifies PostgreSQL).
 ```
 SELECT ?z {Aspirin→?x→?y→?z}                      the question
   └ γ: reify + emit ⊗/⊕ gate constructors  →  one CONSTRUCT (standard SPARQL 1.1)
-  └ engine runs it (RDF4J / GraphDB)        →  19-triple circuit; p1,p3 shared; 2 answer ⊕
+  └ engine runs it (RDF4J / GraphDB)        →  25-triple circuit (19 gates + 6 c:binding recovery); p1,p3 shared; 2 answer ⊕
   └ client compiles (OBDD/d-DNNF) + WMC      →  Omeprazole 0.774298, Clopidogrel 0.358800
   └ read c:answer literals                   →  the SELECT table + probability column
 ```

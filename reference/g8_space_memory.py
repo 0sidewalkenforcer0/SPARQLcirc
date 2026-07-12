@@ -30,7 +30,7 @@ def construct_bytes(ep, scheme, qtext):
     for c in cons:
         _, b = post(c)
         triples.update(l for l in b.decode("utf-8", "replace").splitlines() if l.endswith(" ."))
-    nt_bytes = sum(len(l) + 1 for l in triples)
+    nt_bytes = sum(len(l.encode("utf-8")) + 1 for l in triples)      # UTF-8 bytes (robust if a c:val literal is non-ASCII)
     circ, ans, typ = parse_circuit(triples)
     tms, plus, minus, edges, answers = counts(circ, ans, typ)
     return circ, ans, nt_bytes, tms + plus + minus + edges

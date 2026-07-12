@@ -110,9 +110,14 @@ pure SPARQL 1.1** (`BIND(IF(?a<=?b, …))`), then hash the concatenation:
 `CONCAT("T","|",h_(1),…,"|",h_(k))`. Fixed-width hex is delimiter-safe, closing the multiset-hash
 collision hole that NPCS's naive string concatenation has. **[impl]**
 
-**Answer key.** An answer ⊕ carries a literal `c:answer = "A|v1=<val1>|v2=<val2>|…"` over the
-projected variables `W` (with `NULL` for a variable unbound in that solution, e.g. an OPTIONAL).
-The key is injective on the binding, so distinct answers never collide.
+**Answer identity & recovery.** An answer ⊕'s IDENTITY is a term-type-aware key (`idKey`): per projected
+variable, a kind-tagged (IRI / blank / literal-with-datatype-and-lang / unbound) SHA-256 component, so
+distinct solutions — IRI vs same-lexical literal, differing datatype/lang, bound vs unbound — get distinct
+gate IRIs. This is **collision-resistant** (modulo SHA-256), *not* mathematically injective; the injective
+part is the delimiter-free serialization before the hash. The recoverable binding is carried by structured
+`c:binding`/`c:var`/`c:val` nodes (the real RDF term; a variable unbound in that solution has no `c:val`).
+A literal `c:answer = "A|v=<val>|…"` is *also* emitted but is only a **human-readable debug label** —
+consumers recover answers from `c:binding`, never by parsing that string.
 
 ### 4.3 β and γ
 `γ` reuses NPCS's rewriting skeleton `β` (reify each triple pattern, bind `?fprovN`) but replaces
@@ -159,8 +164,9 @@ negative branch of OPTIONAL is plain anti-join). **[impl, verified]**
 
 ### 4.5 Post-processing (recovering the SELECT answers)
 The CONSTRUCT output is an RDF graph, but the SELECT table is not lost: it is a **superset** of it.
-The client (a) finds every gate with a `c:answer` property, (b) parses the literal
-`"A|v=val|…"` → the binding, (c) compiles the sub-circuit rooted there and WMCs it → that row's
+The client (a) finds every answer gate (the ⊕ gates carrying `c:binding`), (b) reads its
+`c:binding`/`c:var`/`c:val` nodes → the term-aware binding (`c:val` absent ⇒ that variable is unbound),
+(c) compiles the sub-circuit rooted there and WMCs it → that row's
 probability. Result = the ordinary SELECT result table + a probability column. **[impl]**
 
 ### 4.6 Recursive provenance for property paths

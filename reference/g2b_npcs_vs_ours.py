@@ -37,7 +37,9 @@ def run_select(select):
 def npcs_side(qtext):
     sel = npcs_rewrite(qtext)
     ms, rows = run_select(sel)
-    return ms, len(rows), sum(len(r) for r in rows)          # eval_ms, answers, total provenance bytes
+    # UTF-8 BYTES, not char count: NPCS provenance strings contain multi-byte ⊕/⊗/⊖, so len(str) undercounts.
+    # (This is the whole result row incl. the binding columns; the GROUP_CONCAT provenance dominates it.)
+    return ms, len(rows), sum(len(r.encode("utf-8")) for r in rows)   # eval_ms, answers, total output bytes (UTF-8)
 
 def ours_side(qtext):
     cons = plan_constructs(qtext)

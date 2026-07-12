@@ -35,17 +35,17 @@ def construct_bgp(endpoint, scheme, qtext):
     for c in cons:
         _, body = post(c)
         triples.update(l for l in body.decode("utf-8", "replace").splitlines() if l.endswith(" ."))
-    ms = (time.time() - t) * 1000
-    circ, ans, _ = parse_circuit(triples)
+    circ, ans, _ = parse_circuit(triples)                  # RDF decode + answer recovery IS part of construction
+    ms = (time.time() - t) * 1000                          # (NOTE: the Java rewrite in plan() above is not timed)
     return circ, ans, ms
 
 def construct_path(endpoint, qfile):
     t = time.time()
     r = subprocess.run(["java", "-Xmx8g", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
                         EMPTY.name, qfile, endpoint], capture_output=True, text=True)
-    ms = (time.time() - t) * 1000
     triples = set(l for l in r.stdout.splitlines() if l.endswith(" ."))
-    circ, ans, _ = parse_circuit(triples)
+    circ, ans, _ = parse_circuit(triples)                  # include RDF decode in the timed construction
+    ms = (time.time() - t) * 1000                          # (path mode DOES include the JVM+rewrite; BGP does not)
     return circ, ans, ms
 
 def compile_wmc(circ, ans):
@@ -54,9 +54,9 @@ def compile_wmc(circ, ans):
     E11 Result 2 — Θ(N+S), not the per-answer Θ(N·S) a baseline would pay.)"""
     P = {circ[n][1]: PLEAF for n in circ if circ[n][0] == "leaf"}
     roots = {key: node for node, key in ans.items()}                 # parse_circuit gives {node:key}; invert
-    order = global_order(circ, roots)
-    bdd = compile_bdd.ROBDD(order); memo = {}; nodes = {}
     t = time.time()
+    order = global_order(circ, roots)                                # variable ordering IS part of compilation
+    bdd = compile_bdd.ROBDD(order); memo = {}; nodes = {}
     for key, r in roots.items():
         nodes[key] = compile_bdd.compile_root(circ, r, bdd, memo)     # shared unique-table + memo
     comp = (time.time() - t) * 1000

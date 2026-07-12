@@ -123,10 +123,13 @@ public final class CircuitRun {
             }
             Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
             System.err.println("# circuit triples: " + circuit.size());
-            // Opt-in hygiene for a PERSISTENT endpoint: remove THIS run's provenance gates now that the
-            // circuit is emitted. Correctness never depends on this (the per-path fingerprint already
-            // isolates concurrent queries); it just reclaims space. Best-effort — the output is already out,
-            // and `circuit` holds only urn:g:*/urn:circuit:* gate triples, so the loaded data is untouched.
+            // Opt-in hygiene for a SCRATCH endpoint used as a one-run workspace: remove THIS run's gates.
+            // Best-effort; the loaded data (urn:base:) is untouched (circuit holds only urn:g:*/urn:circuit:*).
+            // ⚠ NOT safe when the endpoint is a SHARED / long-lived circuit store: gate IRIs are
+            // content-addressed, so a Times/answer gate here may be byte-identical to (and relied on by)
+            // another query's persisted circuit — con.remove() would delete the shared triples. For a
+            // persistent multi-circuit store use per-run named graphs or reference counting, not this flag;
+            // and do not enable it alongside concurrent runs that still need this run's reach state.
             if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
                 try {
                     con.remove(circuit);

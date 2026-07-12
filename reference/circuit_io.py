@@ -105,6 +105,9 @@ def parse(nt):
         elif p == C + "binding": g_bind.setdefault(s, set()).add(oi)
         elif p == C + "var": b_var[s] = o.strip('"')
         elif p == C + "val": b_val[s] = o                                 # RAW N-Triples term token
+    # A gate carrying c:binding IS an answer gate — do NOT rely on the c:answer DEBUG label, which can be
+    # dropped when a projected var is unbound in a UNION/OPTIONAL branch (STR(?unbound) -> label unbound).
+    ans_gates |= set(g_bind)
     circ = {}
     for n, t in typ.items():
         if t.endswith("Times"): circ[n] = ("times", tuple(sorted(tin.get(n, ()))))

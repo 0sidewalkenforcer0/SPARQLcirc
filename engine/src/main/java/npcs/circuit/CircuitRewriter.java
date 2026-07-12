@@ -404,7 +404,11 @@ public class CircuitRewriter {
         StringBuilder sb = new StringBuilder("CONCAT(\"").append(tag).append("\"");
         for (String v : vars) {
             sb.append(", \"|").append(v).append("=\", ");
-            sb.append(bound.contains(v) ? "STR(?" + v + ")" : "\"NULL\"");
+            // Runtime BOUND guard even for statically-"bound" vars: in a UNION arm that does not bind a
+            // projected var (heterogeneous UNION), or a dynamically-unbound OPTIONAL var, raw STR(?v) is a
+            // type error that leaves ?anskey UNBOUND -> the whole c:answer triple is dropped by CONSTRUCT.
+            // c:answer is only a debug label, but its loss must not depend on runtime bindings.
+            sb.append(bound.contains(v) ? "IF(BOUND(?" + v + "), STR(?" + v + "), \"NULL\")" : "\"NULL\"");
         }
         sb.append(")");
         return sb.toString();
@@ -564,6 +568,10 @@ public class CircuitRewriter {
     // even on cyclic data -- while composition Times gates are content-addressed by their sorted
     // child hashes (as elsewhere). First cut: BOUND source, single constant predicate, free
     // object (<A> :p+ ?y / <A> :p* ?y), Standard reification.
+    // BOUNDARY: IRI frontier only. The client BFS reads each reached node via Value.stringValue() and
+    // valuesClause() re-wraps it as <...>, so a blank-node or literal path node is coerced to an IRI and
+    // a path continuing THROUGH such a node can be missed. All benchmark paths are IRI→IRI; general
+    // (blank/literal) frontiers need skolemization or a typed VALUES and are NOT yet supported.
     private static final String RDF_S = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
     private static final String RDF_P = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
     private static final String RDF_O = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
@@ -576,7 +584,9 @@ public class CircuitRewriter {
         te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
             @Override public void meet(ArbitraryLengthPath node) { if (found[0] == null) found[0] = node; }
         });
-        if (found[0] == null) return null;                       // not a path query
+        if (found[0] == null) return null;                       // not a path query (let plan() handle it)
+        rejectSequenceModifiers(te);                             // same fail-fast as plan(): LIMIT/OFFSET/ORDER BY
+                                                                 // (a Slice can wrap the Projection above the path)
         if (scheme != Reification.STANDARD)
             throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
         if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath))

@@ -24,7 +24,7 @@ cd engine && mvn -q package            # -> target/npcs-rewrite.jar
 # rewrite a query and let a stock in-memory engine materialize the circuit
 java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
      Standard examples/circuit/drug.reified.ttl examples/circuit/drug3hop.sparql \
-     2>plan.txt >circuit.nt            # circuit.nt = 19-triple shared circuit (paper Fig. 2)
+     2>plan.txt >circuit.nt            # circuit.nt = 25-triple circuit (19 core gates + 6 c:binding recovery; paper Fig. 2)
 
 # compile + WMC + cross-check against possible-world enumeration
 cd ../reference
