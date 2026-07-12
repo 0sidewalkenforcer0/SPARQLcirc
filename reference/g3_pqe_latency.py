@@ -62,7 +62,7 @@ def compile_wmc(circ, ans):
     comp = (time.time() - t) * 1000
     t = time.time(); probs = {key: bdd.wmc(n, P) for key, n in nodes.items()}; wmcms = (time.time() - t) * 1000
     ok = sum(1 for p in probs.values() if -1e-9 <= p <= 1.0 + 1e-9)
-    return comp, wmcms, len(roots), ok
+    return comp, wmcms, len(roots), ok, probs                        # probs = the SHARED-compile WMC map {answer_key: p}
 
 QUERIES = [
     ("watdiv-Sstar", f"{GDB}/watdiv",  "Standard", "engines/bound/S-star.rq",  False),
@@ -81,7 +81,7 @@ def main():
             else:       circ, ans, cms = construct_bgp(ep, scheme, open(qf).read())
         except Exception as ex:
             print(f"  {name}: construct failed: {type(ex).__name__}: {ex}"); continue
-        comp, wmcms, n, ok = compile_wmc(circ, ans)
+        comp, wmcms, n, ok, _ = compile_wmc(circ, ans)
         total = cms + comp + wmcms
         print(f"{name:18} {len(ans):>7} {cms:>12.0f} {comp:>11.0f} {wmcms:>8.0f} {total:>9.0f}  {ok}/{n} probs valid")
         rows.append(dict(query=name, answers=len(ans), construct_ms=round(cms), compile_ms=round(comp),

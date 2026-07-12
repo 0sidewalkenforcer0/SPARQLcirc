@@ -7,12 +7,15 @@ in the paper / EVALUATION / TECHREPORT must come from here. Older tables in `G3_
 
 ## Provenance of these numbers
 
-- **Jar:** engine @ `1e67021` (term-type-aware gate identity + `urn:circuit:binding`); rebuilt
-  2026-07-12 18:33. ⚠ **`7882a1e` (property-path state isolation) later changed the PATH engine** —
-  reach/base gate IRIs, an added `c:rpath` triple per reach gate, and every path match query. The **BGP
-  rows below (watdiv-Sstar, tpch-Q3) are unaffected and current**; the **wikidata-WDpath row predates
-  `7882a1e`** (†) and must be re-measured on the isolation-fixed jar before it is cited — circuit
-  topology is unchanged so compile/WMC should hold, but construct time + triple count shift slightly.
+- **Jar:** engine @ `1e67021` (term-type-aware gate identity + `urn:circuit:binding`); rebuilt 2026-07-12.
+  ⚠ **Two later changes make every number below STALE — the whole table needs a re-run, not just WD-path:**
+  (1) **`7882a1e`** changed the PATH engine (reach/base gate IRIs + a `c:rpath` triple per reach gate +
+  every path match query) — the **wikidata-WDpath (†)** row must be re-measured on the isolation-fixed jar
+  (topology unchanged, so compile/WMC should hold; construct + triple count shift).
+  (2) **`90c3c3c`** changed the TIMER BOUNDARIES — construction now includes RDF parse + answer recovery,
+  and compilation now includes variable ordering + ROBDD init. So **every** row (watdiv-Sstar, tpch-Q3,
+  Qrecon included) was collected under the OLD metric and no longer instantiates the documented end-to-end
+  timing. Treat ALL totals as provisional pending a 1-warmup + 5-run regeneration on the current harness.
 - **Protocol (G4):** 1 warm-up + **5 timed runs**, report **median [min–max]**, 300 s timeout.
 - **Environment:** `aisa-mgmt01.ki.uni-stuttgart.de`, 32 cores, 131 GB; **shared** HPC box (other users'
   jobs logged, not killable); **warm** cache (repos loaded, daemons up) — steady-state, not cold-start.

@@ -30,16 +30,18 @@ def npcs_rewrite(qtext):
 def run_select(select):
     req = U.Request(e3_run.EP, data=select.encode(), method="POST")
     req.add_header("Content-Type", "application/sparql-query"); req.add_header("Accept", "text/csv")
-    t = time.time(); body = U.urlopen(req, timeout=300).read().decode("utf-8", "replace"); ms = (time.time()-t)*1000
+    t = time.time(); raw = U.urlopen(req, timeout=300).read(); ms = (time.time()-t)*1000    # RAW response bytes
+    body = raw.decode("utf-8", "replace")
     rows = [l for l in body.splitlines()[1:] if l.strip()]
-    return ms, rows
+    return ms, rows, len(raw)                                        # len(raw) = full serialized payload (bytes)
 
 def npcs_side(qtext):
     sel = npcs_rewrite(qtext)
-    ms, rows = run_select(sel)
-    # UTF-8 BYTES, not char count: NPCS provenance strings contain multi-byte ⊕/⊗/⊖, so len(str) undercounts.
-    # (This is the whole result row incl. the binding columns; the GROUP_CONCAT provenance dominates it.)
-    return ms, len(rows), sum(len(r.encode("utf-8")) for r in rows)   # eval_ms, answers, total output bytes (UTF-8)
+    ms, rows, raw_bytes = run_select(sel)
+    # SERIALIZED bytes = the FULL raw CSV response payload (header + rows + newlines), so it is a strict
+    # bytes-vs-bytes comparison with ours' N-Triples serialization (which also counts its line terminators).
+    # This fixes the earlier char-count + row-only measure (NPCS provenance has multi-byte ⊕/⊗/⊖).
+    return ms, len(rows), raw_bytes                                   # eval_ms, answers, serialized payload bytes
 
 def ours_side(qtext):
     cons = plan_constructs(qtext)

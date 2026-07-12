@@ -213,7 +213,7 @@ still polynomial; a minor optimization.)
 **Real deployed triple store.** `graphdb_harness.sh` runs the flat engine-native
 CONSTRUCT on a **GraphDB 10.7** server (not in-memory): create repo → load reified
 data → POST our CONSTRUCT → get the circuit back as N-Triples. On the drug example
-GraphDB returns the **same 19-triple circuit** as RDF4J (3 Times, 2 Plus, p1 & p3
+GraphDB returns the **same 25-triple circuit** as RDF4J (19 core gates + 6 c:binding recovery; 3 Times, 2 Plus, p1 & p3
 each shared across 2 gates); compiling it gives **Clopidogrel 0.358800, Omeprazole
 0.774298 = PWE**. So the method is engine-agnostic on a *deployed* endpoint, end to
 end. (Gotcha baked into the script: extract the CONSTRUCT with explicit file

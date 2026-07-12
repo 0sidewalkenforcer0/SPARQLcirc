@@ -57,7 +57,8 @@ deduplicates shared gates automatically.
 - **Solution modifiers:** `LIMIT`/`OFFSET`/`ORDER BY` are **rejected** (they do not apply to a
   materialized circuit of all answers); `DISTINCT` is an **implicit no-op** (answer gates are a set).
 - **Input/output form:** input is a `SELECT`; the rewritten query is a **`CONSTRUCT`** that builds
-  the circuit as RDF. The SELECT bindings are preserved in `c:answer` literals (§4.5).
+  the circuit as RDF. The SELECT bindings are preserved in structured `c:binding`/`c:var`/`c:val` nodes
+  (§4.5); the `c:answer` literal is only a human-readable debug label.
 
 ---
 
@@ -471,7 +472,11 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
     `VALUES ?u {…}` clause restricts each base CONSTRUCT — the all-pairs base is never built, avoiding the
     KG-scale OOM). Residual costs: a **variable** source still materializes the all-pairs base (`O(|E|)`),
     and a densely-connected reachable set still needs `~|V_s|` rounds (inherent to exact reachability
-    provenance). Not yet done: nested closures, and reducing the variable-source all-pairs base.
+    provenance). Not yet done: nested closures; reducing the variable-source all-pairs base; and — a scope
+    boundary, not just a cost — the frontier is **IRI-only**: the client BFS reads each node via
+    `Value.stringValue()` and re-wraps it as `<…>`, so blank-node / literal path nodes are coerced to IRIs
+    and a path *through* such a node can be missed. All benchmark paths are IRI→IRI; general frontiers need
+    skolemization or a typed `VALUES`.
 
 ---
 

@@ -457,3 +457,25 @@ A second review round found two things that affect your re-runs:
 Note: the `:p+`/`:p*` fingerprint-collision the review flagged is **fixed** in the engine (`star` is now in
 the fingerprint) and covered by a real same-endpoint sequential regression (`PathIsoSeq` + `verify_path_isolation.py`),
 so path re-runs on a shared writable repo are safe against cross-query contamination.
+
+## ROUND 8 ADDENDUM-2 (a 4th review; dev-side code/doc fixes landed at `90c3c3c` + this commit)
+Two genuine code bugs were fixed (unbound-UNION answer loss; path bypassing LIMIT/OFFSET) with regressions
+(`verify_union_hetero.py`, `verify_reject_modifiers.py`). The rest were **code/doc fixes whose numbers still
+need a re-run** — please regenerate these on the endpoint:
+1. **Canonical timings — ALL rows are now stale, not just WD-path.** `90c3c3c` moved RDF parse into the
+   *construct* timer and variable ordering into the *compile* timer, so the stored watdiv-Sstar / tpch-Q3 /
+   Qrecon numbers were measured under the OLD metric. Regenerate the **whole** table (1 warm-up + 5 runs)
+   on the current harness; `CANONICAL_TIMINGS.md` now flags every row provisional.
+2. **R8.3 parity is now RIGOROUS in code but unrun.** `r8_3_reconvergent.py` was rewritten to: use the
+   **timed shared-compile** WMC map (not a separate per-answer recompile), key ours by `c_custkey`, fetch
+   ProvSQL's per-customer `probability(provenance())` **and** an independent order-count K, then check
+   (a) equal customer-key sets, (b) per-customer `max_abs_error < 1e-6`, (c) ours == `0.5·(1−0.5^K)` with
+   **K from ProvSQL, not the circuit** (removes the earlier circular check). Re-run to populate
+   `r8_3_reconvergent.csv` with the `cf_maxerr` / `max_abs_error` / parity fields; `R8_3_RESULTS.md` no
+   longer claims keyed parity until then. (Verify the `_custkey` extraction matches your naryrel customer
+   IRIs; adjust the regex if `?cust` is not a trailing-integer term.)
+3. **G2b/G8 bytes** — NPCS side now measures the **raw HTTP response payload** (`len(body_bytes)`), symmetric
+   with ours' N-Triples byte count; re-run to refresh `g2b_npcs_vs_ours.csv` / `g8_*`.
+Scope boundaries now stated in public docs (not just code): property paths are **IRI-frontier only**
+(README §Scope, TECHREPORT §4.6 item 11); `CIRCUIT_CLEANUP=1` is **scratch-endpoint only** (unsafe for a
+shared content-addressed store) — behaviour unchanged, warning added.

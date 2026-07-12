@@ -18,7 +18,8 @@ automatically.
 **Scope.** ABox only (no TBox). **Property paths** are supported via recursive provenance in the
 absorptive semiring PosBool (arbitrary-length `+`/`*` and `/ | ^ ?`); reachability is a level-indexed
 fixpoint whose gates stay an acyclic, polynomial DAG even on cyclic graphs (Python reference: all
-operators; engine: `+`/`*` single predicate, all endpoints — see `TECHREPORT.md` §4.6). Negated
+operators; engine: `+`/`*` single predicate, **IRI frontier only** — blank-node/literal path nodes are
+not yet supported — on any writable SPARQL 1.1 endpoint; see `TECHREPORT.md` §4.6). Negated
 property sets `!(...)` are out of scope. Non-monotone support is built on one ⊖ (monus / anti-join) primitive, **DIFF**:
 `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`, and user-level `MINUS(P1,P2) = P1 DIFF P2`
 when the operands share a variable, else a no-op (W3C MINUS's domain-intersection guard).
@@ -74,7 +75,7 @@ mvn -q package            # -> target/npcs-rewrite.jar
 cd engine
 java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
      Standard examples/circuit/drug.reified.ttl examples/circuit/drug3hop.sparql \
-     2>plan.txt >circuit.nt   # -> 19-triple shared circuit (paper Fig. 2)
+     2>plan.txt >circuit.nt   # -> 25-triple circuit (19 core gates + 6 c:binding recovery; paper Fig. 2)
 # plan.txt = the CONSTRUCT plan;  circuit.nt = the materialized circuit (N-Triples)
 ```
 

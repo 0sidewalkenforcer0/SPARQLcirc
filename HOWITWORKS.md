@@ -307,7 +307,7 @@ SELECT ?z {Aspirin→?x→?y→?z}                      the question
   └ γ: reify + emit ⊗/⊕ gate constructors  →  one CONSTRUCT (standard SPARQL 1.1)
   └ engine runs it (RDF4J / GraphDB)        →  25-triple circuit (19 gates + 6 c:binding recovery); p1,p3 shared; 2 answer ⊕
   └ client compiles (OBDD/d-DNNF) + WMC      →  Omeprazole 0.774298, Clopidogrel 0.358800
-  └ read c:answer literals                   →  the SELECT table + probability column
+  └ read c:binding/c:var/c:val nodes         →  the SELECT table + probability column
 ```
 
 The engine never knew it was computing provenance. It ran one ordinary CONSTRUCT; the shared

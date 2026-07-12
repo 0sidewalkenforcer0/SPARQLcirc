@@ -22,50 +22,59 @@ import g3_pqe_latency as g3, compile_bdd
 GDB = "http://localhost:7200/repositories"
 Q = "tpch/skeletons/Qrecon.rq"
 
+import re
+
+def _custkey(answer_key):
+    """c_custkey from ours' answer key 'A|cust=<canon-term>' — trailing integer of the cust value (the
+    TPC-H customer IRI/literal ends in its custkey). Falls back to the whole key if none."""
+    m = re.search(r"(\d+)\D*$", answer_key)
+    return m.group(1) if m else answer_key
+
 def ours(repo):
     circ, ans, cms = g3.construct_bgp(f"{GDB}/{repo}", "naryrel", open(Q).read())
-    comp, wmc, n, ok = g3.compile_wmc(circ, ans)
-    P = {circ[x][1]: 0.5 for x in circ if circ[x][0] == "leaf"}
-    roots = {k: v for v, k in ans.items()}
-    ps, naive_gt1, cf_err = [], 0, 0.0
-    for key, node in roots.items():
-        p, _ = compile_bdd.probability(circ, node, P)
-        k = len(compile_bdd.leaf_order(circ, node)) - 1              # #orders = tokens minus the shared cust
-        cf = 0.5 * (1 - 0.5 ** k)                                    # closed form P(cust AND OR_k order_k)
-        cf_err = max(cf_err, abs(p - cf))                            # DEFINITIVE ours-correctness check
-        if 0.25 * k > 1.0: naive_gt1 += 1                           # a naive product-sum would exceed 1
-        ps.append(round(p, 6))
-    return dict(answers=len(ans), construct=round(cms), compile=round(comp), wmc=round(wmc),
-                total=round(cms + comp + wmc), probs=sorted(ps), cf_maxerr=cf_err,
-                cf_ok=cf_err < 1e-9, valid=ok == n, naive_gt1=naive_gt1)
+    comp, wmc, n, ok, probs = g3.compile_wmc(circ, ans)              # probs = the TIMED SHARED-compile WMC map
+    per = {_custkey(key): round(p, 6) for key, p in probs.items()}   # keyed by c_custkey (NOT sorted values)
+    return dict(answers=len(probs), construct=round(cms), compile=round(comp), wmc=round(wmc),
+                total=round(cms + comp + wmc), per=per, valid=ok == n)
 
 def provsql(schema):
-    # Fetch the per-customer probability VALUES (not just count(*)) so cross-system parity can be checked.
+    # Per-customer probability AND an INDEPENDENT order count K (so the closed-form check is not circular).
+    base = (f"FROM {schema}.customer c,{schema}.orders o "
+            f"WHERE o.o_custkey=c.c_custkey AND c.c_mktsegment='BUILDING' GROUP BY c.c_custkey")
     sql = (f"SET search_path={schema},public,provsql;\n\\timing on\n"
-           f"CREATE TEMP TABLE r AS SELECT c.c_custkey, probability(provenance()) p "
-           f"FROM {schema}.customer c,{schema}.orders o "
-           f"WHERE o.o_custkey=c.c_custkey AND c.c_mktsegment='BUILDING' GROUP BY c.c_custkey;\n"
-           f"\\timing off\n\\pset format unaligned\n\\pset tuples_only on\nSELECT p FROM r ORDER BY p;\n")
+           f"CREATE TEMP TABLE r AS SELECT c.c_custkey, probability(provenance()) p {base};\n\\timing off\n"
+           f"\\pset format unaligned\n\\pset tuples_only on\n\\pset fieldsep '|'\n"
+           f"SELECT c_custkey, p FROM r ORDER BY c_custkey;\n"
+           f"SELECT c.c_custkey, count(*) k {base} ORDER BY c.c_custkey;\n")   # independent K per customer
     env = dict(os.environ)
     r = subprocess.run([os.path.join(env.get("CONDA_PREFIX", ""), "bin", "psql"), "-d", "provsqltest"],
                        input=sql, capture_output=True, text=True, env=env, timeout=300)
-    import re
-    ms = [float(m) for m in re.findall(r"Time:\s+([\d.]+)\s+ms", r.stdout)]      # CREATE TABLE (the real work)
-    ps = [round(float(l), 6) for l in r.stdout.splitlines() if re.match(r"^[\d.]+$", l.strip())]
-    return dict(total=round(ms[0]) if ms else None, answers=len(ps), probs=sorted(ps))
+    ms = [float(m) for m in re.findall(r"Time:\s+([\d.]+)\s+ms", r.stdout)]      # CREATE TABLE = the real work
+    p_by, k_by = {}, {}
+    for line in r.stdout.splitlines():                              # p rows are non-integer floats; K rows are ints
+        m = re.match(r"^(\d+)\|([\d.eE+-]+)$", line.strip())
+        if not m: continue
+        ck, val = m.group(1), float(m.group(2))
+        (k_by if val == int(val) else p_by)[ck] = (int(val) if val == int(val) else round(val, 6))
+    return dict(total=round(ms[0]) if ms else None, answers=len(p_by), per=p_by, korder=k_by)
 
 def parity(o, p):
-    """ours == ProvSQL: same #answers and the SORTED per-answer probability lists agree within tol."""
-    if o["answers"] != p["answers"]:
-        return dict(agree=False, reason=f"answer count {o['answers']} != {p['answers']}", max_abs_error=None)
-    err = max((abs(a - b) for a, b in zip(o["probs"], p["probs"])), default=0.0)
-    return dict(agree=err < 1e-6, max_abs_error=err, reason="")
+    """RIGOROUS: same customer-key SET, per-customer probability agreement, and a non-circular closed-form
+    check using ProvSQL's INDEPENDENT order count K."""
+    ok, pk = set(o["per"]), set(p["per"])
+    common = ok & pk
+    err = max((abs(o["per"][k] - p["per"][k]) for k in common), default=None)
+    cf = max((abs(o["per"][k] - 0.5 * (1 - 0.5 ** p["korder"][k]))                 # K from ProvSQL, not the circuit
+              for k in o["per"] if k in p.get("korder", {})), default=None)
+    return dict(keys_match=(ok == pk), only_ours=len(ok - pk), only_provsql=len(pk - ok),
+                max_abs_error=err, cf_maxerr=cf,
+                agree=(ok == pk and err is not None and err < 1e-6 and cf is not None and cf < 1e-6))
 
 if __name__ == "__main__":
     for repo, schema, sf in [("tpch001", "g2a", "0.01"), ("tpch01", "g2a1", "0.1")]:
         o = ours(repo); p = provsql(schema); par = parity(o, p)
         print(f"SF{sf}: OURS answers={o['answers']} total={o['total']}ms (construct {o['construct']}+compile "
-              f"{o['compile']}+wmc {o['wmc']})  ours==closed-form? {o['cf_ok']} (maxerr {o['cf_maxerr']:.1e}) "
-              f"naive>1 for {o['naive_gt1']}/{o['answers']}")
-        print(f"       PROVSQL answers={p['answers']} total={p['total']}ms  |  ours==ProvSQL probabilities? "
-              f"{par['agree']}  (max_abs_error {par['max_abs_error']}) {par['reason']}")
+              f"{o['compile']}+wmc {o['wmc']})  |  PROVSQL answers={p['answers']} total={p['total']}ms")
+        print(f"       PARITY ours==ProvSQL per-customer? {par['agree']}  keys_match={par['keys_match']} "
+              f"(only-ours {par['only_ours']}, only-provsql {par['only_provsql']}) max_abs_error={par['max_abs_error']} "
+              f"| ours==closed-form(indep K)? maxerr={par['cf_maxerr']}")

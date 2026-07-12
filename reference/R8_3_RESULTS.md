@@ -15,28 +15,34 @@ Projecting to `?cust`, a building customer with **K orders** has provenance `⊕
 which **varies with K in [0.375, 0.5]** (not a constant). A naive per-answer product-sum
 `Σₖ P(cust)·P(orderₖ) = 0.25·K` **double-counts** the shared `cust` and exceeds 1 for K ≥ 4.
 
-## Results (post-`1e67021` jar; ProvSQL warm)
+## Results (post-`1e67021` jar; ProvSQL warm) — ‡ SINGLE observations, not the 5-run protocol; pre-date the keyed-parity + corrected-timer-boundary scripts, so treat as provisional
 
-| scale | answers | ours total (construct/compile/WMC) | ProvSQL total | p range | ours valid | naive-would-be > 1 |
+| scale | answers | ours total ‡ (construct/compile/WMC) | ProvSQL total ‡ | p range | ours valid | naive-would-be > 1 |
 |---|--:|--:|--:|--:|:--:|--:|
-| SF 0.01 |  247 | **322 ms** (238 / 81 / 2) | 770 ms | [0.375, 0.500] | 247/247 ✓ | 243/247 |
-| SF 0.1  | 2086 | **2.76 s** (1998 / 740 / 22) | 6.45 s | [0.375, 0.500] | 2086/2086 ✓ | 2058/2086 |
+| SF 0.01 |  247 | 322 ms (238 / 81 / 2) | 770 ms | [0.375, 0.500] | 247/247 ✓ | 243/247 |
+| SF 0.1  | 2086 | 2.76 s (1998 / 740 / 22) | 6.45 s | [0.375, 0.500] | 2086/2086 ✓ | 2058/2086 |
 
 ## Findings
 
-- **Shared-circuit WMC validated on genuinely reconvergent lineage.** Ours and ProvSQL return the **same
-  answer set and the same probabilities** (247 / 2086 answers, p ∈ [0.375, 0.5] tracking K) — now on a
-  query where the answer's provenance is a *sum of products sharing a base token*, not Q3's single
-  product. This is the case that actually exercises correct handling of shared lineage.
+- **Shared-circuit WMC on genuinely reconvergent lineage.** The answer's provenance is a *sum of products
+  sharing a base token* (not Q3's single product), so this exercises correct shared-lineage handling.
+  **Verification status (do not overstate):** ours is checked against the closed form `0.5·(1−0.5ᴷ)` per
+  answer, and `r8_3_reconvergent.py` now compares the per-customer probability map to ProvSQL's
+  `probability(provenance())` keyed by `c_custkey` (with K taken from an independent count, not from the
+  circuit under test). ⚠ **The numbers in the table above PREDATE that keyed check** — the earlier
+  artifact read only ProvSQL `count(*)` and compared *sorted* probability lists (which cannot prove
+  identical answer sets or per-customer parity). The keyed ours==ProvSQL parity is established on the next
+  endpoint re-run, **not yet** by the committed CSV.
 - **A naive per-answer product-sum is provably wrong here.** `0.25·K` exceeds 1 for **243/247** (SF 0.01)
   and **2058/2086** (SF 0.1) answers — impossible probabilities. Both the shared circuit (⊗ with a shared
   `cust` leaf feeding a ⊕ of orders) and ProvSQL's semiring avoid this; a per-derivation baseline that
   multiplied-then-summed would not. This is *why* the shared circuit / real WMC is needed.
 - **SF 0.1 end-to-end is complete on our side (R8.3).** The reconvergent circuit is small (2086 answers)
-  so our pure-Python compile handles it: full pipeline **2.76 s** (vs ProvSQL 6.45 s). Here **ours is
-  faster** — the mirror of Q3 (tree join, 14 908 answers, ProvSQL faster): ProvSQL pays to evaluate the
-  ⊕-of-products lineage, we pay construct + a cheap compile. Latency ordering is query-dependent; the
-  invariant is *same probabilities, on a stock engine* (G2a framing).
+  so our pure-Python compile handles the full pipeline. In this **single, provisional** run ours was
+  faster (2.76 s vs 6.45 s) — but that is one observation, not a 5-run result, and it predates the
+  corrected timer boundaries (which fold RDF parse + variable ordering into our totals), so **do not cite
+  the speed ordering** until re-run. The durable, framing-level claim is *same probabilities on a stock,
+  unforked engine* (G2a) — latency ordering is query-dependent and secondary.
 
 ## Caveats / notes
 
