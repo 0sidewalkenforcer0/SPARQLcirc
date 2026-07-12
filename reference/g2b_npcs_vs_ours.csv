@@ -1,4 +1,4 @@
-query,answers,npcs_eval_ms,npcs_bytes,ours_eval_ms,circuit_size,size_win
-P2-path,13,40,1726,8,65,26.55
-P2-unbound,149998,9302,19935124,16652,749990,26.58
-S-star,2,7,2587,11,272,9.51
+query,answers,struct_T_string,struct_T_circ,struct_share,serial_npcs_bytes,serial_ours_bytes,serial_byte_ratio,npcs_eval_ms,ours_eval_ms
+P2-path,13,39,65,0.6,1726,22770,0.08,7,6
+P2-unbound,149998,449994,749990,0.6,19935124,262765318,0.08,3306,28852
+S-star,2,162,272,0.6,2587,36488,0.07,4,15

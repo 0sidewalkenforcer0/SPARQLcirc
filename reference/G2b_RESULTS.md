@@ -1,37 +1,44 @@
-# G2b — NPCS (per-answer strings) vs ours (shared circuit): construction head-to-head
+# G2b — NPCS (per-answer how-provenance) vs ours (shared circuit): construction, THREE separate metrics
 
-Runs the **actual rewriters** (not E2's cost model), same bound query + same GraphDB WatDiv (32.7 M
-reified) + same protocol. `NpcsRewriter` (`App Standard query`) emits a `GROUP_CONCAT` SELECT that
-materializes each answer's provenance as a **string**; ours emits the CONSTRUCT that builds the
-**shared circuit**. We POST each, timing eval and measuring output size. `g2b_npcs_vs_ours.csv`.
+Runs the **actual `NpcsRewriter`** (`App Standard query`) vs our CONSTRUCT plan, same bound queries +
+same GraphDB WatDiv (32.7 M reified), post-`1e67021`. `g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`.
 
-| query | answers | NPCS eval_ms | NPCS bytes | ours eval_ms | circuit (gates+edges) | **size win** |
-|---|--:|--:|--:|--:|--:|--:|
-| S-star (bound)     |      2 |     7 |     2 587 |    11 |    272 | 9.5× |
-| P2-path (bound)    |     13 |    40 |     1 726 |     8 |     65 | 26.6× |
-| P2-unbound (all)   | 149 998 | 9 302 | **19 935 124** | 16 652 | 749 990 | **26.6×** |
+> **Metric hygiene (R8.2).** An earlier version divided *NPCS bytes ÷ our gate-count* and reported it as
+> "10–27× smaller" — that is dimensionless nonsense. Sizes are reported as **three separate comparisons**,
+> never mixed: **structural** (elements vs elements), **serialized** (bytes vs bytes), **compiled** (nodes
+> vs nodes). Two of them show **ours is larger** on these queries — stated honestly.
 
-## Findings
+| query | answers | **structural** NPCS-occ / ours-g+e | **serialized** NPCS-B / ours-B | construct NPCS / ours |
+|---|--:|--:|--:|--:|
+| S-star (bound)     |      2 | 162 / 272 = **0.6×** | 2 587 / 36 488 = **0.07×** | 4 ms / 15 ms |
+| P2-path (bound)    |     13 | 39 / 65 = **0.6×** | 1 726 / 22 770 = **0.08×** | 7 ms / 6 ms |
+| P2-unbound (all)   | 149 998 | 449 994 / 749 990 = **0.6×** | 19.9 MB / 262.8 MB = **0.08×** | 3.3 s / 28.9 s |
 
-- **Compactness (validates E2 on the real system).** Our shared circuit is **10–27× smaller** than
-  NPCS's per-answer strings — measured by running NPCS's *actual* rewrite, not a model. On P2-unbound
-  the baseline emits **≈ 20 MB** of provenance strings for the same query our circuit encodes in ~750 k
-  gate+edge triples. The ratio grows with #answers (more derivations ⇒ more repeated substrings in the
-  flat strings; the circuit shares them once).
-- **Construction time — honest.** NPCS is *faster to construct* at scale (P2-unbound: 9.3 s vs our
-  16.7 s, ≈1.8×): its `GROUP_CONCAT` string concatenation is cheaper than our per-gate **SHA256
-  content-addressing**. That addressing overhead (E3's `c_overhead`) is exactly what *buys* a compact,
-  content-addressed, **WMC-able** circuit — where NPCS's output is bulky and not directly compilable.
-- **The decisive difference is what happens next.** NPCS stops at the string — **no probability**. Our
-  circuit goes on to PQE: compile+WMC is near-free on the shared circuit (G3: 149 ms for all 14 908
-  TPC-H Q3 answers). So the head-to-head is *faster-but-bulkier provenance with no PQE* (NPCS) vs
-  *compact circuit + exact PQE* (ours) — and a per-answer PQE completion of NPCS's strings pays
-  Θ(N·S) (E11).
+(structural = NPCS flat token-occurrences ÷ our shared gates+edges; serialized = string bytes ÷ N-Triples
+bytes; compiled = G6/E4, not duplicated. ratio < 1 ⇒ **ours larger**.)
+
+## Findings (honest)
+
+- **On these selective / low-sharing queries, our shared circuit is NOT smaller — it is larger** on both
+  axes: **~1.7× more structural elements** (share 0.6×) and **~12× more serialized bytes** (0.08×; SHA-256
+  content-addressed IRIs, ~180 B/triple). NPCS's flat per-answer token list is compact here because these
+  queries have **little cross-answer sharing** to amortize the DAG's answer/product-gate + IRI overhead.
+- **The compactness claim is *structural* and materializes with RECONVERGENCE — not on these queries.**
+  E2's up-to-201× compactness is on **recursive / reconvergent** workloads where NPCS's flat strings
+  duplicate shared sub-derivations across every answer and blow up super-linearly, while the shared DAG
+  stores each once (same E11 boundary as the compile-win and the byte-win in G8). The bound P2/S-star
+  queries here sit on the *low-sharing* side, so they show the honest opposite. Do not cite G2b as a
+  size win.
+- **Construct: NPCS is faster at scale** (P2-unbound 3.3 s vs our 28.9 s). Our plan pays per-gate
+  **SHA-256 content-addressing** (E3's `c_overhead`) — the cost that *buys* a compact, content-addressed,
+  **WMC-able** circuit that dedups identically across engines (E10).
+- **The decisive difference is not size or construct speed — it is PQE.** NPCS emits per-answer strings
+  and **stops (no probability)**. We go on to compile + WMC (CANONICAL_TIMINGS: 184 ms for all 14 908
+  TPC-H Q3 answers). A per-answer completion of NPCS's strings pays Θ(N·S) (E11). That, plus property
+  paths / full-SPARQL and cross-engine byte-identity, is the contribution — not a construction-size win.
 
 ## Caveats
 
-- Shared machine; NPCS's `GROUP_CONCAT` can hit engine string-length limits at very high answer counts
-  (here 19.9 MB completed on GraphDB).
-- The ideal G2b graph is **WDBench's own curated Wikidata** (matches NPCS exactly); its download was
-  blocked to automation, so this runs the head-to-head on **WatDiv at the same 32.7 M scale** the
-  baselines use. Reification is Standard (3× blow-up; SPARQL-star would shrink both sides — G7).
+- Reification is Standard (3× blow-up; SPARQL-star halves it structurally — G7). WDBench's own curated
+  Wikidata is the ideal G2b substrate (download-blocked to automation); this runs at the same 32.7 M
+  WatDiv scale the baselines use. Compiled-size comparison is in G6/E4 (tiny d-DNNFs), not repeated here.
