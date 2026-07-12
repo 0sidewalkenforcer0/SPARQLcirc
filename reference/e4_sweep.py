@@ -65,14 +65,16 @@ def _worker(ttl, q, meta, qout):
         P = {c.gates[g][1]: round(random.uniform(0.3, 0.9), 3) for g in c.gates if c.gates[g][0] == "leaf"}
         e = export_cnf.export(c.gates, root, P)
         cnf = os.path.join(CNFDIR, meta["name"] + ".cnf"); open(cnf, "w").write(e["dimacs"])
-        wf = cnf + ".w"; d4p.write_weights(cnf, wf); nnf = cnf + ".nnf"
+        nnf = cnf + ".nnf"
         base = {"cnf_vars": e["nvars"], "factored_gates": len(c.gates)}
         # (1) d4 d-DNNF first (fast, memory-light)
         try:
             subprocess.run(d4p.ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=TIMEOUT)
-            ddnnf_nodes, _ = d4p.nnf_size(nnf)
-            wout = subprocess.run(d4p.wmc_cmd(cnf, wf), check=True, capture_output=True, text=True, timeout=TIMEOUT)
-            d4wmc = d4p.parse_wmc(wout.stdout)
+            import ddnnf_wmc
+            iw = {e["var_of"][n]: (P[pl], 1.0 - P[pl])
+                  for n, (op, pl) in c.gates.items() if op == "leaf" and n in e["var_of"]}
+            ev = ddnnf_wmc.evaluate_file(nnf, iw)
+            ddnnf_nodes, d4wmc = ev.nodes, ev.probability
         except Exception:
             ddnnf_nodes, d4wmc = None, None
         base.update({"ddnnf_nodes": ddnnf_nodes, "d4_wmc": round(d4wmc, 6) if d4wmc is not None else None})

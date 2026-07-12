@@ -49,6 +49,17 @@ def env_log():
     print(f"#   cache     : warm (repos loaded, daemons up); NOT a cold-start measurement")
     print()
 
+def parse_provsql_checks(stdout, expected_runs):
+    """Parse and validate tagged Q3 count/sum rows; sum forces and checks probability evaluation."""
+    checks = [(int(n), float(s)) for n, s in re.findall(r"^R\|(\d+)\|([\d.eE+-]+)$", stdout, re.M)]
+    if len(checks) != expected_runs:
+        raise RuntimeError(f"ProvSQL: expected {expected_runs} consumed-probability rows, got {len(checks)}")
+    if any(n <= 0 or abs(total - 0.125 * n) > 1e-6 * max(1, n) for n, total in checks):
+        raise RuntimeError(f"ProvSQL Q3 probability checksum failed: {checks}")
+    if len({n for n, _ in checks}) != 1:
+        raise RuntimeError(f"ProvSQL Q3 answer count changed across runs: {checks}")
+    return checks
+
 def ours_runs(name, ep, scheme, qf, is_path):
     """1 warm-up + RUNS timed runs of the full G3 pipeline. Returns per-stage lists + answers."""
     construct, compile_, wmc, total, answers = [], [], [], [], None
@@ -58,7 +69,7 @@ def ours_runs(name, ep, scheme, qf, is_path):
             else:       circ, ans, cms = g3.construct_bgp(ep, scheme, open(qf).read())
             comp, w, n, ok, _ = g3.compile_wmc(circ, ans)
         except Exception as ex:
-            print(f"  {name} run {i}: {type(ex).__name__}: {ex}"); return None
+            raise RuntimeError(f"{name} run {i} failed") from ex
         if i >= WARMUP:
             construct.append(cms); compile_.append(comp); wmc.append(w); total.append(cms + comp + w)
         answers = len(ans)
@@ -66,19 +77,26 @@ def ours_runs(name, ep, scheme, qf, is_path):
                 wmc=stat(wmc), total=stat(total))
 
 def provsql_runs(schema, mktseg="BUILDING"):
-    """Time ProvSQL Q3 probability() in ONE psql session: WARMUP+RUNS repeats, parse 'Time: X ms'."""
-    sql = f"SET search_path={schema},public,provsql;\n\\timing on\n"
-    q = (f"SELECT count(*) FROM (SELECT o.o_orderkey, l.l_linenumber, probability(provenance()) p "
+    """Time ProvSQL Q3 probability_evaluate() in one psql session; force consumption via sum(p)."""
+    sql = (f"SET search_path={schema},public,provsql;\n"
+           "\\pset format unaligned\n\\pset tuples_only on\n\\pset fieldsep '|'\n\\timing on\n")
+    # sum(p) makes the probability expression observable.  count(*) alone lets PostgreSQL prune the unused
+    # target expression, accidentally timing only the relational join instead of exact PQE.
+    q = (f"SELECT 'R', count(*), sum(p) FROM (SELECT o.o_orderkey, l.l_linenumber, "
+         f"probability_evaluate(provenance()) p "
          f"FROM {schema}.customer c,{schema}.orders o,{schema}.lineitem l "
          f"WHERE o.o_custkey=c.c_custkey AND l.l_orderkey=o.o_orderkey AND c.c_mktsegment='{mktseg}') s;\n")
     sql += q * (WARMUP + RUNS)
     env = dict(os.environ)
     r = subprocess.run([os.path.join(env.get("CONDA_PREFIX", ""), "bin", "psql"), "-d", "provsqltest"],
                        input=sql, capture_output=True, text=True, env=env, timeout=TIMEOUT * (WARMUP + RUNS))
+    if r.returncode != 0:
+        raise RuntimeError(f"ProvSQL Q3 failed (rc={r.returncode}): {r.stderr[-500:]}")
     times = [float(m) for m in re.findall(r"Time:\s+([\d.]+)\s+ms", r.stdout)]
     if len(times) < WARMUP + RUNS:
-        print(f"  provsql: only {len(times)} timings parsed\n{r.stderr[-300:]}"); return None
-    return dict(total=stat(times[WARMUP:WARMUP + RUNS]))
+        raise RuntimeError(f"ProvSQL: only {len(times)} timings parsed; rc={r.returncode}: {r.stderr[-500:]}")
+    checks = parse_provsql_checks(r.stdout, WARMUP + RUNS)
+    return dict(total=stat(times[WARMUP:WARMUP + RUNS]), answers=checks[0][0])
 
 def fmt(s):
     if not s: return "  --  "
@@ -94,9 +112,8 @@ def main():
         ("wikidata-WDpath", f"{GDB}/wdpaths", "Standard", "wikidata/WD-path.rq",     True),
     ]
     for name, ep, scheme, qf, is_path in OURS:
-        if not os.path.exists(qf): print(f"  {name}: {qf} missing"); continue
+        if not os.path.exists(qf): raise FileNotFoundError(f"{name}: required query file missing: {qf}")
         r = ours_runs(name, ep, scheme, qf, is_path)
-        if not r: continue
         print(f"{name:20} {r['answers']:>7} {fmt(r['construct']):>26} {fmt(r['compile']):>16} {fmt(r['wmc']):>13} {fmt(r['total']):>16}")
         for stage in ("construct", "compile", "wmc", "total"):
             s = r[stage]
@@ -106,12 +123,14 @@ def main():
                                    sd_ms=round(s["sd"], 1), runs=s["n"]))
     # ProvSQL Q3 (SF0.01 = schema g2a) — the strong baseline
     p = provsql_runs("g2a")
-    if p:
-        print(f"{'provsql-Q3 (SF0.01)':20} {'14908':>7} {'--':>26} {'--':>16} {'--':>13} {fmt(p['total']):>16}")
-        s = p["total"]
-        rows.append(dict(system="provsql", query="tpch-Q3", stage="total", answers=14908,
-                         median_ms=round(s["median"], 1), min_ms=round(s["min"], 1), max_ms=round(s["max"], 1),
-                         mean_ms=round(s["mean"], 1), sd_ms=round(s["sd"], 1), runs=s["n"]))
+    print(f"{'provsql-Q3 (SF0.01)':20} {p['answers']:>7} {'--':>26} {'--':>16} {'--':>13} {fmt(p['total']):>16}")
+    s = p["total"]
+    rows.append(dict(system="provsql", query="tpch-Q3", stage="total", answers=p["answers"],
+                     median_ms=round(s["median"], 1), min_ms=round(s["min"], 1), max_ms=round(s["max"], 1),
+                     mean_ms=round(s["mean"], 1), sd_ms=round(s["sd"], 1), runs=s["n"]))
+    expected_rows = len(OURS) * 4 + 1
+    if len(rows) != expected_rows:
+        raise RuntimeError(f"refusing partial G4 CSV: {len(rows)}/{expected_rows} stage rows")
     with open("g4_rigor.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     print(f"\nwrote g4_rigor.csv  |  {WARMUP} warm-up + {RUNS} timed; median [min-max] ms.")

@@ -38,17 +38,18 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
 
 | query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) |
 |---|---|--:|--:|--:|
-| tpch-Q3 | SF 0.01 | 14 908 | **1.06 s [1.02–1.08]** | 6.40 s |
+| tpch-Q3 | SF 0.01 | 14 908 | **pending corrected 5-run** | 6.40 s |
 
-Warm, 5-run (`g4_rigor.py`). **ProvSQL is faster** on Q3 (~6×; most of ours is now the pure-Python variable
-ordering, 3.3 s). Framing (G2a): comparable *order of magnitude* on a **stock, unforked** engine over a
-**broader fragment**, not a latency win — and note the ordering is the removable pure-Python cost, while
-on the **reconvergent Qrecon (below) ours is faster** than ProvSQL. Query-dependent, not a universal win.
+The previous 1.06 s G4 row is retired: its `count(*)` wrapper did not consume the projected probability and
+could let PostgreSQL prune `probability_evaluate`. `g4_rigor.py` now selects `count(*),sum(p)`; re-run its
+ProvSQL row before making a Q3 speed claim. The independent G2a `CREATE TEMP TABLE ... probability_evaluate`
+artifact did consume probabilities, but it used different historical timer boundaries and is not substituted
+into this canonical table.
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
-- **TPC-H Q3 × 5 mktsegments** (ours + ProvSQL): ours mean **2237 ± 332 ms**, ProvSQL **858 ± 110 ms**;
-  ProvSQL faster on all 5; within-instance sd ≤ 2 %.
+- **TPC-H Q3 × 5 mktsegments:** both ours and ProvSQL instance timings are pending the corrected
+  `g4_instances.py` re-run (the old ProvSQL target could be pruned).
 - **WatDiv S-star × 5 users**: 20 → 659 ms, tracking answer count; within-instance sd 0–8 ms.
 
 ## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `R8_3_RESULTS.md`

@@ -1,6 +1,10 @@
 # G4 — statistical-rigor pass on the headline timing numbers
 
 > ⚠️ **Timing numbers in this file are SUPERSEDED — cite [`CANONICAL_TIMINGS.md`](CANONICAL_TIMINGS.md).** They predate (or are single-run under) engine fix `1e67021`; the authoritative post-fix 5-run table lives in the canonical file, and the old rows are recorded in [`HISTORICAL_TIMINGS.md`](HISTORICAL_TIMINGS.md). The *methodology/findings* below still stand; only the absolute numbers moved.
+>
+> **Additional correction (2026-07-13):** the old ProvSQL `count(*)` wrapper did not consume its projected
+> probability, so PostgreSQL could prune the evaluator. Current `g4_rigor.py` / `g4_instances.py` use
+> `count(*),sum(p)` and refuse partial CSVs. Do not cite a ProvSQL timing from this file.
 
 The external review flagged that our headline *timings* were single-run on a shared machine. G4 fixes
 the protocol for every number a reader would cite and re-measures under it. `g4_rigor.py` → `g4_rigor.csv`.

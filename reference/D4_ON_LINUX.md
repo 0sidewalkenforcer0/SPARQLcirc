@@ -31,12 +31,12 @@ D4=/path/to/d4 python3 d4_pipeline.py            # d4 v1
 # D4=/path/to/d4v2 D4V2=1 python3 d4_pipeline.py  # d4 v2
 ```
 
-`d4_pipeline.py` compiles each CNF to d-DNNF, records the **d-DNNF size**
-(`nnf <nodes> <edges> …` header) and d4's **weighted model count**, and writes
+`d4_pipeline.py` compiles each CNF to d-DNNF, records the **d-DNNF size**, then reads that dump and performs
+the exact weighted count locally in one linear pass (it does **not** launch d4 a second time), and writes
 `results.csv`. Two checks / outputs:
 
-1. **Correctness:** `d4_wmc == expected_wmc` for every instance (else the CNF export
-   or the d4 flags are wrong). Expected values, e.g.: drug/Omeprazole `0.774298`,
+1. **Correctness:** the compiled-d-DNNF WMC equals `expected_wmc` for every instance (otherwise the CNF
+   export, compiler output, NNF parser, or d4 flags are wrong). Expected values, e.g. drug/Omeprazole `0.774298`,
    drug/Clopidogrel `0.358800`.
 2. **The figure:** compare `ddnnf_nodes` (d4) vs `obdd_size` (ours) per instance.
    This is where d-DNNF's `O(n·2^{O(tw)})` bound should beat OBDD's `n^{O(tw)}` on
@@ -52,6 +52,6 @@ obdd_size, d4_wmc)` and plot `ddnnf_nodes` and `obdd_size` vs `n` at each `tw`.
 
 ## d4 CLI note
 
-d4 v1 and d4v2 differ in flags. `d4_pipeline.py` has both invocations; if your
-build prints the count differently, adjust `parse_wmc()` / `ddnnf_cmd()` there. The
-d-DNNF size is read from the standard `nnf` header, which both emit.
+d4 v1 and d4v2 differ in flags. `d4_pipeline.py` has both invocations; pin an unusual build with
+`D4_DDNNF_CMD` / `D4V2_DDNNF_CMD` if needed. `ddnnf_wmc.py` accepts classic c2d NNF and d4's edge-labelled
+NNF format; an unknown format fails loudly rather than falling back to a second counter.

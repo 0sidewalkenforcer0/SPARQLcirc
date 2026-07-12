@@ -21,10 +21,10 @@ SELECT set_prob(provenance(), 0.5) FROM g2a.orders;
 SELECT set_prob(provenance(), 0.5) FROM g2a.lineitem;
 \o
 
--- 3. Timed Q3 SPJ PQE: probability(provenance()) per (order, line) answer.
+-- 3. Timed Q3 SPJ PQE: probability_evaluate(provenance()) per (order, line) answer.
 \timing on
 CREATE TEMP TABLE q3 AS
-  SELECT o.o_orderkey, l.l_linenumber, probability(provenance()) AS p
+  SELECT o.o_orderkey, l.l_linenumber, probability_evaluate(provenance()) AS p
   FROM g2a.customer c, g2a.orders o, g2a.lineitem l
   WHERE o.o_custkey = c.c_custkey
     AND l.l_orderkey = o.o_orderkey

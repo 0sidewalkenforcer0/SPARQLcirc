@@ -69,7 +69,25 @@ def check_tagged_parser():
     return ok
 
 
+def check_g4_probability_consumption():
+    good = "R|8|1.0\nR|8|1.0\n"
+    try:
+        rows = g4_rigor.parse_provsql_checks(good, 2)
+        accepted = rows == [(8, 1.0), (8, 1.0)]
+    except Exception:
+        accepted = False
+    rejected = False
+    try:
+        g4_rigor.parse_provsql_checks("R|8|0.0\n", 1)
+    except RuntimeError:
+        rejected = True
+    ok = accepted and rejected
+    print(f"[G4 probability ] consumed checksum accepted, pruned/wrong sum rejected {'OK' if ok else 'FAIL'}")
+    return ok
+
+
 if __name__ == "__main__":
-    all_ok = check_compile_api() and check_parity_guards() and check_tagged_parser()
+    all_ok = (check_compile_api() and check_parity_guards() and check_tagged_parser() and
+              check_g4_probability_consumption())
     print("\nALL OK" if all_ok else "\nFAILURES")
     sys.exit(0 if all_ok else 1)

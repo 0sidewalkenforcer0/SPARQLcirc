@@ -56,8 +56,25 @@ GROUP BY t2.o;
 
 ```sql
 SELECT z, probability_evaluate(provenance(), 'weightmc') FROM ( <query> ) q;
--- or the d4-backed method, to match OUR compiler backend for a fair PQE comparison
 ```
+
+The controlled Level-1 compiler comparison is implemented separately by
+`reference/level1_d4_headtohead.py`: both systems compile per answer through the same pinned d4v2 binary.
+Do not use ProvSQL's built-in `d4v2` registry row for that control because it may prefer native BC-S1.2
+circuit input; register a CNF-only row (ProvSQL ≥1.8, superuser):
+
+```sql
+SELECT provsql.register_tool(
+  name=>'d4v2-cnf', executable=>'/ABS/PATH/d4v2', operations=>ARRAY['compile'],
+  input_formats=>ARRAY['dimacs-cnf'], output_format=>'ddnnf-nnf', parser=>'nnf',
+  argtpl=>'-i {in} --dump-file {out}', argtpl_circuit=>NULL, enabled=>true);
+
+SELECT probability_evaluate(provenance(), 'compilation', 'd4v2-cnf') FROM ( <query> ) q;
+```
+
+Both inputs are semantically equivalent Tseitin CNFs. We claim the same external compiler binary and
+per-answer granularity, not byte-identical CNF clauses. SPARQLcirc invokes d4 once, parses the resulting
+d-DNNF, and performs its linear WMC locally—the same compile-then-evaluate shape as ProvSQL.
 
 Per query, record:
 
@@ -71,9 +88,8 @@ Per query, record:
 
 ## Predicted result (before running)
 
-- **PQE time comparable** when both use the same d4 backend — the circuits encode the
-  same Boolean function, so compile+WMC is essentially the same work. **Do not claim we
-  count faster.**
+- **PQE time is measured**, not presumed comparable, under the same pinned d4v2 binary and per-answer
+  granularity. Circuit/CNF generation remains system-specific. **Do not claim we count faster.**
 - **Construction:** ProvSQL builds inside a bespoke PG engine; we build on any stock
   triplestore. Timings are engine-dependent and not the point.
 - **The win is deployability (axis A):** exact PQE, same tractability, with **no fork of

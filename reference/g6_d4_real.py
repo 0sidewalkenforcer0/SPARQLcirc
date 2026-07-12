@@ -7,7 +7,7 @@ circuits (same as G3), on a sample of answers it computes
   OBDD-WMC   (compile_bdd.probability — the ACTUAL G3/G4 compiler)
   PWE        (compile_bdd.wmc_enum — brute-force possible-world enumeration, ground truth; feasible for
               cones with <= ~20 tokens)
-  d4         (export_cnf -> d4 -dDNNF for d-DNNF SIZE, and d4 -mc for a second WMC)
+  d4         (export_cnf -> one d4 d-DNNF compile -> local linear WMC of that dump)
 
 **Primary result = OBDD == PWE on the real circuits, incl. reconvergent property paths.** That is the
 order-INDEPENDENT correctness check the paper needs (PWE does not depend on any variable order).
@@ -37,14 +37,17 @@ os.makedirs(TMP, exist_ok=True)
 
 def d4_ddnnf_wmc(circ, root, P, tag):
     e = export_cnf.export(circ, root, P)
-    cnf = os.path.join(TMP, tag + ".cnf"); nnf = cnf + ".nnf"; wf = cnf + ".w"
-    open(cnf, "w").write(e["dimacs"]); d4p.write_weights(cnf, wf)
+    cnf = os.path.join(TMP, tag + ".cnf"); nnf = cnf + ".nnf"
+    open(cnf, "w").write(e["dimacs"])
     t = time.time()
     subprocess.run(d4p.ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=600)
-    nodes, edges = d4p.nnf_size(nnf)
+    import ddnnf_wmc
+    iw = {e["var_of"][n]: (P[pl], 1.0 - P[pl])
+          for n, (op, pl) in circ.items() if op == "leaf" and n in e["var_of"]}
+    ev = ddnnf_wmc.evaluate_file(nnf, iw)
+    nodes, edges = ev.nodes, ev.edges
     ms = (time.time() - t) * 1000
-    wout = subprocess.run(d4p.wmc_cmd(cnf, wf), check=True, capture_output=True, text=True, timeout=600)
-    return nodes, edges, d4p.parse_wmc(wout.stdout), ms, e["nvars"]
+    return nodes, edges, ev.probability, ms, e["nvars"]
 
 def sample_roots(ans, k):
     items = list(ans.items())

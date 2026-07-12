@@ -131,7 +131,7 @@ compilation.
 - **Metric:** total time & space **to the exact answer probability**, plus a qualitative "requires engine modification?" column.
 - **Baselines & predicted positioning:**
   - **NPCS / SPARQLprov:** emit *strings*, not probabilities → to get a probability you must **decode** the string into a factored form; measure the decode cost (grows with string size, which E2 shows explodes on deep queries). *They do not do PQE; we do, natively.*
-  - **ProvSQL** (strongest — also builds a provenance circuit + knowledge-compiles): map RDF→relations, run equivalent queries, use the **same** d4 backend. **Prediction: comparable PQE time** (same WMC engine) — **do not claim we count faster.** Our win is axis A: unmodified, engine-agnostic, native RDF/SPARQL, no relational remodeling, no PostgreSQL fork.
+  - **ProvSQL** (strongest — also builds a provenance circuit + knowledge-compiles): map RDF→relations and run the controlled Level-1 harness (`level1_d4_headtohead.py`): per answer, semantically equivalent Tseitin CNFs, the **same pinned d4v2 binary**, then linear d-DNNF evaluation. Measure rather than presume comparable time; do **not** claim byte-identical CNFs or that we count faster. Our win is axis A: unmodified, engine-agnostic, native RDF/SPARQL, no relational remodeling, no PostgreSQL fork. Shared compilation is evaluated separately in E11.
 
 ---
 

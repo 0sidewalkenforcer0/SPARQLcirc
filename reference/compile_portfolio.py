@@ -1,16 +1,17 @@
-"""Exact-probability PORTFOLIO for a provenance circuit — the SAME method + logic ProvSQL uses.
+"""ProvSQL-inspired exact-probability portfolio for a provenance circuit.
 
 Motivation (see SERVER_TASK "E4 / compiler"). ProvSQL, the strongest baseline, computes exact probability
-with a *cost-ranked exact portfolio*: it tries the cheapest applicable exact method first and only falls
-back to an external d-DNNF knowledge compiler (d4 / c2d / dsharp) for hard instances. Our head-to-head
-should use the SAME stack, so the compiler is a shared, non-contentious component and the only difference
-is the data model (stock SPARQL 1.1 / RDF vs a forked PostgreSQL / relations) — not a bespoke ROBDD.
+with a cost-ranked exact portfolio. This module provides a portable subset for our own evaluation, but it
+is NOT claimed to be the same portfolio: ProvSQL also has tree-decomposition and different selection logic.
+The controlled head-to-head therefore uses the separate Level-1 harness (`level1_d4_headtohead.py`), which
+forces one pinned compiler and does not call :func:`probability` below.
 
 This module mirrors that chain on OUR provenance circuit (`circuit_io.parse` format):
   1. read-once      -> linear bottom-up eval; each token appears once => siblings are over disjoint
                        variables => independent, so ⊗=∏p, ⊕=1−∏(1−p), ⊖=p_m·(1−p_s) are EXACT.   O(size)
   2. possible-worlds-> brute-force 2^n enumeration for <= SMALL tokens (compile_bdd.wmc_enum).
-  3. compilation    -> Tseitin CNF (export_cnf, same encoding ProvSQL uses for non-read-once circuits)
+  3. compilation    -> Tseitin CNF (export_cnf; semantically equivalent to ProvSQL's CNF, not claimed
+                       byte-identical)
                        -> external d-DNNF compiler **d4** (D4 env; use d4-v2) -> weighted model count.
   fallback          -> our OBDD (compile_bdd.probability) when d4 is unavailable (arm64 / no D4 set).
 
@@ -19,8 +20,8 @@ a documented TODO here (needs a TD library); its absence only means we reach `co
 earlier, never a wrong answer. OBDD + possible-world enumeration remain the INDEPENDENT correctness
 oracle (E1/G6); this module does not replace them.
 """
-import os, subprocess, tempfile
-import compile_bdd, export_cnf
+import os, subprocess, tempfile, time, shutil
+import compile_bdd, export_cnf, ddnnf_wmc
 
 SMALL = int(os.environ.get("PORTFOLIO_PWE_MAX", "20"))       # possible-worlds only below this #tokens (2^20 = 1M)
 
@@ -74,26 +75,66 @@ def prob_read_once(circ, root, P):
     return ev(root)
 
 
-def d4_wmc(circ, root, P, d4bin=None):
-    """Compilation path: Tseitin CNF (export_cnf) -> d4 d-DNNF + weighted count. Returns (wmc, ddnnf_nodes)
-    or None if d4 is unavailable / fails. Reuses d4_pipeline's version-aware d4 invocation (v1 or v2)."""
+def d4_compile_once(circ, root, P, d4bin=None, timeout=600):
+    """Force one ``Tseitin CNF -> d4 -> d-DNNF`` compilation, then WMC that dump locally.
+
+    Returns probability, d-DNNF size and separate compile/WMC times.  It is intentionally strict: a forced
+    Level-1 run must abort on a missing compiler, malformed dump or timeout rather than fall back silently.
+    The temporary directory is always cleaned, including across 10^4 per-answer invocations.
+    """
     if d4bin is None:
         d4bin = os.environ.get("D4")
     if not d4bin:
-        return None
+        raise RuntimeError("d4 not available (set D4 to the pinned d4-v2 binary)")
+    if not (os.path.isfile(d4bin) or shutil.which(d4bin)):
+        raise RuntimeError(f"d4 binary not found: {d4bin}")
     import d4_pipeline as d4p                                  # lazy: only when d4 is actually used
-    e = export_cnf.export(circ, root, P)
-    d = tempfile.mkdtemp(prefix="portf_")
-    cnf = os.path.join(d, "c.cnf"); open(cnf, "w").write(e["dimacs"])
-    nnf, wf = cnf + ".nnf", cnf + ".w"
+    with tempfile.TemporaryDirectory(prefix="portf_") as d:
+        t = time.perf_counter()
+        e = export_cnf.export(circ, root, P)
+        input_weights = {}
+        for node, var in e["var_of"].items():
+            op, payload = circ[node]
+            if op == "leaf":
+                input_weights[var] = (P[payload], 1.0 - P[payload])
+        cnf = os.path.join(d, "c.cnf")
+        with open(cnf, "w") as fh:
+            fh.write(e["dimacs"])
+        encode_ms = (time.perf_counter() - t) * 1000
+        nnf = cnf + ".nnf"
+        cmd = d4p.ddnnf_cmd(cnf, nnf, d4bin=d4bin)
+        t = time.perf_counter()
+        try:
+            proc = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout)
+        except subprocess.CalledProcessError as ex:
+            raise RuntimeError(f"d4 compilation failed (rc={ex.returncode}): {(ex.stderr or '')[-1000:]}") from ex
+        except subprocess.TimeoutExpired as ex:
+            raise RuntimeError(f"d4 compilation timed out after {timeout}s: {' '.join(cmd)}") from ex
+        compile_ms = (time.perf_counter() - t) * 1000
+        if not os.path.exists(nnf) or os.path.getsize(nnf) == 0:
+            raise RuntimeError(f"d4 produced no d-DNNF: {' '.join(cmd)}\n{(proc.stderr or '')[-1000:]}")
+        t = time.perf_counter()
+        ev = ddnnf_wmc.evaluate_file(nnf, input_weights)
+        wmc_ms = (time.perf_counter() - t) * 1000
+    if not (-1e-9 <= ev.probability <= 1.0 + 1e-9):
+        raise RuntimeError(f"d-DNNF WMC outside [0,1]: {ev.probability}")
+    return dict(probability=ev.probability, ddnnf_nodes=ev.nodes, ddnnf_edges=ev.edges,
+                encode_ms=encode_ms, compile_ms=compile_ms, wmc_ms=wmc_ms, nnf_format=ev.format,
+                cnf_vars=e["nvars"], cnf_clauses=e["nclauses"])
+
+
+def d4_wmc(circ, root, P, d4bin=None, strict=False, size=True):
+    """Compatibility adapter returning ``(probability, nodes)`` or ``None`` for the auto portfolio.
+
+    ``size`` is retained for older callers but no longer triggers a second compiler invocation. Forced
+    experiments should call :func:`d4_compile_once` so the timing fields are available and failures are fatal.
+    """
     try:
-        subprocess.run(d4p.ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=600)
-        d4p.write_weights(cnf, wf)
-        out = subprocess.run(d4p.wmc_cmd(cnf, wf), check=True, capture_output=True, text=True, timeout=600)
-        wmc = d4p.parse_wmc(out.stdout)
-        nodes = d4p.nnf_size(nnf)[0] if os.path.exists(nnf) else None
-        return (wmc, nodes) if wmc is not None else None
+        r = d4_compile_once(circ, root, P, d4bin=d4bin)
+        return r["probability"], (r["ddnnf_nodes"] if size else None)
     except Exception:
+        if strict:
+            raise
         return None
 
 

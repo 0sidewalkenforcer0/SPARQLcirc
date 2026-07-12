@@ -91,17 +91,20 @@ def main():
     print(f"{'query':18} {'answers':>7} {'construct_ms':>12} {'compile_ms':>11} {'wmc_ms':>8} {'total_ms':>9}  note")
     rows = []
     for name, ep, scheme, qf, is_path in QUERIES:
-        if not os.path.exists(qf): print(f"  {name}: {qf} missing, skip"); continue
+        if not os.path.exists(qf):
+            raise FileNotFoundError(f"{name}: required query file missing: {qf}")
         try:
             if is_path: circ, ans, cms = construct_path(ep, qf)
             else:       circ, ans, cms = construct_bgp(ep, scheme, open(qf).read())
         except Exception as ex:
-            print(f"  {name}: construct failed: {type(ex).__name__}: {ex}"); continue
+            raise RuntimeError(f"{name}: construction failed") from ex
         comp, wmcms, n, ok, _ = compile_wmc(circ, ans)
         total = cms + comp + wmcms
         print(f"{name:18} {len(ans):>7} {cms:>12.0f} {comp:>11.0f} {wmcms:>8.0f} {total:>9.0f}  {ok}/{n} probs valid")
         rows.append(dict(query=name, answers=len(ans), construct_ms=round(cms), compile_ms=round(comp),
                          wmc_ms=round(wmcms), total_ms=round(total), compiled=n, wmc_ok=ok))
+    if len(rows) != len(QUERIES):
+        raise RuntimeError(f"refusing partial G3 CSV: {len(rows)}/{len(QUERIES)} query rows")
     with open("g3_pqe.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     print("\nwrote g3_pqe.csv  |  NPCS/SPARQLprov stop after 'construct' (provenance, no probability) — "

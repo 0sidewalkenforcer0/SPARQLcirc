@@ -48,18 +48,18 @@ def main():
         try:
             n, o = ours_instance(seg)
         except Exception as ex:
-            print(f"  {seg}: ours failed: {type(ex).__name__}: {ex}"); continue
+            raise RuntimeError(f"{seg}: ours failed") from ex
         p = g4_rigor.provsql_runs("g2a", seg)
-        pt = p["total"] if p else None
-        ours_meds.append(o["median"]);  prov_meds.append(pt["median"] if pt else None)
+        pt = p["total"]
+        ours_meds.append(o["median"]);  prov_meds.append(pt["median"])
         of = f"{o['median']:.0f} [{o['min']:.0f}-{o['max']:.0f}]"
-        pf = f"{pt['median']:.0f} [{pt['min']:.0f}-{pt['max']:.0f}]" if pt else "--"
+        pf = f"{pt['median']:.0f} [{pt['min']:.0f}-{pt['max']:.0f}]"
         print(f"{seg:20} {n:>7} {of:>28} {pf:>25}")
         rows.append(dict(shape="tpch-Q3-SPJ", instance=seg, answers=n,
                          ours_median_ms=round(o["median"], 1), ours_min_ms=round(o["min"], 1),
                          ours_max_ms=round(o["max"], 1), ours_sd_ms=round(o["sd"], 1),
-                         provsql_median_ms=round(pt["median"], 1) if pt else None,
-                         provsql_sd_ms=round(pt["sd"], 1) if pt else None, runs=RUNS))
+                         provsql_median_ms=round(pt["median"], 1),
+                         provsql_sd_ms=round(pt["sd"], 1), runs=RUNS))
     # cross-instance summary
     om = st(ours_meds); pm = st([x for x in prov_meds if x is not None])
     print(f"\ncross-instance (n={len(ours_meds)} instances):")
@@ -73,7 +73,7 @@ def main():
         try:
             n, o = star_instance(u)
         except Exception as ex:
-            print(f"  {u}: failed: {type(ex).__name__}: {ex}"); continue
+            raise RuntimeError(f"{u}: failed") from ex
         star_meds.append(o["median"])
         of = f"{o['median']:.0f} [{o['min']:.0f}-{o['max']:.0f}]"
         print(f"{u:22} {n:>7} {of:>28}")
@@ -86,6 +86,9 @@ def main():
         print(f"  cross-instance (n={len(star_meds)}): median-of-medians {sm['median']:.0f} ms, "
               f"mean {sm['mean']:.0f} ± {sm['sd']:.0f} (min {sm['min']:.0f}, max {sm['max']:.0f})")
 
+    expected_rows = len(SEGMENTS) + len(STAR_USERS)
+    if len(rows) != expected_rows:
+        raise RuntimeError(f"refusing partial G4-instances CSV: {len(rows)}/{expected_rows} rows")
     with open("g4_instances.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     print("\nwrote g4_instances.csv")

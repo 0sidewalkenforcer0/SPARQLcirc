@@ -7,7 +7,8 @@
 > • **WatDiv 200 M is DROPPED** (the 2014 generator segfaults; 10 M / 100 M stand — ignore "200 M" in §2).
 > • **G2b is NOT a byte-size win** — ROUND 7's "10–27× more compact" is retracted; the RDF N-Triples circuit
 >   is usually byte-*larger*, compactness is *structural* only.
-> • The **canonical 5-run timing table is already regenerated on current HEAD** (`5b34378`) — don't re-run it.
+> • The **ours-side canonical 5-run timing rows are current** (`5b34378`). The ProvSQL Q3 row must be
+>   refreshed once: the old `count(*)` wrapper allowed PostgreSQL to prune the unused probability expression.
 
 **You are a coding agent on a server** that has the resources the dev laptop lacked: disk
 for large WatDiv, CPU, a Linux/x86 box (for d4), and ideally **GraphDB** and **PostgreSQL+ProvSQL**.
@@ -38,6 +39,8 @@ python3 tests.py                            # 171/171
 python3 verify_gallery.py                   # ALL OK
 python3 verify_engine_paths.py              # ALL OK  (property paths)
 python3 verify_engine_agnostic.py           # determinism + SPARQL-1.1-only OK
+python3 verify_ddnnf_wmc.py                 # one-compile d-DNNF evaluator OK
+python3 verify_level1_harness.py            # forced per-answer d4v2 harness OK
 ```
 If any of these is not green, STOP and report — do not trust scale numbers until the toolchain checks out.
 
@@ -494,7 +497,7 @@ shared content-addressed store) — behaviour unchanged, warning added.
 
 ---
 
-# E4 / compiler alignment — adopt ProvSQL's compilation stack for the comparison (d4-v2)
+# E4 / compiler alignment — CURRENT DECISION (d4-v2, Level 1)
 
 **CORRECTION to an earlier note in this file: E4 is NOT missing.** `watdiv/e4_results.csv` is committed
 and was run with **d4** on the Linux server; it shows the predicted scaling (bounded-tw d-DNNF ≤ 5 270
@@ -503,58 +506,23 @@ the *grid* family d4's d-DNNF is even smaller than the OBDD), with `d4_wmc == ex
 instance. So the public-compiler / knowledge-compilation payoff **was** delivered (E4). Disregard the prior
 "E4 has no committed results" text.
 
-**The real remaining issue is the COMPARISON stack, not E4.** The *authoritative end-to-end* numbers
-(G3/G4) use OUR ROBDD, and the ProvSQL runs called bare `probability(provenance())` = ProvSQL's *cost-ranked
-exact portfolio* (independent → tree-decomposition → possible-worlds → … → external d-DNNF compiler only as
-a fallback), which for our small per-answer circuits picks a **cheap exact method, NOT d4**. So we compared
-our-ROBDD vs ProvSQL's-tree-decomposition — *different* engines — while `provsql/README.md` claims "same d4
-backend." **Decision taken (dev): align our compilation with ProvSQL's** — use the SAME logic and the SAME
-external compiler so the compiler is a shared, non-contentious component and the only difference is the data
-model (stock SPARQL/RDF vs forked PostgreSQL/relations).
+**Decision:** the ProvSQL head-to-head uses **Level 1: per-answer Tseitin CNF → the exact same pinned d4v2
+binary on both sides**. It is implemented in `reference/level1_d4_headtohead.py`; do not retrofit it into
+G3. G3 remains our normal shared-ROBDD end-to-end result, and E11 separately measures the shared-compilation
+advantage. Level 2 (matching ProvSQL's complete automatic portfolio, including tree decomposition) is deferred.
 
-## Use **d4-v2**, not d4-v1
-d4-**v1**'s *weighted* model count **over-counts** large reconvergent cones (our WD-path cones up to 233
-tokens) — that's why G6 kept d4 size-only there, and it's the reason `e4_results.csv` was produced with v1's
-model count that we should re-confirm. d4-**v2** (`github.com/crillab/d4v2`, `./build.sh`) fixes the weighted
-path; `d4_pipeline.py` already has the v2 invocation (`D4V2=1`). Build v2 and use it below.
+Important precision: both sides use semantically equivalent Tseitin CNFs, the same compiler binary and the
+same per-answer granularity. Do **not** claim byte-identical clauses or "the only difference is the data model"
+unless `tseytin_cnf()` is additionally normalised and compared. System-specific circuit/CNF generation remains
+part of the measured systems.
 
-## E4.1 — refresh the scaling figure on d4-v2 (confirmation, not from scratch)
-Re-run `D4=/path/to/d4v2 D4V2=1 LD_LIBRARY_PATH=$CONDA_PREFIX/lib python3 e4_sweep.py` and diff against the
-committed `watdiv/e4_results.csv`: the d-DNNF **sizes** should be essentially unchanged; the point is to
-confirm d4-v2's **weighted counts** match `expected` on the instances where v1's WMC was suspect. Keep the
-existing figure if v2 agrees; note any delta.
+Our forced path invokes d4 **once** to dump a d-DNNF, then `ddnnf_wmc.py` evaluates that dump in one linear
+pass. It does not invoke d4 a second time for WMC. ProvSQL must use a CNF-only registry entry named
+`d4v2-cnf`; its built-in `d4v2` entry may prefer native BC-S1.2 circuit input and is therefore not the
+strict CNF-vs-CNF control.
 
-## E4.2 — d4-v2 on the real LARGE reconvergent cones (fixes the G6 gap)
-Re-run `g6_d4_real.py` with d4-v2 on the WD-path cones **> 40 tokens** (the ones d4-v1 over-counted).
-If d4-v2's WMC now matches OBDD/PWE, record it — that makes d4 a *trustworthy* second oracle exactly where
-the fixed-order OBDD is expensive (G3: 3.9 s WD-path compile), and supports "d-DNNF is the order-robust
-compile for reconvergent paths."
-
-## E4.3 — adopt ProvSQL's compilation METHOD + LOGIC (the chosen direction)
-Rather than defend a bespoke ROBDD against ProvSQL, we use the **same knowledge-compilation stack** so the
-compiler is a shared component and the only difference is the data model (stock SPARQL/RDF vs forked
-PostgreSQL/relations). Two levels — dev builds the wrapper, server runs both:
-- **Level 1 (same compiler + encoding).** Ours: `export_cnf.py` (Tseitin CNF, already matches ProvSQL's
-  non-read-once path) → **d4-v2** → WMC. ProvSQL: `probability_evaluate(provenance(), 'compilation')` with
-  `SET provsql.fallback_compiler='d4';` (confirm the GUC/registry name in your build — dispatch chooses
-  among `d4/c2d/minic2d/dsharp`). Same Boolean function, same compiler → the prediction "compile+WMC is
-  essentially the same work" becomes directly testable.
-- **Level 2 (same method-selection logic) — BUILT.** `reference/compile_portfolio.py` mirrors ProvSQL's
-  cost-ranked exact portfolio on our circuit: read-once (linear) → possible-worlds (≤ 20 tok) → Tseitin CNF
-  → **d4** (set `D4=/path/to/d4v2`), OBDD fallback when d4 is absent. `verify_portfolio.py` validates it
-  locally == OBDD == PWE (read-once + possible-worlds + OBDD paths; read-once detection proven to avoid the
-  shared-variable over-count; the CNF the d4 path consumes is encoding-checked). **Server:** set `D4` to
-  d4-v2 and route G3/G2a/R8.3 compile through `compile_portfolio.probability(circ, root, P)` so *both*
-  systems make the same algorithmic choice per instance. (tree-decomposition — ProvSQL's step between
-  possible-worlds and compilation — is a TODO; its absence only reaches `compilation` earlier, never a
-  wrong answer.) Then G3/G2a/R8.3 report "same portfolio, same compiler," and the contribution is cleanly
-  the **no-engine-fork / native-RDF** axis.
-- **Keep OBDD + PWE as the INDEPENDENT correctness oracle.** PWE (no compiler, no variable order) and our
-  ROBDD stay the ground-truth cross-check (E1/G6) — do NOT drop them; they are how we validate the shared
-  stack, and they remain the portable/arm64 path when d4 (x86-only) is unavailable.
-Trade-off to accept: the ProvSQL-comparison headline numbers become **Linux/x86-only** (d4's PATOH), and
-`provsql/README.md`'s "same d4 backend" wording becomes *true* rather than aspirational. Update G2a/R8.3/G3
-framing to "identical compilation stack; difference is the engine/data model, not the compiler."
+E4/G6 with d4v2 remain a **verification**, not a presumed fix. The scripts now WMC the d4-produced d-DNNF
+locally, bypassing the old d4-v1 external weighted-count path that over-counted some large cones.
 
 ---
 
@@ -569,29 +537,33 @@ framing to "identical compilation stack; difference is the engine/data model, no
 | **G8 UTF-8 bytes** (`fc5e4a1`) | N-Triples byte count now UTF-8 | **G8** |
 | **path fingerprint** (`7882a1e`) | reach/base gate IRIs re-namespaced + one `c:rpath` triple/reach-gate; **gates+edges and compile/WMC UNCHANGED**, construct time + byte-identity refs shift | path **byte-identity refs**; WD-path **construct** time (folds into the G3/G4 re-run) |
 | **ansKey BOUND-safe + c:binding detection** (`90c3c3c`) | `c:answer` now always emitted (incl. unbound-projected answers); WMC values UNCHANGED | **E10 stored hashes/counts** for OPTIONAL/MINUS/UNION shapes (the *property* still holds); nothing numeric |
-| **compile_portfolio + d4-v2** (`b33d26e` + direction) | new same-stack compilation for the ProvSQL comparison | **NEW runs:** G3/G2a/R8.3 same-stack; E4 d4-v2 confirm; G6 large cones |
+| **Level-1 d4v2 harness** | per-answer CNF→one pinned d4v2 on both systems; local linear WMC of ours' dump | **NEW:** G2a/Qrecon Level-1; E4/G6 d4v2 verification |
+| **ProvSQL timing consumption** | G4 now selects `sum(p)` so PostgreSQL cannot prune `probability_evaluate` | **G4 ProvSQL Q3 row only** |
 
 ## ALREADY DONE — do NOT re-run (status corrected)
 `5b34378` already re-ran the **5-run CANONICAL table on current HEAD** (post-90c3c3c timer boundaries):
-the 3-row main table (watdiv-Sstar, tpch-Q3, wikidata-WDpath) + `g4_rigor.csv` are current — see
+the 3 ours-side main rows (watdiv-Sstar, tpch-Q3, wikidata-WDpath) are current — see
 `CANONICAL_TIMINGS.md` ("current HEAD, 5-run"). Notable shifts it found: **WD-path 8.04 s → 2.14 s**
 (PathIsoSeq fingerprint shrank the reconvergent cones; compile 5.75 s → ~1 ms) and **tpch-Q3 → 6.40 s**
-(the 90c3c3c boundary now counts variable ordering). So the main table / `g4_rigor` do **not** need re-running.
+(the 90c3c3c boundary now counts variable ordering). Do not discard those expensive real-data rows.
 
 ## MUST re-run (still stale)
 - [ ] **g4_instances.py** — `python3 g4_instances.py` → `g4_instances.csv` (instance-breadth rows are still
       pre-boundary; it imports g3's timers). ‼ The 1-warm-up + 5-run protocol lives in **`g4_rigor.py` /
       `g4_instances.py`** — `g3_pqe_latency.py` runs each query **once** (a breakdown probe) and is NOT the
       source of the canonical table; do not use it for the 5-run numbers.
+- [ ] **G4 ProvSQL Q3 row** — run `python3 g4_rigor.py` once under the normal 1+5 protocol and replace the
+      ProvSQL row. The old `SELECT count(*) FROM (SELECT probability(...) p ...)` could prune unused `p`;
+      the harness now uses `count(*),sum(p)` and therefore necessarily evaluates every probability.
 - [ ] **R8.3** — `python3 r8_3_reconvergent.py` → `r8_3_reconvergent.csv` (**CSV writer now added**). ✔ check:
       columns `keys_match, k_keys_match, max_abs_error, cf_maxerr, agree` present; ours == closed form
-      (independent K) and == ProvSQL per `c_custkey`. NOTE: ours-side timing here is single-construct
-      (`compile_wmc` IS the shared compile); if you want 1+5 timing on it too, wrap it like `g4_rigor`.
+      (independent K) and == ProvSQL per `c_custkey`; the script now enforces **1 warm-up + 5 timed runs**.
 - [ ] **G2b** — `python3 g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`; rewrite the `G2b_RESULTS.md` table. ✔
-      three separate metrics (structural / serialized-bytes / compiled), NO `size_win`, raw-payload bytes.
+      three separate metrics (structural / serialized-bytes / compiled), NO `size_win`; compare final CSV
+      bytes against final deduplicated N-Triples bytes, not symmetric network payloads.
 - [ ] **G8** — `python3 g8_space_memory.py` → `g8_space_memory.csv` (UTF-8 bytes).
 
-## COMPILER ALIGNMENT — a DESIGN DECISION is required first (do NOT run as previously worded)
+## COMPILER ALIGNMENT — Level 1 is implemented (run separately from G3/E11)
 The earlier wording ("route ours through `compile_portfolio` AND pin ProvSQL to `'compilation'`/d4, call it
 'same portfolio, same compiler'") is **methodologically inconsistent** — do not run it verbatim:
 - our `compile_portfolio` **auto-selects** (read-once / PWE / d4 / OBDD) while ProvSQL would be **pinned to
@@ -600,19 +572,29 @@ The earlier wording ("route ours through `compile_portfolio` AND pin ProvSQL to 
 - `compile_portfolio.probability()` is **per-root**, but G3's canonical number compiles **all answers into
   ONE shared ROBDD** — per-answer portfolio calls lose that sharing and change both meaning and cost.
 
-**DECISION (author, 2026-07-13): Level 1 — PER-ANSWER CNF → d4 on BOTH sides.**
-- **Ours:** for each answer root, force the compilation branch — `compile_portfolio.d4_wmc(circ, root, P)`
-  (i.e. `export_cnf(circ, root, P)` → **d4-v2** → WMC), NOT `probability()` (which would auto-pick a cheaper
-  method). Per-answer, matching ProvSQL's per-group granularity; same Tseitin encoding, same compiler.
-- **ProvSQL:** `probability_evaluate(provenance(), 'compilation')` + `SET provsql.fallback_compiler='d4';`
-  (per `c_custkey` group — already per-answer).
-- Report compile+WMC time per side (summed over answers) + confirm identical probabilities. This is
-  legitimately "same compiler, same encoding, same per-answer granularity"; the only difference is the
-  engine / data model (stock SPARQL·RDF vs forked PostgreSQL·relations).
+Register a CNF-only ProvSQL tool (superuser; replace the absolute path):
+```sql
+SELECT provsql.register_tool(
+  name=>'d4v2-cnf', executable=>'/ABS/PATH/d4v2', operations=>ARRAY['compile'],
+  input_formats=>ARRAY['dimacs-cnf'], output_format=>'ddnnf-nnf', parser=>'nnf',
+  argtpl=>'-i {in} --dump-file {out}', argtpl_circuit=>NULL, enabled=>true);
+SELECT name,executable,input_formats,argtpl,argtpl_circuit,available
+FROM provsql.tools WHERE name='d4v2-cnf';
+```
+Then smoke-test before the full 14,908-answer run:
+```bash
+D4=/ABS/PATH/d4v2 D4V2=1 LEVEL1_RUNS=1 LEVEL1_MAX_ANSWERS=10 \
+  python3 level1_d4_headtohead.py
+D4=/ABS/PATH/d4v2 D4V2=1 python3 level1_d4_headtohead.py
+```
+The script verifies the registry uses that **same absolute binary**, records its SHA-256, accepts CNF only,
+runs 1+5, checkpoints `level1_d4_runs.csv`, writes `level1_d4_headtohead.csv`, and exits non-zero on any missing answer or parity
+failure. A `sample-N` row is smoke-only and must never be cited as the full result.
+
 - **Do NOT fold in our shared-compile advantage here.** "Compile ONCE for all answers, Θ(N+S) vs per-answer
   Θ(N·S)" is a SEPARATE result — **E11** — not this head-to-head.
 - OBDD + PWE remain the independent correctness oracle (E1/G6).
-(Level 2 — matching ProvSQL's full auto-portfolio incl. tree-decomposition — is deferred; not needed here.)
+(Level 2 — matching ProvSQL's full auto-portfolio incl. tree-decomposition — remains deferred.)
 
 ## d4-v2 — VERIFY (do not presume "d4-v2 fixes it")
 - [ ] **E4.1 / G6 with d4-v2 is a *verification*** of whether d4-v2 fixes d4-v1's weighted over-count — NOT a

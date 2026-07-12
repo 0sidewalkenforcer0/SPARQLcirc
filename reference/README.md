@@ -222,9 +222,11 @@ redirection — `2>plan.txt >/dev/null` — because zsh's MULTIOS tees both stre
 **d4 export (Tseitin CNF).** `export_cnf.py` writes a weighted DIMACS `cnf/*.cnf`
 per circuit + `cnf/manifest.json` (expected WMC + our OBDD size), verified here by
 an independent brute-force WMC == PWE. `d4_pipeline.py` + `D4_ON_LINUX.md` are the
-turnkey Linux step: build d4, compile each CNF → d-DNNF size + WMC, check vs the
+turnkey Linux step: build d4, compile each CNF once → d-DNNF size + local linear WMC of the dump, check vs the
 manifest → the `ddnnf_nodes` vs `obdd_size` scaling figure (the comparison
 experiment A showed cannot be produced on Apple Silicon — d4's PATOH is x86_64-only).
+`level1_d4_headtohead.py` is the separate controlled ProvSQL comparison: per answer, both systems feed
+semantically equivalent Tseitin CNFs to the same pinned d4v2 binary; our normal shared compile remains G3/E11.
 
 ## Evaluation — headline metric: shared circuit vs per-answer strings (`bench.py`)
 
