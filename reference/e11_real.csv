@@ -1,0 +1,7 @@
+query,answers,deriv,tokens,T_string,T_circuit,repr_win,size_shared,size_perans,compiled_win,t_ours_ms,t_theirs_ms,time_win,theirs_form,parity
+friendOf-1hop,6,6,6,6,6,1.0,6,6,1.0,0.0,0.0,2.8,flat-SoP,0.0e+00
+friendOf-2hop,24,24,30,48,100,0.48,48,48,1.0,0.1,0.2,2.0,flat-SoP,0.0e+00
+friendOf-3hop,77,78,113,234,371,0.63,234,234,1.0,0.5,1.2,2.5,flat-SoP,0.0e+00
+tpch-Q3-orderline,784,784,1005,2352,3968,0.59,2352,2352,1.0,4.6,56.3,12.2,cone,0.0e+00
+tpch-Q3-order,205,784,1005,2352,3150,0.75,1194,1194,1.0,5.2,23.5,4.5,cone,0.0e+00
+tpch-Q3-cust,12,784,1005,2352,2788,0.84,1001,1001,1.0,24.3,57.2,2.4,cone,0.0e+00

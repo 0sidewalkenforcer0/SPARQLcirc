@@ -72,6 +72,36 @@ SPARQLprov's released rewriter realizes MINUS as an *unguarded* DIFF; on disjoin
 over-subtracts, so its how-provenance yields **0.25 instead of 0.50**. Ours (the W3C shared-variable guard)
 matches possible-world enumeration — the MINUS bug as a **measured wrong probability**.
 
+## Result 4 — real data: the win is co-extensive with *reconvergence* (`e11_real.py`)
+
+The same per-answer-vs-shared comparison on REAL queries (not synthetic families): WatDiv `friendOf`
+k-hop BGP, and TPC-H Q3 star-join under naryrel (token = the row). `e11_real.csv`:
+
+| query | answers | deriv | repr_win | note |
+|---|--:|--:|--:|---|
+| WatDiv friendOf 1/2/3-hop | 6 / 24 / 77 | ≈ answers | 1.0 / 0.48 / 0.63× | random graph → tree-like |
+| TPC-H Q3 → (order, line) | 784 | 784 | 0.59× | 1 derivation/answer (pure join) |
+| TPC-H Q3 → order (lines sum) | 205 | 784 | 0.75× | lineitems sum per order |
+| TPC-H Q3 → cust (orders×lines sum) | 12 | 784 | 0.84× | deepest sum, still ≤ 1 |
+
+Both are **tree-structured joins**: every derivation ends in a *distinct* token, so
+`#derivations ≈ #distinct-tokens` and there is no reconvergence for the factored circuit to exploit —
+`repr_win ≤ 1` (the win is bounded by the join arity and eaten by gate overhead). Projecting to a
+coarser grain (finer rows summing per answer) raises it monotonically (0.59 → 0.84×) but not past 1,
+at any scale (TPC-H's fan-out ratios are fixed).
+
+**The boundary.** The representation/PQE win requires `#derivations ≫ #tokens` — **reconvergence**. In
+SPARQL that comes from **recursion = property paths** (Round 3: circuit gates `~n²` vs `~e·(n−2)!`
+simple paths, *unbounded*), which is **precisely the fragment NPCS/SPARQLprov cannot express**. So:
+
+- **tree joins** (the bulk of relational/RDF BGP): PQE **tie** — we still win on native construction (A),
+  engine-agnosticism (E10), and correct non-monotone (E6 / Result 3);
+- **recursive paths**: the win is **unbounded** *and* the baselines cannot compete at all.
+
+Real data on both sides bounds the E11 claim exactly: **the shared-circuit PQE advantage is
+co-extensive with reconvergence** — not a universal speedup, but a decisive one precisely where SPARQL
+provenance actually blows up (recursion), which is our unique fragment.
+
 ## Why E11 matters for the paper
 
 1. **Compile-time win at scale** (Result 2): a shared pass over `N` answers is Θ(N+S) vs Θ(N·S) per-answer

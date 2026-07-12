@@ -37,17 +37,17 @@ def run_query(cat, name, qtext, do_wmc):
     if not ok:
         return dict(category=cat, query=name, status="skip:var-predicate")
     try:
-        _, triples, capped = build(constructs)
+        ms0, triples, capped = build(constructs)          # first post: counts AND is a timing sample
     except Exception as ex:
         return dict(category=cat, query=name, status=f"err:{type(ex).__name__}")
     if capped:
         return dict(category=cat, query=name, status="too-large")
     circ, ans, typ = parse_circuit(triples)
     times, plus, minus, edges, answers = counts(circ, ans, typ)
-    samples = []
-    for k in range(RUNS + 1):
+    samples = [ms0]                                        # reuse the count post; RUNS extra posts only
+    for k in range(RUNS):
         ms, _, _ = build(constructs)
-        if k: samples.append(ms)
+        samples.append(ms)
     build_ms = sum(samples) / len(samples)
     gates = times + plus + minus
     diff = wmc_pwe_check(circ, ans) if do_wmc else None
