@@ -270,3 +270,70 @@ contribution does not yet scale, and the head-to-head comparisons are toy-scale/
 Decoding (we emit RDF, not per-answer strings) · aggregate provenance (G9) · TripleProv/GProM baselines
 (same how-provenance/no-PQE class as NPCS/SPARQLprov; cite, don't run) · the R reified-no-provenance query
 version (our overhead is plain-vs-circuit).
+
+---
+
+# ROUND 7 — reviewer-calibrated status & DE-DUP (READ FIRST)
+
+An external systems-paper review + our own audit reached the SAME verdict: **breadth is strong, but the
+must-have evidence loops are not closed** (property-path scale, strong-baseline fairness, end-to-end
+latency, statistical rigor). We agree with ~100% of the diagnosis; we have EXECUTED ~none of the
+must-haves — they are backlog, not results. This section de-duplicates so you **do NOT re-run** what is
+already done or already in flight from ROUND 6.
+
+## Legend
+✅ DONE — results committed → **SKIP**.  🔄 ROUND 6 — already sent; if started, **CONTINUE, don't restart**.
+🆕 NEW — added this round → **RUN**.
+
+## ✅ DONE — SKIP (results already in the repo; do NOT re-run)
+| Exp | Artifact / note |
+|---|---|
+| E1 correctness | `verify_gallery` + `tests.py` 171/171; **13-shape byte-identity closure** committed (Oxigraph 13/13 local) |
+| E2 compactness | `bench.csv` (up to 201×) |
+| E3 construction scaling | WatDiv 10M/100M `e3_*.csv` (already 5-run avg) |
+| E4 treewidth d4-vs-OBDD | `e4_results.csv` (synthetic families) |
+| E5 factored vs flat | `factor_demo` |
+| E6 non-monotone gallery | `verify_nonmono` |
+| E7 vs ProvSQL | `e7_results.csv` — **3 toy instances only; the SCALE version is G2a (RUN), not a re-run of this** |
+| Round 2A MINUS 10M/100M | `e6_minus_*.csv` |
+| Round 3 paths | `e_paths.csv`, `path_demo` — **80-node + synthetic only; the SCALE version is G1 (RUN)** |
+| E8 Wikidata 2.13B | `e8_wikidata.csv` — **partial (single 31/41, broad filter); the clean version is G2b (RUN)** |
+| E9 TPC-H SF 0.01–1 | `e9_*.csv` |
+| E10 4-engine byte-identity (8 shapes) | `engines/RESULTS.md`, `engines/timing/*.csv` |
+| E11 + E11-real | `e11_*.csv` (reconvergence boundary) |
+
+Where a DONE row says "the SCALE version is Gx", that Gx is a **new experiment below**, not a re-run of the
+toy/partial one already done.
+
+## 🔄 Must-haves — ALREADY in ROUND 6 (continue; do NOT restart if running)
+**G1** paths-at-scale · **G2a** ProvSQL/TPC-H · **G2b** full-NPCS/WDBench · **G3** end-to-end latency ·
+**G4** rigor · (should-have) **G5 G6 G7 G8 G10** · (scope) **G9**. Definitions unchanged — see ROUND 6 above.
+If you have already started any of these, keep going; the notes below only *refine* them.
+
+## 🆕 NEW this round — RUN (not in ROUND 6)
+1. **E10 byte-identity — 13-shape re-run on GraphDB / QLever / MillenniumDB.** `verify_http.py` now
+   iterates the full E1 set (`engines/_gallery_shapes.py`); **Oxigraph is already re-verified 13/13**.
+   Only the 5 shapes not yet diffed on those 3 engines are new: `atom`, `minus_disjoint`, `minus_p2union`,
+   `opt_right`, `opt_disjoint`. Cheap; closes per-engine correctness (E10 ⊇ E1). *This is the only genuinely
+   new "run" — everything else is a refinement of a ROUND 6 must-have.*
+
+## Refinements to ROUND 6 (apply when you run those items)
+2. **G4 — tighten the protocol on ALL headline perf numbers** (was under-specified). Per number: ≥3–5
+   instances/shape, 1–2 warm-ups + **5 timed runs**, report **median + min/max (or mean ± sd)**, uniform
+   **300 s** timeout, and **log the environment** (cold/warm cache, hardware, heap, concurrent jobs). The
+   review explicitly flagged E8/E10's "shared machine / GraphDB preload co-running / different WatDiv
+   sample" caveats — **re-run the headline perf numbers in a quiescent environment** so they are citable.
+   (Functional/size results already committed do NOT need re-running — only the *timing* numbers do.)
+3. **G1 is CODE-then-RUN, not a blind re-run.** Implement the **frontier-only** iterative loop first
+   (compose only from the newly-reached frontier + bounded accumulation) — the dev side can do this — THEN
+   run Wikidata `P279+` / `P131+` (single-source *and* all-pairs), reporting time / peak RSS / circuit size /
+   rounds + a WMC==PWE spot check. If it still won't scale, demote property paths from headline to prototype.
+4. **G2a folds into G3.** Run ProvSQL and us on the SAME TPC-H SPJ/MINUS skeletons (SF 0.01→1) through the
+   *full* pipeline and report end-to-end — don't produce a separate ProvSQL-only table. Frame: comparable
+   latency **without an engine fork**, not a speed win (ProvSQL is a shared-circuit peer, may be faster).
+
+## Priority
+1. **G1** (after frontier-only code) — unblocks the headline. 2. **G3+G2a** end-to-end incl. ProvSQL/TPC-H.
+3. **G4** rigor pass (quiescent env) over headline timings. 4. **E10 13-shape** finish (cheap). 5. **G2b/G5**
+(real NPCS/SPARQLprov artifacts), **G6** (d4 on real circuits), **G10** (C + 200M), G7, G8.
+Non-server (author decisions): paper positioning (systems vs foundations) and **G9** aggregation scope.
