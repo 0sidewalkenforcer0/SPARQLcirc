@@ -8,11 +8,13 @@ answers**, and turns it into a *timed* head-to-head: same data, same query, same
 PQE on both sides. Per ROUND 7, this folds into G3 (the end-to-end latency story) and is framed as
 **comparable latency without an engine fork — not a speed win** (ProvSQL is a shared-circuit *peer*).
 
-> **Timing note (read first).** All timings here are the **G4-rigorous warm** numbers (1 warm-up + 5
-> timed runs, median [min–max]). An earlier draft of this file quoted a **cold** ProvSQL first-call
-> (3.6 s) and wrongly concluded "ours ~2× faster"; the G4 rigor pass (see `G4_RESULTS.md`) corrected it —
-> warm/steady-state ProvSQL is **~1.05 s** and is in fact *faster* than us. The robust result is
-> **probability parity**, not a latency win.
+> **Timing note (read first) — the in-file table below is SUPERSEDED; cite `CANONICAL_TIMINGS.md`.**
+> This file's SF 0.01 ProvSQL number (1.05 s) went through *two* corrections: an early **cold** first-call
+> (3.6 s) was wrong, then the "warm ~1.05 s" turned out to be a **PostgreSQL pruning artifact** — `count(*)`
+> let the planner drop the unused probability column and time only the join. Forcing evaluation with
+> `sum(probability_evaluate(provenance()))` gives the honest **7.46 s** (5-run), so on Q3 **ours (6.45 s)
+> is slightly faster**, not slower. The robust, order-independent result throughout is **probability
+> parity** (ours == ProvSQL, verified to `max_abs_error = 0.0` in R8.3) — never the latency ordering.
 
 ## Setup
 

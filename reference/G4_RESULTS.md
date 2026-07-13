@@ -103,10 +103,11 @@ claims (compile+WMC ≪ construct; ProvSQL vs ours same order) are what the vari
 
 - **Within-instance variance is tiny across the board** — sd ≤ 2 % of the median on every instance
   (TPC-H sd 10–50 ms; S-star sd 0–8 ms). The latency numbers are stable, not lucky single runs.
-- **The ProvSQL-vs-ours ordering is consistent across ALL 5 TPC-H instances**, not a one-instance
-  artifact: ProvSQL is faster on every segment (≈ 2.6× median). This confirms G2a's warm finding at
-  breadth — the honest picture is *comparable order of magnitude, ProvSQL faster, our win is
-  no-engine-fork + broader fragment*, and it holds across the workload, not just BUILDING.
+- **⚠ REVERSED by the corrected re-run — cite `CANONICAL_TIMINGS.md` / `g4_instances.csv`.** These G4(b)
+  numbers (ProvSQL "faster", mean 858 ms) used the **pruned `count(*)` ProvSQL target** that PostgreSQL
+  optimised away. With forced `sum(probability_evaluate())` the honest instance breadth is **ours 4.5 s
+  median-of-medians vs ProvSQL 6.0 s — ours faster on all 5 segments** (and the timer boundaries also
+  shifted ours). Do **not** cite "ProvSQL faster" from this section; the corrected picture is in CANONICAL.
 - **Latency tracks answer count within each shape** (ours S-star 1 ans → 20 ms, 13 ans → 399 ms;
   TPC-H 10 149 → 1873 ms, 14 908 → 2770 ms), as expected for these low-reconvergence shapes.
 
