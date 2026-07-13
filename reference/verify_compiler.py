@@ -121,6 +121,36 @@ def _check_deep_cudd():
                              % (batch.metrics,))
 
 
+def _check_rare_complement_stability():
+    """A representable rare event must not vanish through edge complementation."""
+    depth = 64
+    circ = {"one": ("const", 1)}
+    previous = "one"
+    weights = {}
+    roots = {}
+    for index in range(depth):
+        leaf = "rare-leaf-%03d" % index
+        token = "urn:test:rare:%03d" % index
+        gate = "rare-and-%03d" % index
+        circ[leaf] = ("leaf", token)
+        circ[gate] = ("times", (previous, leaf))
+        weights[token] = 0.375
+        previous = gate
+        if index + 1 in (32, depth):
+            roots["depth-%d" % (index + 1)] = gate
+    expected = {"depth-32": 0.375 ** 32, "depth-64": 0.375 ** 64}
+    for mode in ("shared", "per-root"):
+        batch = compiler.compile_many(circ, roots, mode=mode, backend="cudd")
+        actual = batch.wmc_many(weights)
+        for key, reference in expected.items():
+            observed = actual[key]
+            if observed == 0.0 or abs(observed / reference - 1.0) > 1e-12:
+                raise AssertionError(
+                    "CUDD rare complemented-edge WMC %s/%s: %.17g != %.17g"
+                    % (mode, key, observed, reference)
+                )
+
+
 def _negative_checks():
     try:
         compiler.compile_many(CIRCUIT, ROOTS, backend="oracle", order=("urn:test:x",))
@@ -179,6 +209,7 @@ def main(argv=None):
     try:
         _check_backend("cudd", expected)
         _check_deep_cudd()
+        _check_rare_complement_stability()
     except compiler.BackendUnavailable as exc:
         if args.require_cudd:
             parser.exit(1, "compiler: CUDD REQUIRED but unavailable (%s)\n" % (exc,))

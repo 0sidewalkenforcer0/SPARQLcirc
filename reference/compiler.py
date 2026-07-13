@@ -234,15 +234,22 @@ def _probability(weights: Mapping[str, float], variable: str) -> float:
 
 def _cudd_wmc_many(manager: Any, roots: Mapping[Any, Any],
                    weights: Mapping[str, float]) -> Tuple[Dict[Any, float], int]:
-    memo: Dict[int, float] = {}
+    # Keep the probability of both the function and its complement at every
+    # edge.  CUDD represents many rare functions as complemented edges.  The
+    # tempting implementation ``P(~u) = 1.0 - P(u)`` catastrophically loses a
+    # small but perfectly representable probability when ``P(u)`` rounds to
+    # 1.0 (for example a 64-variable conjunction around 1e-28).  Propagating
+    # ``(P(true), P(false))`` pairs makes complementation an exact tuple swap
+    # and never recovers a rare event by subtracting nearly equal floats.
+    memo: Dict[int, Tuple[float, float]] = {}
     visited = set()
     forks: Dict[int, Tuple[int, Any, Any]] = {}
 
-    def value(node: Any) -> float:
+    def value_pair(node: Any) -> Tuple[float, float]:
         if node == manager.false:
-            return 0.0
+            return 0.0, 1.0
         if node == manager.true:
-            return 1.0
+            return 1.0, 0.0
         return memo[int(node)]
 
     # A CUDD complement is an edge flag.  `succ(~u)` returns the children of
@@ -259,13 +266,18 @@ def _cudd_wmc_many(manager: Any, roots: Mapping[Any, Any],
             continue
         if expanded:
             if _is_cudd_negated(node):
-                memo[signed_key] = 1.0 - value(~node)
+                regular_true, regular_false = value_pair(~node)
+                memo[signed_key] = regular_false, regular_true
                 continue
             level, low, high = forks.pop(signed_key)
             variable = manager.var_at_level(level)
             probability = _probability(weights, variable)
-            memo[signed_key] = ((1.0 - probability) * value(low)
-                                + probability * value(high))
+            low_true, low_false = value_pair(low)
+            high_true, high_false = value_pair(high)
+            memo[signed_key] = (
+                (1.0 - probability) * low_true + probability * high_true,
+                (1.0 - probability) * low_false + probability * high_false,
+            )
             continue
 
         stack.append((node, True))
@@ -287,7 +299,7 @@ def _cudd_wmc_many(manager: Any, roots: Mapping[Any, Any],
                     and int(child) not in memo):
                 stack.append((child, False))
 
-    return ({key: value(root) for key, root in roots.items()}, len(visited))
+    return ({key: value_pair(root)[0] for key, root in roots.items()}, len(visited))
 
 
 @dataclass
