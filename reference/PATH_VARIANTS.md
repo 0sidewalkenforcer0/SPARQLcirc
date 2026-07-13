@@ -69,10 +69,14 @@ check the circuit builds with correct WMC. All on the current jar; `WMC==PWE` sa
 - **Compound `alt`/inverse closure** — the engine **fail-fasts** (rc=1, the `90c3c3c` path-modifier guard)
   rather than silently mis-computing an unsupported compound path. Correct behaviour, but a coverage
   boundary: bounded single-predicate `p+`/`p*`/`p?` are supported; arbitrary compound-subpath closures not.
-- **Dense cyclic `friendOf+`** from a highly-connected WatDiv user (225 direct edges) **did not complete
-  the build** (rc=1) in this run — the dense cyclic component is a current scale limit of the iterative
-  path build; `friendOf+` from a sparse node is empty. So the *validated* `p+` coverage is the two Wikidata
-  predicates (small DAG-shaped hierarchies); dense cyclic graphs are future work.
+- **Dense cyclic `friendOf+`** from a highly-connected WatDiv user (225 direct edges) fails the build with
+  an RDF4J **`Missing parameter: query`** error during frontier expansion — i.e. a frontier-step tuple
+  query was dispatched empty/malformed. This is a **client-side frontier-query bug for large/dense
+  frontiers** (likely an over-length `VALUES` GET or an empty-frontier edge case), *not* a computational
+  scale limit: the Wikidata DAG paths (small frontiers) build fine, and the circuit itself stays
+  polynomial by construction (G1). A bug report for the actively-developed path code, left un-patched here
+  to avoid churn; `friendOf+` from a sparse node is empty (no reach). Validated `p+` coverage = the two
+  Wikidata predicates; dense cyclic graphs need the frontier-query fix first.
 
 **Summary:** validated on **`p+` (two predicates) and `p*` at 2.13 B scale with WMC == PWE**; fail-fasts
 (not mis-computes) on unsupported compound modifiers; dense cyclic closures are a scale limit.
