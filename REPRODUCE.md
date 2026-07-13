@@ -1,9 +1,9 @@
 # Reproducing the SPARQL_circ results
 
 This guide reproduces every claim in the paper from the code in this repository.
-The core pipeline (build a circuit, compile it, weighted-model-count it) is
-**zero-dependency** and runs natively on macOS (Apple Silicon) and Linux; the
-external baselines (GraphDB, PySDD, d4) are optional and clearly marked.
+Circuit construction and the reference correctness oracle are **zero-dependency**.
+The production compile/WMC path uses the native CUDD wheel and runs on macOS
+(Apple Silicon) and Linux; external baselines are optional and clearly marked.
 
 ## Prerequisites
 
@@ -11,12 +11,14 @@ external baselines (GraphDB, PySDD, d4) are optional and clearly marked.
 |---|---|
 | `engine/` (the rewriter) | Java 11+ and Maven (dependencies fetched from Maven Central) |
 | `reference/` core (circuit, ROBDD, WMC, factored, benchmarks) | Python 3.9+ (**standard library only**) |
+| Production CUDD compile/WMC | Python 3.11+; `pip install -r reference/requirements-production.txt` |
 | SDD baseline (optional) | `pip install pysdd` (Apache-2.0, arm64/x86 wheels) |
 | d4 d-DNNF baseline (optional) | a Linux/x86 box — see `reference/D4_ON_LINUX.md` |
 | Deployed-engine + real-KG runs (optional) | GraphDB 10.x running on `localhost:7200` |
 
-The core/CI path deliberately performs no `pip install`.  Optional oracle and
-compiler dependencies are listed separately in `reference/requirements-optional.txt`.
+The reference-oracle CI path deliberately performs no `pip install`. Production
+CUDD and research dependencies are separated into `requirements-production.txt`
+and `requirements-optional.txt`; CI also runs a dedicated native-CUDD job.
 
 For citable performance runs, `reference/experiment_timeouts.py` is the single source of truth:
 the query-side budget is **300 s**, and each OBDD or d4/d-DNNF compilation attempt is capped at
@@ -38,7 +40,7 @@ python3 reference/quick_verify.py       # expect: QUICK VERIFY ALL OK
 The smoke runner first exercises the standard-library reference checks and an
 offline `pqe.py` CLI regression. It then invokes `CircuitRun`, consumes the
 N-Triples emitted by that exact invocation, parses its structured answer bindings,
-compiles each fresh answer circuit to an ROBDD, and checks WMC against possible-world
+compiles each fresh answer circuit with the explicit Python oracle, and checks WMC against possible-world
 enumeration. Finally it runs the documented `pqe.py --jar ...` command end to end,
 so both the fat-JAR dispatcher and the user-facing construction branch are covered.
 It does **not** read the checked-in `reference/data/*.circuit.nt` fixtures. Both
@@ -46,7 +48,8 @@ It does **not** read the checked-in `reference/data/*.circuit.nt` fixtures. Both
 exception, so the same commands are safe CI gates.
 
 GitHub Actions repeats the standard-library-only Python checks on Python 3.9 and
-3.12, then performs a clean Maven build followed by the fresh-circuit smoke path.
+3.12, runs the CUDD shared/per-root contract on Python 3.11, then performs a clean
+Maven build followed by the fresh-circuit smoke path.
 No Maven wrapper JAR or generated circuit is committed.
 
 ## 2. Reproduce the evaluation tables
@@ -94,7 +97,8 @@ NPCS. It requires the original artifact, which is **not** included (see `NOTICE`
 
 ## Hardware notes
 
-- The default compiler `reference/compile_bdd.py` is a self-contained ROBDD — it needs
-  no native libraries and runs on Apple Silicon and x86 alike.
+- The production compiler is CUDD through `reference/compiler.py`; the CLI defaults
+  to one shared manager and accepts `--compile-mode per-root` for isolated managers.
+- `reference/compile_bdd.py` is the portable correctness oracle used by smoke tests.
 - `d4` bundles the PATOH partitioner, which is x86_64-only; run the d4 figure on a
   Linux/x86 machine (`D4_ON_LINUX.md`). PySDD stands in on Apple Silicon.

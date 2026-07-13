@@ -19,6 +19,9 @@ scope and its endpoint restrictions are documented in `TECHREPORT.md` §4.6.
   abstraction (`⊗→∧, ⊕→∨, ⊖(a,b)→a∧¬b`), memoized over the DAG; `pwe()` = ground
   truth by possible-world enumeration; `check()` compares them.
 - `demo.py` — the paper's drug running example (Fig. 1/2).
+- `compiler.py` — production CUDD adapter: one root map, shared/per-root modes,
+  batch WMC, and reproducible compilation metrics.
+- `compile_bdd.py` — dependency-free ROBDD correctness oracle.
 - `pqe.py` — user-facing JSON CLI for existing circuits or a fresh Java construction.
 - `tests.py` — correctness battery.
 
@@ -26,7 +29,9 @@ scope and its endpoint restrictions are documented in `TECHREPORT.md` §4.6.
 ```
 python3 demo.py      # reproduces Fig. 2: p1, p3 shared; probs match PWE
 python3 tests.py     # 171/171 answer-probability checks vs PWE
+python3 -m pip install -r requirements-production.txt
 python3 pqe.py --circuit data/drug.circuit.nt --probabilities data/drug.probabilities.json
+# default: shared multi-root CUDD; optional: --compile-mode per-root
 ```
 
 ## Status
@@ -109,13 +114,17 @@ structured `c:binding`/`c:var`/`c:val` nodes (which preserve the RDF term lossle
 `c:answer "A|var=value|…"` literal is a **debug label only** — it is `STR()`-based and *not* injective, so
 do not key or de-duplicate on it. Regression: `verify_answer_keys.py`; term-aware oracle: `verify_gallery.py`.
 
-## Knowledge compilation (d-DNNF via ROBDD) — done ✅
+## Production knowledge compilation (CUDD ROBDD) — done ✅
 
-`compile_bdd.py` compiles a shared provenance circuit into a **reduced ordered
-BDD** (a subclass of d-DNNF) and computes the answer probability by **weighted
-model counting linear in the compiled size** — replacing the 2^n possible-world
-enumeration. Pure Python, **zero dependencies, native on Apple Silicon / M4**
-(no c2d/d4 binary needed; those are optional for standard-format d-DNNF numbers).
+`compiler.py` compiles every answer root into a native **CUDD ROBDD** and computes
+all probabilities by weighted model counting linear in the union of compiled
+nodes. The default `shared` mode uses one CUDD manager, one source-gate memo, and
+one WMC memo for the complete output vector. `per-root` uses an isolated manager
+per answer while preserving the same deterministic global variable order. Roots
+remain distinct handles; they are never collapsed with OR/AND.
+
+`compile_bdd.py` implements the same Boolean abstraction in pure Python for
+correctness tests. It is explicitly an oracle, not a competing production backend.
 
 ```
 python3 bdd_demo.py
@@ -123,9 +132,17 @@ python3 bdd_demo.py
 # (2) scaling: shared-hub circuit, N=100 leaves -> 2^100 worlds, BDD-WMC in ~5 ms
 ```
 
-Note on platform: c2d is Linux-x86_64-only (needs Docker on M4); d4 builds from
-source on arm64; PySDD / `dd` are pip-installable and native. The bundled ROBDD
-avoids all of that.
+Run `python3 verify_compiler.py` to check shared/per-root parity, constant roots,
+MINUS/complemented edges, cross-root sharing, and a depth-2100 circuit. Without
+CUDD installed, this script still runs the oracle contract and reports the native
+backend as unavailable.
+
+`pqe.py` includes a `compilation` object in its JSON output. It records the
+backend/version and mode, root/manager/variable counts, deterministic order
+fingerprint, source gates/edges, compile and batch-WMC times, CUDD memory and
+reordering statistics, the union-reachable compiled nodes, the sum of per-root
+nodes, and their sharing difference. Compiled nodes are counted physically, so
+CUDD's complemented edge bit does not create a second node.
 
 ## Factored (multi-pass) construction — done ✅ (`factor.py`)
 
@@ -147,14 +164,12 @@ construction's degree-`#patterns`, while representing the same provenance.
 
 Construction (polynomial ✅) and *compilation* are decoupled — see next section.
 
-## Compilation to a compiled circuit for scalable WMC (`compile_bdd.py`, `compile_sdd.py`)
+## Production compiler and research baselines
 
-Two compilers turn a provenance circuit into a compiled form where WMC is one
-linear pass, replacing 2^n enumeration:
-- `compile_bdd.py` — a self-contained **ROBDD** (OBDD ⊆ d-DNNF), zero deps, native on M4.
-- `compile_sdd.py` — an **SDD** via PySDD, a *real structured d-DNNF-family compiler*
-  (arm64-native). Used because **d4 is x86_64-only on this Mac** (its bundled PATOH
-  partitioner has no arm64 build; d4 needs a Linux/x86 box or Rosetta toolchain).
+The system exposes one production compiler: CUDD through `compiler.py`. The
+choice visible to normal execution is compilation granularity (`shared` or
+`per-root`), not a portfolio of unrelated compilers. `compile_bdd.py`,
+`compile_sdd.py`, and d4 remain correctness/theory/evaluation baselines only.
 
 ### The precise picture (corrected — do not hang tractability on OBDD)
 
@@ -193,10 +208,10 @@ targets a treewidth-good decomposition that PySDD misses, and is the tool to sho
 the d-DNNF advantage empirically — run on a Linux/x86 box (d4 is x86_64-only here:
 bundled PATOH has no arm64 build).
 
-Practical upshot: on M4, the **bundled OBDD (with a structure-aware order) is the
-better compiler** for the accessible tractable-island instances; the *tractability
-claim* still rests on d-DNNF theory (not OBDD), and the crisp d-DNNF-vs-OBDD
-comparison is deferred to d4-at-scale on Linux.
+Practical upshot: the production path uses a mature native OBDD implementation,
+while the *tractability claim* must still be stated against d-DNNF theory (not
+OBDD). PySDD and d4 measurements evaluate that theory; they are not user-facing
+production choices.
 
 ## Engine-native factored construction — done ✅ (`factor_native.py`)
 

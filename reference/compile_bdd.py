@@ -1,7 +1,9 @@
-"""Knowledge compilation for probabilistic query evaluation: compile a shared
-provenance circuit into an ROBDD (a subclass of d-DNNF) and compute the answer
-probability by weighted model counting in time LINEAR in the compiled size --
-replacing the exponential possible-world enumeration.
+"""Bundled correctness oracle for probabilistic query evaluation.
+
+This module compiles a provenance circuit into a small pure-Python ROBDD and
+computes probabilities by weighted model counting.  It is intentionally kept
+dependency-free for differential tests and portable smoke checks.  The
+production multi-root interface lives in :mod:`compiler` and uses CUDD.
 
 Pure Python, zero dependencies (runs natively on Apple Silicon / M4).
 
@@ -10,6 +12,7 @@ A circuit is a dict  node -> one of
 (the format of `gates.Circuit.gates`; `circuit_io.py` loads engine N-Triples).
 """
 import itertools
+import math
 
 
 # ------------------------------- ROBDD ---------------------------------------
@@ -77,19 +80,41 @@ class ROBDD:
             seen.add(n); _, lo, hi = self.nodes[n]; st += [lo, hi]
         return len(seen)
 
+    def size_many(self, roots):
+        """Decision nodes reachable from all ``roots``, counted once."""
+        seen = set(); st = list(roots)
+        while st:
+            n = st.pop()
+            if n <= 1 or n in seen: continue
+            seen.add(n); _, lo, hi = self.nodes[n]; st += [lo, hi]
+        return len(seen)
+
     def wmc(self, root, P):
         """P(root = TRUE): one memoized bottom-up pass, linear in BDD size."""
+        return self.wmc_many({None: root}, P)[None]
+
+    def wmc_many(self, roots, P):
+        """WMC a ``key -> root`` map with one memo shared across all roots."""
         memo = {}
         def go(n):
             if n == self.FALSE: return 0.0
             if n == self.TRUE:  return 1.0
             if n in memo: return memo[n]
             lv, lo, hi = self.nodes[n]
-            p = P[self.ov[lv]]
+            variable = self.ov[lv]
+            try:
+                p = P[variable]
+            except KeyError as exc:
+                raise KeyError("missing probability for token %r" % (variable,)) from exc
+            if isinstance(p, bool) or not isinstance(p, (int, float)):
+                raise TypeError("probability for %r must be numeric" % (variable,))
+            p = float(p)
+            if not math.isfinite(p) or not 0.0 <= p <= 1.0:
+                raise ValueError("probability for %r is outside [0, 1]: %r" % (variable, p))
             r = (1 - p) * go(lo) + p * go(hi)
             memo[n] = r
             return r
-        return go(root)
+        return {key: go(root) for key, root in roots.items()}
 
 
 # ------------------------- compile a circuit into a BDD ----------------------

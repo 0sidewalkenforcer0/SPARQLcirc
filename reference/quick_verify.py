@@ -129,7 +129,7 @@ def _check_pqe_jar_cli() -> None:
     cmd = [
         sys.executable, str(REFERENCE / "pqe.py"), "--jar", str(JAR),
         "--data", str(DATA), "--query", str(QUERY_FILE),
-        "--probabilities", str(PROBABILITIES),
+        "--probabilities", str(PROBABILITIES), "--oracle",
     ]
     print("# exercising pqe.py --jar end-to-end entry point", flush=True)
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)

@@ -57,7 +57,8 @@ sparqlcirc/
 │   ├── gates.py             collision-resistant content-addressed circuit constructors
 │   ├── gamma.py             client-side circuit builder (bgp/union/join/optional/minus)
 │   ├── factor.py            factored construction (variable elimination)
-│   ├── compile_bdd.py       self-contained ROBDD + WMC (zero-dependency)
+│   ├── compiler.py          production CUDD batch compiler (shared/per-root)
+│   ├── compile_bdd.py       self-contained ROBDD correctness oracle
 │   ├── compile_sdd.py       SDD via PySDD (optional)
 │   ├── wmc.py               exact WMC + possible-world-enumeration oracle
 │   ├── bench*.py            evaluation: compactness, deployed-engine timings
@@ -87,14 +88,16 @@ java -jar target/npcs-rewrite.jar circuit \
 # plan.txt = the CONSTRUCT plan;  circuit.nt = the materialized circuit (N-Triples)
 ```
 
-**Compile + weighted model count the circuit generated immediately above** (Python 3.9+,
-standard library only):
+**Compile + weighted model count the circuit generated immediately above** (production:
+Python 3.11+ with the native CUDD wheel):
 
 ```bash
 # continuing from engine/
 cd ../reference
+python3 -m pip install -r requirements-production.txt
 python3 pqe.py --circuit ../engine/circuit.nt \
   --probabilities data/drug.probabilities.json
+# optional granularity switch: --compile-mode per-root (default: shared)
 python3 tests.py          # independent 171-case reference-semantics battery
 ```
 
@@ -111,6 +114,9 @@ python3 pqe.py --jar ../engine/target/npcs-rewrite.jar \
 To evaluate an existing circuit, replace the `--jar/--data/--query` options with
 `--circuit data/drug.circuit.nt`. Output is JSON with term-aware RDF bindings,
 probabilities, and compiled BDD sizes.
+
+The bundled pure-Python ROBDD is a correctness oracle, not a second production
+compiler. Dependency-free smoke tests invoke it explicitly with `--oracle`.
 
 For the complete clean-build regression used by CI, run `python3 reference/quick_verify.py`
 from the repository root after packaging the JAR.

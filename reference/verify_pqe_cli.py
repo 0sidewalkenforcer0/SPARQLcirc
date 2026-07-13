@@ -26,23 +26,35 @@ def main():
         probabilities.write_text(json.dumps({"urn:test:x": 0.37}), encoding="utf-8")
         r = subprocess.run(
             [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
-             "--probabilities", str(probabilities)],
+             "--probabilities", str(probabilities), "--oracle",
+             "--compile-mode", "shared"],
+            check=True, text=True, stdout=subprocess.PIPE,
+        )
+        per_root = subprocess.run(
+            [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
+             "--probabilities", str(probabilities), "--oracle",
+             "--compile-mode", "per-root"],
             check=True, text=True, stdout=subprocess.PIPE,
         )
         probabilities.write_text("{}", encoding="utf-8")
         missing = subprocess.run(
             [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
-             "--probabilities", str(probabilities)],
+             "--probabilities", str(probabilities), "--oracle"],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         if (missing.returncode == 0 or "missing probabilities" not in missing.stderr
                 or "Traceback" in missing.stderr):
             raise AssertionError(f"CLI did not report missing weights cleanly: {missing.stderr!r}")
     result = json.loads(r.stdout)
+    per_root_result = json.loads(per_root.stdout)
     row = result["answers"][0]
     if (result["answer_count"] != 1
             or row["binding"]["z"] != {"type": "iri", "value": "urn:test:answer"}
-            or abs(row["probability"] - 0.37) >= 1e-12):
+            or abs(row["probability"] - 0.37) >= 1e-12
+            or result["compilation"]["backend"] != "oracle"
+            or result["compilation"]["mode"] != "shared"
+            or per_root_result["compilation"]["mode"] != "per-root"
+            or abs(per_root_result["answers"][0]["probability"] - row["probability"]) >= 1e-12):
         raise AssertionError(f"unexpected CLI result: {result!r}")
     print("pqe CLI: ALL OK")
 
