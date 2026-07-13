@@ -13,6 +13,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -150,6 +155,46 @@ public class CircuitRewriterTest {
 
             assertNoFactoredMetadata(con);
         } finally {
+            repo.shutDown();
+        }
+    }
+
+    @Test
+    public void concurrentFactoredSessionsAreIsolatedAndCleaned() throws Exception {
+        Repository repo = new SailRepository(new MemoryStore());
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            try (RepositoryConnection setup = repo.getConnection()) {
+                reify(setup, "urn:r:left-a", "urn:s", "urn:p", "urn:a");
+                reify(setup, "urn:r:left-b", "urn:s", "urn:p", "urn:b");
+                reify(setup, "urn:r:right-a", "urn:a", "urn:q", "urn:x");
+                reify(setup, "urn:r:right-b", "urn:b", "urn:q", "urn:y");
+            }
+            String query = "SELECT ?z WHERE { <urn:s> <urn:p> ?mid . ?mid <urn:q> ?z . }";
+            CountDownLatch start = new CountDownLatch(1);
+            Future<Model> first = workers.submit(() -> {
+                try (RepositoryConnection con = repo.getConnection()) {
+                    start.await();
+                    return executePlan(con, query, ConstructionMode.FACTORED, "concurrent-one");
+                }
+            });
+            Future<Model> second = workers.submit(() -> {
+                try (RepositoryConnection con = repo.getConnection()) {
+                    start.await();
+                    return executePlan(con, query, ConstructionMode.FACTORED, "concurrent-two");
+                }
+            });
+            start.countDown();
+            Model firstCircuit = first.get(30, TimeUnit.SECONDS);
+            Model secondCircuit = second.get(30, TimeUnit.SECONDS);
+            assertEquals("session-local feedback must produce identical public circuits",
+                    firstCircuit, secondCircuit);
+            assertEquals(2, answerRoots(firstCircuit).size());
+            try (RepositoryConnection audit = repo.getConnection()) {
+                assertNoFactoredMetadata(audit);
+            }
+        } finally {
+            workers.shutdownNow();
             repo.shutDown();
         }
     }

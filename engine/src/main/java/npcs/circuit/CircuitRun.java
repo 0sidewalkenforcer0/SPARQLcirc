@@ -203,8 +203,12 @@ public final class CircuitRun {
                     }
                 }
                 if (step.feedback() && !messages.isEmpty()) {
-                    con.add(messages);
+                    // Register the intended cleanup set *before* the remote
+                    // write.  A server may commit an ADD and then drop the
+                    // response; recording afterwards would leak that session's
+                    // rows when con.add() reports the transport failure.
                     workspace.addAll(messages);
+                    con.add(messages);
                 }
             }
         } finally {
