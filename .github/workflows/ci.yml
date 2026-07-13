@@ -44,7 +44,7 @@ jobs:
       - name: Install native CUDD wrapper
         run: python -m pip install -r reference/requirements-production.txt
       - name: Shared/per-root and complemented-edge parity
-        run: python reference/verify_compiler.py
+        run: python reference/verify_compiler.py --require-cudd
 
   fresh-engine-circuit:
     name: Maven build and fresh circuit to WMC

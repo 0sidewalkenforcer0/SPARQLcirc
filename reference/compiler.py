@@ -353,7 +353,7 @@ def _manager_metrics(backend: str, groups: Sequence[_ManagerGroup]) -> Dict[str,
     if backend != "cudd" or not groups:
         return {
             "manager_memory_bytes": None,
-            "manager_peak_live_nodes": None,
+            "manager_peak_live_nodes_upper_bound": None,
             "manager_peak_live_nodes_max": None,
             "manager_current_nodes": None,
             "manager_reorderings": 0,
@@ -382,7 +382,7 @@ def _manager_metrics(backend: str, groups: Sequence[_ManagerGroup]) -> Dict[str,
             reorder_seconds += float(stats.get("reordering_time", 0.0))
     return {
         "manager_memory_bytes": int(memory),
-        "manager_peak_live_nodes": peak_live_sum,
+        "manager_peak_live_nodes_upper_bound": peak_live_sum,
         "manager_peak_live_nodes_max": peak_live_max,
         "manager_current_nodes": current_nodes,
         "manager_reorderings": reorderings,

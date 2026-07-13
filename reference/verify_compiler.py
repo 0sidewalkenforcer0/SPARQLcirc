@@ -1,6 +1,8 @@
 """Offline regression for the production multi-root compiler contract."""
 from __future__ import annotations
 
+import argparse
+
 import compiler
 import compile_bdd
 
@@ -55,7 +57,7 @@ def _check_batch(batch, expected, backend, mode):
     if batch.metrics["wmc_visited_nodes"] > batch.metrics["compiled_nodes_sum_roots"]:
         raise AssertionError("batch WMC visited too many physical nodes")
     if backend == "cudd":
-        peak_sum = batch.metrics["manager_peak_live_nodes"]
+        peak_sum = batch.metrics["manager_peak_live_nodes_upper_bound"]
         peak_max = batch.metrics["manager_peak_live_nodes_max"]
         if peak_sum < peak_max or batch.metrics["manager_current_nodes"] < 0:
             raise AssertionError("invalid aggregate manager metrics: %r" % (batch.metrics,))
@@ -157,7 +159,13 @@ def _negative_checks():
             raise AssertionError("invalid probability was accepted: %r" % (bad,))
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--require-cudd", action="store_true",
+        help="fail instead of skipping when the native production backend is unavailable",
+    )
+    args = parser.parse_args(argv)
     order = compiler.deterministic_order(CIRCUIT, ROOTS)
     if order != ("urn:test:x", "urn:test:y", "urn:test:z"):
         raise AssertionError("unexpected deterministic order: %r" % (order,))
@@ -172,6 +180,8 @@ def main():
         _check_backend("cudd", expected)
         _check_deep_cudd()
     except compiler.BackendUnavailable as exc:
+        if args.require_cudd:
+            parser.exit(1, "compiler: CUDD REQUIRED but unavailable (%s)\n" % (exc,))
         print("compiler: oracle OK; CUDD unavailable (%s)" % (exc,))
     else:
         print("compiler: oracle + CUDD shared/per-root/complement parity ALL OK")
