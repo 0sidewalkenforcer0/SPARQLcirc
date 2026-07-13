@@ -10,7 +10,7 @@ timing table (`reference/CANONICAL_TIMINGS.md`, current HEAD, post-`PathIsoSeq`)
 | TPC-H Q3 | TPC-H SF 0.01 (1.26 M) | 14 908 | 3 097 ms | 3 330 ms* | 35 ms | **6.45 s** |
 | Wikidata WD-path (`P279+`) | 60 M P279 subgraph (from 2.13 B) | 16 | 2 158 ms | 1 ms | 0 ms | **2.16 s** |
 
-\* Q3 "compile" is the pure-Python **variable ordering** over ~45 k tokens (removable); the ROBDD build + WMC are tiny. WMC ≤ 36 ms everywhere.
+\* Q3 "compile" is the current pure-Python **variable ordering** over ~45 k tokens (an optimized ordering / native compiler is not yet measured); the ROBDD build + WMC are tiny. WMC ≤ 36 ms everywhere.
 
 ## T2 · vs ProvSQL (modified PostgreSQL) — same exact probabilities, no engine fork
 **TPC-H Q3-SPJ, per c_mktsegment (G4, 5-run median):**
@@ -80,7 +80,7 @@ d4 == OBDD on **32/32** instances where both completed; d4 additionally compiled
 - **G7:** SPARQL-star reification = 1 triple/fact vs Standard 3× (1.9× fewer bytes); circuit identical.
 
 ## T8 · Scope / real-KG reach
-- **E8 Wikidata 2.13 B:** **31/41** single queries build directly on the 2.13 B corpus (9 too-large + 1 OOM); largest circuit ~772 k gates.
+- **E8 Wikidata 2.13 B:** **31/41** single queries build directly on the 2.13 B corpus (9 too-large + 1 OOM); largest ≈ **772 k derivations** (≈ 1 M gates).
 - **G8:** WD-path over the **60 M P279/P131 subgraph** (extracted from the 2.13 B corpus) — peak RSS **166 MB**, 2.3 s.
 - **G10:** WatDiv Complex (C1, 8-pattern) builds at 10 M — full L/S/F/C taxonomy covered.
-- **Property paths** (the operator class NPCS/SPARQLprov/ProvSQL do **not** support): single-predicate `p+`/`p*`/`p?` validated (incl. `P279+`, `P131+` at scale, WMC==PWE); compound closures gallery-only / partly fail-fast; frontier IRI-only; dense cyclic needs a GET→POST transport fix.
+- **Property paths** (the operator class NPCS/SPARQLprov/ProvSQL do **not** support): single-predicate `p+`/`p*`/`p?` validated (incl. `P279+`, `P131+` at scale, WMC==PWE); compound closures gallery-only / partly fail-fast; frontier IRI-only; dense cyclic `friendOf+` currently fails (suspected request-size/transport issue; root cause unconfirmed).

@@ -1,8 +1,8 @@
 """Generate the presentation figures from the committed experiment CSVs.
 
 Reproducible: reads reference/*.csv and reference/watdiv/*.csv (the actual committed results) and writes
-PNGs into presentation/figures/. The one non-CSV source is the canonical 5-run timing table (it lives in
-reference/CANONICAL_TIMINGS.md); its 3 rows are transcribed below with a provenance comment.
+PNGs into presentation/figures/. Every figure reads a committed CSV (e.g. fig6 reads reference/g4_rigor.csv,
+the 5-run breakdown) — no numbers are hardcoded.
 
     cd presentation && python3 make_figures.py
 """
