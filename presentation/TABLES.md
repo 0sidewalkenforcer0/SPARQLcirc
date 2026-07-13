@@ -65,7 +65,7 @@ d4 == OBDD on **32/32** instances where both completed; d4 additionally compiled
 | 500 | 4.3 | 26.7 | 6.2× |
 | 1 000 | 6.8 | 59.5 | **8.7×** |
 
-## T6 · Construction on an unmodified engine (E3) — build overhead vs plain query
+## T6 · Construction on an unmodified engine (E3) — CONSTRUCT vs NPCS provenance SELECT
 | query | 10 M build (overhead) | 100 M build (overhead) |
 |---|--:|--:|
 | S-star | 31 ms (3.2×) | 515 ms (6.8×) |

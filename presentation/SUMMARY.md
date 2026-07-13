@@ -22,17 +22,17 @@ Four claims the evaluation defends:
 | Exp | The question it answers | Headline result (current numbers) | Claim | Fig |
 |---|---|---|:--:|:--:|
 | **E1** correctness | Are the probabilities **exact**? | WMC == possible-world enumeration, exact for every operator; 171/171 reference checks | C | — |
-| **E2** compactness | *How much* smaller is the shared circuit than per-answer strings, and **when**? | grows with depth: shallow ≈ 0.4–0.9× (≈ strings), **deep-12 = 201×** | B | 3 |
-| **E3** construction scaling | Can an **unmodified** engine build it, at what overhead, does it scale? | build ≈ 1.6–6.8× plain-query; S-star 31 ms @10 M → 515 ms @100 M (near-linear) | A | — |
-| **E4** compile vs treewidth | Is compile cost governed by **treewidth**, and does a real d-DNNF beat our OBDD? | bounded-tw: d-DNNF ≤ 5 270 nodes while OBDD hits 299 k then **hits the 120 s timeout** (≥126 tokens); growing-tw both grow exponentially, d-DNNF smaller from tw≈5; **d4 == OBDD on 32/32 where both completed, + 3 more where OBDD timed out** | D | 1,2 |
-| **E6** non-monotone | MINUS at scale — correct + feasible on a stock engine? | ⊖ built at 10 M/100 M; WMC == PWE (Δ ≤ 1.1e-16); baselines can't produce these probabilities | C | — |
-| **E8** Wikidata 2.13 B | Full fragment on a **billion-triple real KG**? | **31/41** single queries build directly on the 2.13 B corpus (9 too-large + 1 OOM); up to ≈ **772 k derivations** (≈ 1 M gates) | A,B,C | — |
+| **E2** compactness | *How much* smaller is the shared circuit than per-answer strings, and **when**? | grows with depth: shallow ≈ 0.4–0.9× (≈ strings), **deep-12 = 201×** | B | 2a |
+| **E3** construction scaling | Can an **unmodified** engine build it, at what overhead, does it scale? | circuit CONSTRUCT ≈ 1.6–6.8× the clean-room NPCS-compatible SELECT (the legacy `plain_ms` name is misleading); S-star 31 ms @10 M → 515 ms @100 M | A | 3a–b |
+| **E4** compile vs treewidth | Is compile cost governed by **treewidth**, and does a real d-DNNF beat our OBDD? | bounded-tw: d-DNNF ≤ 5 270 nodes while OBDD hits 299 k then **hits the 120 s timeout** (≥126 tokens); growing-tw both grow exponentially, d-DNNF smaller from tw≈5; **d4 == OBDD on 32/32 where both completed, + 3 more where OBDD timed out** | D | 1 |
+| **E6** non-monotone | MINUS at scale — correct + feasible on a stock engine? | ⊖ built at 10 M/100 M; WMC == PWE (Δ ≤ 1.1e-16); baselines can't produce these probabilities | C | 3a–b |
+| **E8** Wikidata 2.13 B | Full fragment on a **billion-triple real KG**? | **31/41** single queries build directly on the 2.13 B corpus (9 too-large + 1 OOM); up to ≈ **772 k derivations** (≈ 1 M gates) | A,B,C | 3c |
 | **E10** multi-engine | Is the circuit a property of the **rewrite**, not the engine? | **byte-identical** circuit on **4 engines** — GraphDB / Oxigraph / QLever / MillenniumDB (Java, Rust, C++), 13 shapes × 4 = 52 checks | A | — |
-| **E11** shared vs per-answer | Same answers as per-answer how-provenance, but **cheaper**? | identical probs (Δ = 0); shared Θ(N+S) vs per-answer Θ(N·S) → **~9× @ N=1000**, up to ~29× (layered-4×4) | B,C | 4 |
-| **G2b** NPCS vs ours (honest) | Is our circuit smaller than NPCS strings? | on **selective** queries **no** — ours ~1.7× more elements, ~12× more bytes. Compactness is a *deep/reconvergent* property (E2/E11), not universal | B(–) | — |
-| **G3** end-to-end latency | Where does the PQE time go? | S-star 12 ms · TPC-H Q3 **6.45 s** (construct 3.10 + compile 3.33 + **WMC 0.035**) · WD-path **2.16 s** (compile ~1 ms). **WMC ≤ 36 ms everywhere**; Q3 dominated by the pure-Python variable ordering | A | 6 |
-| **G4 / G2a / R8.3** vs ProvSQL | vs the strongest baseline — same result, what latency? | **exact parity, max_abs_error = 0.0**; TPC-H Q3 ours faster on all 5 segments (3.5–6.4 s vs 5.0–7.6 s); reconvergent: ours faster @SF0.01, ProvSQL @SF0.1 | A,C | 5 |
-| **G6** d4 on real circuits | Do **three independent evaluation routes** (OBDD, PWE, d4) over the **same** emitted circuit agree? | OBDD == PWE == d4, **26/26 sampled answer circuits** (Q3: 8 of its answers; incl. all 16 property paths) | C | 7 |
+| **E11** shared vs per-answer | Same answers as per-answer how-provenance, but **cheaper**? | identical probs (Δ = 0); shared Θ(N+S) vs per-answer Θ(N·S) → **~9× @ N=1000**, up to ~29× (layered-4×4) | B,C | 2b |
+| **G2b** NPCS reimplementation vs ours (honest) | Is our circuit smaller than per-answer NPCS-style strings? | on **selective** queries **no** — ours ~1.7× more elements, ~12× more bytes. Compactness is a *deep/reconvergent* property (E2/E11), not universal | B(–) | 2c–d |
+| **G3** end-to-end latency | Where does the PQE time go? | S-star 12 ms · TPC-H Q3 **6.45 s** (construct 3.10 + compile 3.33 + **WMC 0.035**) · WD-path **2.16 s** (compile ~1 ms). **WMC ≤ 36 ms everywhere**; Q3 dominated by the pure-Python variable ordering | A | 4b |
+| **G4 / G2a / R8.3** vs ProvSQL | vs the strongest baseline — same result, what latency? | **exact parity, max_abs_error = 0.0**; TPC-H Q3 ours faster on all 5 segments (3.5–6.4 s vs 5.0–7.6 s); reconvergent: ours faster @SF0.01, ProvSQL @SF0.1 | A,C | 4a |
+| **G6** d4 on real circuits | Do **three independent evaluation routes** (OBDD, PWE, d4) over the **same** emitted circuit agree? | OBDD == PWE == d4, **26/26 sampled answer circuits** (Q3: 8 of its answers; incl. all 16 property paths) | C | T1 |
 | **G7** reification | Does the reification scheme matter? | SPARQL-star = 1 triple/fact vs Standard 3× (1.9× fewer bytes); **circuit identical either way** | A | — |
 | **G8** space/memory | Footprint at billion-triple scale? | WD-path over the 60 M P279/P131 subgraph (from the 2.13 B corpus): peak RSS **166 MB**, 2.3 s | A | — |
 | **G10** complex class | Does the WatDiv **Complex (C)** class build? | C1 (8-pattern) @10 M: 8 answers, 168 gates+edges, 4.5 s → full L/S/F/C taxonomy | A | — |
@@ -40,37 +40,31 @@ Four claims the evaluation defends:
 
 ---
 
-## Figures (in `figures/`)
+## Paper figures (PDF + 300-dpi PNG in `figures/`)
 
-1. **`fig1_E4_bounded_treewidth`** — the flagship. At fixed tw=2 the fixed-order OBDD blows up and **hits the
-   120 s timeout** past ~126 tokens, while the d-DNNF stays polynomial. *This motivates an order-robust
-   d-DNNF compiler* (the OBDD is itself a knowledge compiler — the issue is its fixed variable order).
-2. **`fig2_E4_growing_treewidth`** — as treewidth grows, **both** compiled forms grow exponentially
-   (2^Θ(tw) — the honest limit); d-DNNF becomes smaller from tw≈5. Tractability is governed by tw, as predicted.
-3. **`fig3_E2_compactness`** — the shared circuit ≈ per-answer strings on shallow queries and reaches **201×**
-   on deep ones. The compactness claim is *conditional on sharing* — stated honestly.
-4. **`fig4_E11_shared_vs_peranswer`** — one shared compile (Θ(N+S)) vs per-answer (Θ(N·S)): **same
-   probabilities**, growing time win (~9× at N=1000). This is the "we do PQE, they can't / would pay N×" point.
-5. **`fig5_provsql_headtohead`** — vs ProvSQL (modified PostgreSQL) on TPC-H Q3: comparable/slightly-faster
-   latency, **no engine fork**. (This chart is *latency* only; exact per-answer probability parity is a
-   separate result — R8.3, `max_abs_error = 0`.)
-6. **`fig6_G3_pqe_breakdown`** — end-to-end latency: **WMC is negligible in all three workloads (≤ 36 ms)**;
-   TPC-H Q3 is dominated by the current *pure-Python variable ordering* (a native/linear-ordering
-   implementation should cut it — not yet measured).
-7. **`fig7_G6_correctness`** — OBDD = PWE = d4 on **26 sampled answer circuits** (incl. every property-path
-   answer), max error 0: correctness on the actual workloads via three independent evaluation routes over
-   the same emitted circuit.
+1. **`paper_fig1_compilation`** — two-panel E4 figure: fixed-treewidth timeout behavior and growing-treewidth
+   behavior use the same axes and compiler encoding.
+2. **`paper_fig2_sharing`** — a SPARQLprov/NPCS-style four-panel story: synthetic reconvergence, shared
+   compilation, and an honest direct NPCS comparison in construction time and serialized output.
+3. **`paper_fig3_construction`** — grouped query-template comparisons on WatDiv 10M/100M (S/F/L/M),
+   plus the real Wikidata 2.13B reach/scale scatter.
+4. **`paper_fig4_pqe`** — grouped ProvSQL latency comparison and a normalized SPARQLprov-style
+   decomposition of construction, compilation, and WMC time.
+5. **`paper_table1_validation`** — OBDD/PWE/d4 maximum-error table for the 26 sampled answer circuits.
+
+Full design rationale, source-paper comparison, and manuscript-ready captions are in
+[`PAPER_FIGURES.md`](PAPER_FIGURES.md). The older `fig1_...fig7_...` PNGs are retained as slide artifacts;
+the `paper_...` PDF files are the manuscript figures.
 
 ---
 
-## Suggested 6-figure narrative for the talk
+## Suggested paper results narrative
 
-1. **Setup / correctness** — Fig 7: exact on real circuits — three evaluation routes over the same circuit agree.
-2. **Why a circuit (compactness)** — Fig 3: shared circuit vs strings, up to 201× on deep queries.
-3. **Why PQE is feasible (shared compile)** — Fig 4: one compile for all answers, ~9× vs per-answer.
-4. **The theory (treewidth governs cost)** — Fig 1 + Fig 2: d-DNNF beats OBDD at bounded tw; both wall at growing tw.
-5. **Vs the strongest baseline** — Fig 5: same exact PQE as ProvSQL, no engine fork.
-6. **End-to-end reality** — Fig 6: WMC is negligible; the residual cost is the current Python ordering step.
+1. **Can a stock SPARQL engine construct the representation?** — Fig. 3.
+2. **When does sharing pay, and when does it not?** — Fig. 2.
+3. **Does compilation follow the predicted structural boundary?** — Fig. 1.
+4. **Does the full PQE pipeline remain competitive with ProvSQL?** — Fig. 4.
+5. **Do independent evaluators agree on the emitted circuits?** — Table 1.
 
 ---
 

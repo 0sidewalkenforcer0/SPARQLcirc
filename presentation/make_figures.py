@@ -1,184 +1,605 @@
-"""Generate the presentation figures from the committed experiment CSVs.
+"""Generate the paper figures from the committed experiment CSVs.
 
-Reproducible: reads reference/*.csv and reference/watdiv/*.csv (the actual committed results) and writes
-PNGs into presentation/figures/. Every figure reads a committed CSV (e.g. fig6 reads reference/g4_rigor.csv,
-the 5-run breakdown) — no numbers are hardcoded.
+The plots follow the visual grammar used by the SPARQLprov, NPCS, and ProvSQL
+evaluations: one experimental question per figure, small multiples for changing
+conditions, explicit timeout/failure marks, log scales for wide runtime/size
+ranges, and captions kept outside the artwork.  Every plotted value comes from
+a committed CSV under ``reference/``.
+
+Outputs are written as vector PDF plus 300-dpi PNG:
 
     cd presentation && python3 make_figures.py
 """
-import os, csv
+
+import csv
+import os
+
+os.environ.setdefault("MPLCONFIGDIR", os.path.join("/tmp", "sparqlcirc-matplotlib"))
+
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-REF  = os.path.join(HERE, "..", "reference")
-OUT  = os.path.join(HERE, "figures")
+REF = os.path.join(HERE, "..", "reference")
+OUT = os.path.join(HERE, "figures")
 os.makedirs(OUT, exist_ok=True)
 
-plt.rcParams.update({"font.size": 11, "axes.grid": True, "grid.alpha": 0.30,
-                     "figure.dpi": 140, "savefig.bbox": "tight", "axes.axisbelow": True})
-OURS, BASE, ALT = "#1f77b4", "#d62728", "#2ca02c"      # ours=blue, baseline/OBDD=red, d-DNNF/aux=green
+# Okabe-Ito: color-blind safe, with redundant marker/line/hatch encodings.
+BLUE = "#0072B2"
+SKY = "#56B4E9"
+GREEN = "#009E73"
+ORANGE = "#E69F00"
+VERMILLION = "#D55E00"
+PURPLE = "#CC79A7"
+BLACK = "#222222"
+GRAY = "#6B6B6B"
+LIGHT_GRAY = "#D9D9D9"
+
+plt.rcParams.update(
+    {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Arial", "Helvetica"],
+        "font.size": 7.4,
+        "axes.labelsize": 8.0,
+        "axes.titlesize": 8.2,
+        "xtick.labelsize": 7.0,
+        "ytick.labelsize": 7.0,
+        "legend.fontsize": 6.8,
+        "axes.linewidth": 0.7,
+        "lines.linewidth": 1.25,
+        "lines.markersize": 4.2,
+        "grid.color": "#D8DEE5",
+        "grid.linewidth": 0.45,
+        "grid.alpha": 0.75,
+        "axes.axisbelow": True,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.025,
+    }
+)
 
 
 def rd(rel):
-    with open(os.path.join(REF, rel)) as f:
-        return list(csv.DictReader(f))
-
-def save(fig, name):
-    p = os.path.join(OUT, name)
-    fig.savefig(p); plt.close(fig); print("wrote", os.path.relpath(p, HERE))
+    with open(os.path.join(REF, rel), encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
 
 
-# ---- Fig 1: E4 — compile size vs #tokens at BOUNDED treewidth (tw=2): OBDD explodes+times out, d-DNNF flat
-def fig_e4_bounded():
-    r = [x for x in rd("watdiv/e4_results.csv") if x["family"] == "bounded_tw2"]
-    n = [int(x["n_tokens"]) for x in r]
-    dd = [int(x["ddnnf_nodes"]) for x in r]
-    obdd_n = [int(x["n_tokens"]) for x in r if x["obdd_size"]]
-    obdd = [int(x["obdd_size"]) for x in r if x["obdd_size"]]
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    ax.plot(obdd_n, obdd, "o-", color=BASE, label="OBDD (fixed-order)")
-    ax.plot(n, dd, "s-", color=ALT, label="d-DNNF (d4)")
-    tout = min(int(x["n_tokens"]) for x in r if x["status"] == "obdd-timeout")
-    ax.axvline(tout, color=BASE, ls=":", alpha=0.6)
-    ax.text(tout, ax.get_ylim()[1] * 0.4, "  OBDD hits the\n  120 s timeout →", color=BASE, fontsize=9, va="center")
-    ax.set_yscale("log"); ax.set_xscale("log")
-    ax.set_xlabel("circuit size  (#tokens)"); ax.set_ylabel("compiled size  (nodes, log)")
-    ax.set_title("E4 — bounded treewidth (tw=2): d-DNNF stays polynomial while the\nfixed-order OBDD blows up (motivates order-robust d-DNNF compilation)")
-    ax.legend(loc="lower right")
-    save(fig, "fig1_E4_bounded_treewidth.png")
+def save(fig, stem):
+    """Save vector artwork for the paper and a high-resolution preview."""
+    fig.savefig(
+        os.path.join(OUT, f"{stem}.pdf"),
+        metadata={"Creator": "sparqlcirc/presentation/make_figures.py"},
+        facecolor="white",
+        transparent=False,
+    )
+    fig.savefig(os.path.join(OUT, f"{stem}.png"), dpi=300, facecolor="white", transparent=False)
+    plt.close(fig)
+    print("wrote", os.path.join("figures", f"{stem}.pdf/.png"))
 
 
-# ---- Fig 2: E4 — compile size vs treewidth (growing tw): both grow, d-DNNF below OBDD
-def fig_e4_growing():
-    r = [x for x in rd("watdiv/e4_results.csv") if x["family"] == "growing_tw_layer"]
-    tw = [int(x["tw"]) for x in r]
-    obdd = [int(x["obdd_size"]) for x in r]
-    dd = [int(x["ddnnf_nodes"]) for x in r]
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    ax.plot(tw, obdd, "o-", color=BASE, label="OBDD")
-    ax.plot(tw, dd, "s-", color=ALT, label="d-DNNF (d4)")
+def style_ax(ax, grid="y"):
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(True, axis=grid)
+    ax.tick_params(direction="out", length=2.5, width=0.6)
+
+
+def panel_label(ax, label):
+    ax.text(
+        -0.12,
+        1.10,
+        label,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9.2,
+        fontweight="bold",
+    )
+
+
+def grouped_columns(
+    ax,
+    x,
+    left,
+    right,
+    left_label,
+    right_label,
+    *,
+    log=False,
+    width=0.34,
+):
+    """Draw the compact, hatched system comparison used in the baseline papers."""
+    bottom = 1.0 if log else 0.0
+    left_height = np.asarray(left, dtype=float) - bottom
+    right_height = np.asarray(right, dtype=float) - bottom
+    bars_left = ax.bar(
+        x - width / 2,
+        left_height,
+        width,
+        bottom=bottom,
+        color="white",
+        edgecolor=GRAY,
+        linewidth=0.85,
+        hatch="///",
+        label=left_label,
+        zorder=3,
+    )
+    bars_right = ax.bar(
+        x + width / 2,
+        right_height,
+        width,
+        bottom=bottom,
+        color=BLUE,
+        edgecolor=BLACK,
+        linewidth=0.65,
+        hatch="...",
+        label=right_label,
+        zorder=3,
+    )
+    return bars_left, bars_right
+
+
+def fig_compilation():
+    """E4: compiler size at fixed and growing treewidth."""
+    rows = rd("watdiv/e4_results.csv")
+    bounded = [x for x in rows if x["family"] == "bounded_tw2"]
+    growing = [x for x in rows if x["family"] == "growing_tw_layer"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.15, 2.65))
+
+    ax = axes[0]
+    all_n = np.array([int(x["n_tokens"]) for x in bounded])
+    dd = np.array([int(x["ddnnf_nodes"]) for x in bounded])
+    obdd_rows = [x for x in bounded if x["obdd_size"]]
+    timeout_rows = [x for x in bounded if x["status"] == "obdd-timeout"]
+    ax.plot(
+        [int(x["n_tokens"]) for x in obdd_rows],
+        [int(x["obdd_size"]) for x in obdd_rows],
+        color=VERMILLION,
+        marker="o",
+        label="fixed-order OBDD",
+    )
+    ax.plot(all_n, dd, color=BLUE, marker="s", linestyle="--", label="d-DNNF (d4)")
+    timeout_y = 7.2e5
+    ax.scatter(
+        [int(x["n_tokens"]) for x in timeout_rows],
+        [timeout_y] * len(timeout_rows),
+        color=VERMILLION,
+        marker="v",
+        s=28,
+        label="OBDD timeout (120 s)",
+        zorder=4,
+    )
+    ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("treewidth  tw"); ax.set_ylabel("compiled size  (nodes, log)")
-    ax.set_title("E4 — growing treewidth: both compiled forms grow exponentially in tw;\nd-DNNF becomes smaller from tw ≈ 5")
-    ax.legend(loc="upper left")
-    save(fig, "fig2_E4_growing_treewidth.png")
+    ax.set_ylim(3, 1.05e6)
+    ax.set_xlabel("Input circuit size (tokens)")
+    ax.set_ylabel("Compiled size (nodes)")
+    ax.set_title("Fixed treewidth (tw = 2)", pad=4)
+    style_ax(ax)
+    panel_label(ax, "a")
+
+    ax = axes[1]
+    tw = np.array([int(x["tw"]) for x in growing])
+    ax.plot(
+        tw,
+        [int(x["obdd_size"]) for x in growing],
+        color=VERMILLION,
+        marker="o",
+        label="fixed-order OBDD",
+    )
+    ax.plot(
+        tw,
+        [int(x["ddnnf_nodes"]) for x in growing],
+        color=BLUE,
+        marker="s",
+        linestyle="--",
+        label="d-DNNF (d4)",
+    )
+    ax.set_yscale("log")
+    ax.set_xlabel("Treewidth")
+    ax.set_ylabel("Compiled size (nodes)")
+    ax.set_title("Growing treewidth (depth = 4)", pad=4)
+    ax.set_xticks(tw)
+    style_ax(ax)
+    panel_label(ax, "b")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 1.04))
+    fig.subplots_adjust(left=0.085, right=0.995, bottom=0.20, top=0.82, wspace=0.31)
+    save(fig, "paper_fig1_compilation")
 
 
-# ---- Fig 3: E2 — compactness (string/circuit) grows with #derivations (sharing)
-def fig_e2_compactness():
-    r = rd("bench.csv")
-    lay = [x for x in r if x["instance"].startswith("layered")]
-    deep = [x for x in r if x["instance"].startswith("deep")]
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    ax.plot([int(x["derivations"]) for x in lay], [float(x["sharing"]) for x in lay],
-            "o-", color=OURS, label="layered (width 2–8)")
-    ax.plot([int(x["derivations"]) for x in deep], [float(x["sharing"]) for x in deep],
-            "s-", color=ALT, label="deep (depth 4–12)")
-    ax.axhline(1.0, color="gray", ls="--", alpha=0.6); ax.text(20, 1.05, "break-even (1×)", color="gray", fontsize=9)
-    ax.annotate("201×", (4096, 201.4), textcoords="offset points", xytext=(-4, 6), color=ALT, fontweight="bold")
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("#derivations  D  (grows with query depth/branching)")
-    ax.set_ylabel("STRUCTURAL compactness  =  string tokens ÷ circuit (gates+edges)")
-    ax.set_title("E2 — STRUCTURAL sharing (tokens vs gates+edges, NOT serialized bytes):\nflat ≈ strings, deep queries → 100×+  (on selective queries our RDF bytes are larger — see G2b)")
-    ax.legend(loc="upper left")
-    save(fig, "fig3_E2_compactness.png")
+def fig_sharing():
+    """E2/E11/G2b: the sharing regime and a direct NPCS comparison."""
+    bench = rd("bench.csv")
+    layered = [x for x in bench if x["instance"].startswith("layered")]
+    deep = [x for x in bench if x["instance"].startswith("deep")]
+    scale = rd("e11_scale.csv")
+    g2b = rd("g2b_npcs_vs_ours.csv")
+
+    fig, axes = plt.subplots(2, 2, figsize=(7.15, 4.55))
+    axes = axes.ravel()
+
+    ax = axes[0]
+    ax.plot(
+        [int(x["derivations"]) for x in layered],
+        [float(x["sharing"]) for x in layered],
+        color=BLUE,
+        marker="o",
+        label="layered",
+    )
+    ax.plot(
+        [int(x["derivations"]) for x in deep],
+        [float(x["sharing"]) for x in deep],
+        color=GREEN,
+        marker="s",
+        linestyle="--",
+        label="deep",
+    )
+    ax.axhline(1.0, color=GRAY, linestyle=":", linewidth=0.9)
+    best = max(deep, key=lambda x: float(x["sharing"]))
+    ax.annotate(
+        f"{float(best['sharing']):.0f}×",
+        (int(best["derivations"]), float(best["sharing"])),
+        xytext=(-4, 6),
+        textcoords="offset points",
+        ha="right",
+        color=GREEN,
+        fontweight="bold",
+    )
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylim(0.7, 320)
+    ax.set_xlabel("Derivations")
+    ax.set_ylabel("Per-answer / shared size")
+    ax.set_title("Synthetic reconvergence", pad=4)
+    ax.legend(frameon=False, loc="upper left")
+    style_ax(ax)
+    panel_label(ax, "a")
+
+    ax = axes[1]
+    n_answers = [int(x["N"]) for x in scale]
+    ax.plot(
+        n_answers,
+        [float(x["shared_ms"]) for x in scale],
+        color=BLUE,
+        marker="o",
+        label="shared circuit",
+    )
+    ax.plot(
+        n_answers,
+        [float(x["perans_ms"]) for x in scale],
+        color=VERMILLION,
+        marker="s",
+        linestyle="--",
+        label="per-answer completion",
+    )
+    last = scale[-1]
+    ax.annotate(
+        f"{float(last['time_win']):.1f}×",
+        (int(last["N"]), float(last["perans_ms"])),
+        xytext=(-3, 6),
+        textcoords="offset points",
+        ha="right",
+        color=VERMILLION,
+        fontweight="bold",
+    )
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylim(0.3, 100)
+    ax.set_xlabel("Answers")
+    ax.set_ylabel("Compile + WMC (ms)")
+    ax.set_title("Compile once vs per answer", pad=4)
+    ax.legend(frameon=False, loc="upper left")
+    style_ax(ax)
+    panel_label(ax, "b")
+
+    ax = axes[2]
+    by_query = {x["query"]: x for x in g2b}
+    order = ["S-star", "P2-path", "P2-unbound"]
+    labels = ["S-star", "P2 bound", "P2 all"]
+    x = np.arange(len(order))
+    npcs_ms = [float(by_query[q]["npcs_eval_ms"]) for q in order]
+    ours_ms = [float(by_query[q]["ours_eval_ms"]) for q in order]
+    grouped_columns(ax, x, npcs_ms, ours_ms, "NPCS reimplementation", "SPARQLcirc", log=True)
+    for i, (npcs_value, ours_value) in enumerate(zip(npcs_ms, ours_ms)):
+        ax.text(
+            i + 0.17,
+            ours_value * 1.28,
+            f"{ours_value / npcs_value:.1f}×",
+            ha="center",
+            va="bottom",
+            fontsize=6.2,
+            color=BLUE,
+        )
+    ax.set_yscale("log")
+    ax.set_ylim(1, 1.2e5)
+    ax.set_xticks(x, labels)
+    ax.set_ylabel("Construction time (ms, log scale)")
+    ax.set_title("NPCS-compatible construction", pad=4)
+    ax.legend(frameon=False, loc="upper left", ncol=2)
+    style_ax(ax)
+    panel_label(ax, "c")
+
+    ax = axes[3]
+    npcs_kib = [float(by_query[q]["serial_npcs_bytes"]) / 1024.0 for q in order]
+    ours_kib = [float(by_query[q]["serial_ours_bytes"]) / 1024.0 for q in order]
+    grouped_columns(ax, x, npcs_kib, ours_kib, "NPCS reimplementation", "SPARQLcirc", log=True)
+    for i, (npcs_value, ours_value) in enumerate(zip(npcs_kib, ours_kib)):
+        ax.text(
+            i + 0.17,
+            ours_value * 1.28,
+            f"{ours_value / npcs_value:.1f}×",
+            ha="center",
+            va="bottom",
+            fontsize=6.2,
+            color=BLUE,
+        )
+    ax.set_yscale("log")
+    ax.set_ylim(1, 8e5)
+    ax.set_xticks(x, labels)
+    ax.set_ylabel("Serialized output (KiB, log scale)")
+    ax.set_title("Actual result volume", pad=4)
+    style_ax(ax)
+    panel_label(ax, "d")
+
+    fig.subplots_adjust(left=0.085, right=0.995, bottom=0.12, top=0.94, hspace=0.48, wspace=0.32)
+    save(fig, "paper_fig2_sharing")
 
 
-# ---- Fig 4: E11 — shared compile vs per-answer, wall-clock vs #answers
-def fig_e11_shared():
-    r = rd("e11_scale.csv")
-    N = [int(x["N"]) for x in r]
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    ax.plot(N, [float(x["perans_ms"]) for x in r], "s-", color=BASE, label="simulated per-answer, same OBDD compiler  Θ(N·S)")
-    ax.plot(N, [float(x["shared_ms"]) for x in r], "o-", color=OURS, label="shared circuit (ours)  Θ(N+S)")
-    ax.set_xlabel("#answers  N"); ax.set_ylabel("compile+WMC time  (ms)")
-    ax.set_title("E11 — shared vs per-answer compile (SYNTHETIC shared-prefix family):\nsame probabilities (Δ=0), ~9× faster at N=1000  (real tree-joins: representation win ≤1)")
-    ax.legend(loc="upper left")
-    save(fig, "fig4_E11_shared_vs_peranswer.png")
+def fig_construction():
+    """E3/E6/E8: stock-engine overhead by template, scale, and real-KG reach."""
+    datasets = [
+        ("WatDiv 10M", rd("watdiv/e3_10M.csv"), rd("watdiv/e6_minus_10M.csv")),
+        ("WatDiv 100M", rd("watdiv/e3_100M.csv"), rd("watdiv/e6_minus_100M.csv")),
+    ]
+    e8 = rd("watdiv/e8_wikidata.csv")
+
+    fig, axes = plt.subplots(1, 3, figsize=(7.15, 2.85), gridspec_kw={"width_ratios": [1.0, 1.0, 1.15]})
+    query_order = ["S-star", "F-snow", "L-path", "M-minus"]
+    query_labels = ["S", "F", "L", "M"]
+
+    for panel, (title, rows, minus_rows) in enumerate(datasets):
+        ax = axes[panel]
+        by_query = {x["query"]: x for x in rows}
+        by_query["M-minus"] = next(x for x in minus_rows if x["query"] == "M-minus")
+        x = np.arange(len(query_order))
+        # Legacy E3/E6 call this column plain_ms, but the harness obtains it via
+        # get_npcs(): it is the NPCS provenance SELECT, not the original query.
+        npcs = [float(by_query[q]["plain_ms"]) for q in query_order]
+        circuit = [float(by_query[q]["build_ms"]) for q in query_order]
+        grouped_columns(ax, x, npcs, circuit, "NPCS reimplementation", "circuit CONSTRUCT", log=True)
+        for i, q in enumerate(query_order):
+            overhead = float(by_query[q]["c_overhead"])
+            ax.text(
+                i + 0.17,
+                circuit[i] * 1.20,
+                f"{overhead:.1f}×",
+                ha="center",
+                va="bottom",
+                fontsize=6.2,
+                color=BLUE,
+            )
+        ax.set_yscale("log")
+        ax.set_ylim(1, 2000)
+        ax.set_xticks(x, query_labels)
+        ax.set_title(title, pad=4)
+        ax.set_xlabel("Query template")
+        if panel == 0:
+            ax.set_ylabel("Execution time (ms, log scale)")
+        style_ax(ax)
+        panel_label(ax, chr(ord("a") + panel))
+
+    ax = axes[2]
+    ok = [x for x in e8 if x["status"] == "ok" and int(x["deriv"]) > 0]
+    ax.scatter(
+        [int(x["deriv"]) for x in ok],
+        [float(x["build_ms"]) / 1000.0 for x in ok],
+        facecolors="white",
+        edgecolors=BLUE,
+        linewidths=0.9,
+        s=25,
+        marker="o",
+    )
+    status_counts = {}
+    for row in e8:
+        status_counts[row["status"]] = status_counts.get(row["status"], 0) + 1
+    ax.text(
+        0.03,
+        0.97,
+        f"{status_counts.get('ok', 0)}/{len(e8)} completed\n{status_counts.get('too-large', 0)} too-large; "
+        f"{status_counts.get('err:MemoryError', 0)} OOM",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=6.7,
+        color=BLACK,
+    )
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Derivations")
+    ax.set_ylabel("Circuit construction (s)")
+    ax.set_title("Wikidata 2.13B", pad=4)
+    style_ax(ax)
+    panel_label(ax, "c")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.35, 1.01))
+    fig.subplots_adjust(left=0.075, right=0.995, bottom=0.19, top=0.79, wspace=0.38)
+    save(fig, "paper_fig3_construction")
 
 
-# ---- Fig 5: ProvSQL head-to-head (G4) — TPC-H Q3 across 5 segments, ours faster
-def fig_provsql():
-    r = [x for x in rd("g4_instances.csv") if x["shape"] == "tpch-Q3-SPJ"]
-    seg = [x["instance"][:4] for x in r]
-    ours = [float(x["ours_median_ms"]) / 1000 for x in r]
-    prov = [float(x["provsql_median_ms"]) / 1000 for x in r]
-    ours_sd = [float(x["ours_sd_ms"]) / 1000 for x in r]
-    prov_sd = [float(x["provsql_sd_ms"]) / 1000 for x in r]
-    x = np.arange(len(seg)); w = 0.38
-    fig, ax = plt.subplots(figsize=(6.8, 4.4))
-    ax.bar(x - w/2, ours, w, yerr=ours_sd, capsize=3, color=OURS, label="ours (stock SPARQL engine)")
-    ax.bar(x + w/2, prov, w, yerr=prov_sd, capsize=3, color=BASE, label="ProvSQL (modified PostgreSQL)")
-    ax.set_xticks(x); ax.set_xticklabels(seg)
-    ax.set_ylabel("PQE latency  (s, 5-run median ± sd)")
-    ax.set_xlabel("TPC-H Q3-SPJ  ·  c_mktsegment instance")
-    ax.set_title("Forced probability evaluation on TPC-H Q3 (G4):\nours faster on all 5 segments — exact PQE, no engine fork")
-    ax.legend(loc="upper right")
-    ax.text(0.02, 0.02, "per-answer probability parity (max_abs_error = 0) verified separately on a\nreconvergent query — R8.3, not this Q3 chart",
-            transform=ax.transAxes, fontsize=8, color="#555", va="bottom")
-    save(fig, "fig5_provsql_headtohead.png")
+def fig_pqe():
+    """G4/G3: direct ProvSQL comparison and an overhead decomposition."""
+    instances = [x for x in rd("g4_instances.csv") if x["shape"] == "tpch-Q3-SPJ"]
+    rigor = rd("g4_rigor.csv")
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.15, 2.75), gridspec_kw={"width_ratios": [1.08, 1.0]})
+
+    ax = axes[0]
+    x = np.arange(len(instances))
+    ours = np.array([float(row["ours_median_ms"]) / 1000 for row in instances])
+    prov = np.array([float(row["provsql_median_ms"]) / 1000 for row in instances])
+    ours_sd = np.array([float(row["ours_sd_ms"]) / 1000 for row in instances])
+    prov_sd = np.array([float(row["provsql_sd_ms"]) / 1000 for row in instances])
+    width = 0.36
+    ax.bar(
+        x - width / 2,
+        ours,
+        width,
+        yerr=ours_sd,
+        capsize=2.3,
+        color=BLUE,
+        edgecolor=BLACK,
+        linewidth=0.65,
+        hatch="...",
+        label="SPARQLcirc",
+        zorder=3,
+    )
+    ax.bar(
+        x + width / 2,
+        prov,
+        width,
+        yerr=prov_sd,
+        capsize=2.3,
+        color="white",
+        edgecolor=VERMILLION,
+        linewidth=1.0,
+        hatch="///",
+        label="ProvSQL",
+        zorder=3,
+    )
+    short_labels = ["Auto.", "Build.", "Furn.", "House.", "Mach."]
+    ax.set_xticks(x, short_labels)
+    ax.set_xlabel("TPC-H Q3 market segment")
+    ax.set_ylabel("End-to-end PQE (s)")
+    ax.set_ylim(0, max(prov + prov_sd) * 1.15)
+    ax.set_title("Direct system comparison", pad=4)
+    ax.legend(frameon=False, loc="upper right", ncol=2)
+    style_ax(ax)
+    panel_label(ax, "a")
+
+    def row(query, stage):
+        return next(x for x in rigor if x["system"] == "ours" and x["query"] == query and x["stage"] == stage)
+
+    ax = axes[1]
+    workloads = [("S-star", "watdiv-Sstar"), ("Q3", "tpch-Q3"), ("P279+", "wikidata-WDpath")]
+    stages = [("construct", "construct", BLUE), ("compile", "compile", ORANGE), ("wmc", "WMC", GREEN)]
+    values = {
+        stage: np.array([float(row(q, stage)["median_ms"]) for _, q in workloads])
+        for stage, _, _ in stages
+    }
+    stage_sum = sum(values.values())
+    left = np.zeros(len(workloads))
+    y = np.arange(len(workloads))
+    for stage, display, color in stages:
+        fraction = values[stage] / stage_sum
+        ax.barh(
+            y,
+            fraction,
+            left=left,
+            height=0.52,
+            color=color,
+            edgecolor="white",
+            linewidth=0.55,
+            label=display,
+            zorder=3,
+        )
+        left += fraction
+    totals = [float(row(q, "total")["median_ms"]) for _, q in workloads]
+    for yi, total in enumerate(totals):
+        display = f"{total / 1000:.2f} s" if total >= 1000 else f"{total:.1f} ms"
+        ax.text(1.025, yi, display, ha="left", va="center", fontsize=6.7, fontweight="bold")
+    q3_y = 1
+    construct_mid = (values["construct"][q3_y] / stage_sum[q3_y]) / 2
+    compile_left = values["construct"][q3_y] / stage_sum[q3_y]
+    compile_mid = compile_left + (values["compile"][q3_y] / stage_sum[q3_y]) / 2
+    ax.text(construct_mid, q3_y, "construct", ha="center", va="center", color="white", fontsize=6.8)
+    ax.text(compile_mid, q3_y, "compile", ha="center", va="center", color=BLACK, fontsize=6.8)
+    ax.set_xlim(0, 1.24)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0], ["0", "25", "50", "75", "100"])
+    ax.set_yticks(y, [x[0] for x in workloads])
+    ax.invert_yaxis()
+    ax.set_xlabel("Share of end-to-end time (%)")
+    ax.set_ylabel("Workload")
+    ax.set_title("Where the time goes (WMC ≤ 0.6%)", pad=4)
+    style_ax(ax)
+    panel_label(ax, "b")
+
+    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.20, top=0.84, wspace=0.34)
+    save(fig, "paper_fig4_pqe")
 
 
-# ---- Fig 6: G3 canonical end-to-end PQE breakdown (WMC is tiny; Q3 compile = pure-Python ordering)
-def fig_pqe_breakdown():
-    g = rd("g4_rigor.csv")                                          # 5-run medians, current HEAD (not hardcoded)
-    def stage(q, s):
-        return next(float(x["median_ms"]) for x in g
-                    if x["system"] == "ours" and x["query"] == q and x["stage"] == s)
-    qs = [("WatDiv S-star\n(2 ans)", "watdiv-Sstar"),
-          ("TPC-H Q3\n(14 908 ans)", "tpch-Q3"),
-          ("Wikidata WD-path\n(P279+, 16 ans)", "wikidata-WDpath")]
-    labels = [a for a, _ in qs]
-    construct = np.array([stage(q, "construct") for _, q in qs]) / 1000
-    compile_ = np.array([stage(q, "compile") for _, q in qs]) / 1000
-    wmc = np.array([stage(q, "wmc") for _, q in qs]) / 1000
-    x = np.arange(len(qs))
-    fig, ax = plt.subplots(figsize=(6.8, 4.4))
-    ax.bar(x, construct, 0.55, color=OURS, label="construct (engine CONSTRUCT + RDF parse)")
-    ax.bar(x, compile_, 0.55, bottom=construct, color="#ff7f0e", label="compile (variable ordering + ROBDD build)")
-    ax.bar(x, wmc, 0.55, bottom=construct + compile_, color=ALT, label="WMC (weighted count)")
-    for i, (_, q) in enumerate(qs):
-        ax.text(i, construct[i] + compile_[i] + wmc[i] + 0.12, f"WMC={stage(q,'wmc'):.0f} ms",
-                ha="center", fontsize=8.5, color=ALT)
-    ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=9)
-    ax.set_ylim(0, max(construct + compile_ + wmc) * 1.18)
-    ax.set_ylabel("end-to-end PQE latency  (s, 5-run median)")
-    ax.set_title("G3 — end-to-end PQE breakdown (g4_rigor 5-run):\nWMC ≤ 36 ms in all three; TPC-H Q3 is dominated by the current pure-Python variable ordering")
-    ax.legend(loc="upper right", fontsize=9)
-    save(fig, "fig6_G3_pqe_breakdown.png")
+def validation_table():
+    """G6: compact vector table; a table is clearer than overlapping parity points."""
+    rows = rd("g6_d4.csv")
+    families = [
+        ("WatDiv S-star", "watdiv-Sstar"),
+        ("TPC-H Q3", "tpch-Q3"),
+        ("Wikidata paths", "wikidata-WDpath"),
+    ]
+    body = []
+    total = 0
+    max_obdd = 0.0
+    max_d4 = 0.0
+    for label, family in families:
+        pts = [x for x in rows if x["query"] == family]
+        obdd_error = max(abs(float(x["obdd_wmc"]) - float(x["pwe"])) for x in pts)
+        d4_error = max(abs(float(x["d4_wmc"]) - float(x["pwe"])) for x in pts)
+        body.append(
+            [
+                label,
+                str(len(pts)),
+                "0" if obdd_error == 0 else f"{obdd_error:.1e}",
+                "0" if d4_error == 0 else f"{d4_error:.1e}",
+            ]
+        )
+        total += len(pts)
+        max_obdd = max(max_obdd, obdd_error)
+        max_d4 = max(max_d4, d4_error)
+    body.append(
+        [
+            "All sampled answers",
+            str(total),
+            "0" if max_obdd == 0 else f"{max_obdd:.1e}",
+            "0" if max_d4 == 0 else f"{max_d4:.1e}",
+        ]
+    )
 
-
-# ---- Fig 7: G6 — correctness on REAL circuits: d4 == OBDD == PWE, 26/26
-def fig_correctness():
-    # A residual TABLE, not a scatter: the 8 Q3 answers all sit at p=0.125 (overlap), and a scatter can't
-    # show d4 vs PWE — the table reports max |method − ground-truth| per workload, which IS the claim.
-    r = rd("g6_d4.csv")
-    fams = ["watdiv-Sstar", "tpch-Q3", "wikidata-WDpath"]
-    body, tot_n, tot_o, tot_d = [], 0, 0.0, 0.0
-    for f in fams:
-        pts = [x for x in r if x["query"] == f]
-        mo = max(abs(float(x["obdd_wmc"]) - float(x["pwe"])) for x in pts)
-        md = max(abs(float(x["d4_wmc"]) - float(x["pwe"])) for x in pts)
-        body.append([f, str(len(pts)), f"{mo:.0e}", f"{md:.0e}"])
-        tot_n += len(pts); tot_o = max(tot_o, mo); tot_d = max(tot_d, md)
-    body.append(["all", str(tot_n), f"{tot_o:.0e}", f"{tot_d:.0e}"])
-    col = ["workload", "# circuits", "max|OBDD−PWE|", "max|d4−PWE|"]
-    fig, ax = plt.subplots(figsize=(7.6, 2.9)); ax.axis("off")
-    t = ax.table(cellText=body, colLabels=col, loc="center", cellLoc="center",
-                 colWidths=[0.30, 0.16, 0.27, 0.27])
-    t.auto_set_font_size(False); t.set_fontsize(10.5); t.scale(1, 1.7)
-    for j in range(len(col)):
-        t[0, j].set_facecolor("#e8eef5"); t[0, j].set_text_props(fontweight="bold")
-        t[len(body), j].set_text_props(fontweight="bold")
-    ax.set_title("G6 — exact on 26 sampled answer circuits (incl. all 16 property paths):\n"
-                 "OBDD = PWE = d4, three independent methods, max error 0", pad=16)
-    save(fig, "fig7_G6_correctness.png")
+    columns = ["Workload", "Answers checked", "max |OBDD − PWE|", "max |d4 − PWE|"]
+    fig, ax = plt.subplots(figsize=(7.15, 1.55))
+    ax.axis("off")
+    table = ax.table(
+        cellText=body,
+        colLabels=columns,
+        loc="center",
+        cellLoc="center",
+        colWidths=[0.29, 0.18, 0.265, 0.265],
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(7.5)
+    table.scale(1, 1.45)
+    for (row_i, col_i), cell in table.get_celld().items():
+        cell.set_edgecolor(LIGHT_GRAY)
+        cell.set_linewidth(0.55)
+        if row_i == 0:
+            cell.set_facecolor("#EAF2F8")
+            cell.set_text_props(fontweight="bold")
+        elif row_i == len(body):
+            cell.set_text_props(fontweight="bold")
+    save(fig, "paper_table1_validation")
 
 
 if __name__ == "__main__":
-    fig_e4_bounded(); fig_e4_growing(); fig_e2_compactness(); fig_e11_shared()
-    fig_provsql(); fig_pqe_breakdown(); fig_correctness()
-    print("\nAll figures written to", os.path.relpath(OUT, HERE) + "/")
+    fig_compilation()
+    fig_sharing()
+    fig_construction()
+    fig_pqe()
+    validation_table()
+    print("\nAll paper figures written to figures/ (PDF + 300-dpi PNG).")
