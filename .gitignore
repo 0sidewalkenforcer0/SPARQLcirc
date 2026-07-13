@@ -20,6 +20,10 @@ reference/cnf/
 # logs / local scratch
 *.log
 
+# frozen-batch raw samples, circuit caches, and environment captures
+# (selected aggregate CSVs/figures are copied into tracked paper locations later)
+artifacts/
+
 # generated treewidth-controlled families (rebuilt by reference/gen_families.py)
 reference/families/
 
