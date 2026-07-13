@@ -77,10 +77,15 @@ check the circuit builds with correct WMC. All on the current jar; `WMC==PWE` sa
   RDF4J as the misleading "Missing parameter: query"). Verified directly: a 280 KB `VALUES` query returns
   **400 via GET but 200 via POST** on `/repositories/watdiv`. The circuit itself stays polynomial (G1);
   only the *transport* fails. **Fix options** (in `CircuitRun`, the actively-developed path code — left to
-  the author to avoid churn): (a) force **POST** for the frontier tuple queries (engine-agnostic; a
-  connection-config change), or (b) **chunk** the frontier into ≤ ~500-node `VALUES` batches and union the
-  results (works even on GET-only endpoints). The Wikidata DAG paths (small frontiers) are unaffected, so
-  the validated `p+` coverage is the two Wikidata predicates; dense cyclic graphs need this transport fix.
+  the author to avoid churn): (a) force **POST** for *all* queries the path build issues (engine-agnostic;
+  a connection-config change — the **single-place fix**), or (b) **chunk** every large-`VALUES` site into
+  ≤ ~500-node batches. **Verified locally (then reverted):** chunking just the frontier BFS lets it reach
+  `|V_s| = 100 000` (was failing at the first oversized frontier) with the headline WD-path unchanged
+  (16 answers, WMC == PWE) — but the build then hits the **same GET wall at the *construct* stage**
+  (`runFeed`, `CircuitRun.java:214`, which injects `VALUES {reachable}` into the base-relation CONSTRUCT).
+  So a per-site chunk must cover the constructs too; **force-POST is the cleaner one-place fix**. The
+  Wikidata DAG paths (small frontiers) are unaffected — validated `p+` coverage is the two Wikidata
+  predicates; dense cyclic graphs need this transport fix in the engine.
 
 **Summary:** validated on **`p+` (two predicates) and `p*` at 2.13 B scale with WMC == PWE**; fail-fasts
 (not mis-computes) on unsupported compound modifiers; dense cyclic closures are a scale limit.
