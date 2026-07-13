@@ -38,6 +38,30 @@ java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> query "<sparql text>"
 java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> path  path/to/query.sparql
 ```
 
+### Circuit construction modes
+
+`circuit` defaults to the production `factored` mode. For a pure BGP it runs a
+deterministic min-scope variable-elimination plan as several standard SPARQL 1.1
+`CONSTRUCT` passes. Only private, per-invocation `urn:sc:*` message rows are fed
+back to the endpoint; they are removed after the plan, while the emitted circuit
+gate identities stay deterministic and independent of the session.
+
+```
+# Production/default: engine-native factored BGP construction.
+java -jar target/npcs-rewrite.jar circuit --construction=factored \
+  Standard data.ttl query.rq [endpoint]
+
+# Ablation and read-only endpoint route: one product per full derivation.
+java -jar target/npcs-rewrite.jar circuit --construction=flat \
+  Standard data.ttl query.rq [endpoint]
+```
+
+Factored BGP construction needs a writable endpoint for the private intermediate
+messages and fails fast when `CIRCUIT_READONLY=1`. `UNION`, `OPTIONAL`, and
+`MINUS` currently use the established flat operator plan even when factored mode
+was requested; this fallback is printed explicitly. Property paths retain their
+separate iterative construction protocol.
+
 Conceptual NPCS output (generated variables are shortened here for readability):
 
 ```

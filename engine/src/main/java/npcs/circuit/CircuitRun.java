@@ -4,10 +4,14 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -28,19 +32,37 @@ import npcs.rewrite.Reification;
  *
  * <pre>
  *   java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
- *        Standard data.reified.ttl query.sparql
+ *        --construction=factored Standard data.reified.ttl query.sparql
  * </pre>
  * The emitted CONSTRUCT is printed to stderr; the circuit RDF goes to stdout.
  */
 public final class CircuitRun {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3 && args.length != 4) {
-            System.err.println("Usage: CircuitRun <Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
+        ConstructionMode constructionMode = ConstructionMode.FACTORED;
+        List<String> positional = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].startsWith("--construction=")) {
+                constructionMode = ConstructionMode.fromCli(
+                        args[i].substring("--construction=".length()));
+            } else if ("--construction".equals(args[i])) {
+                if (++i >= args.length) {
+                    throw new IllegalArgumentException("--construction requires factored or flat");
+                }
+                constructionMode = ConstructionMode.fromCli(args[i]);
+            } else {
+                positional.add(args[i]);
+            }
+        }
+        if (positional.size() != 3 && positional.size() != 4) {
+            System.err.println("Usage: CircuitRun [--construction=factored|flat] "
+                    + "<Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
+            System.err.println("  Default construction: factored (pure BGP variable elimination).");
+            System.err.println("  flat is the one-product-per-derivation ablation and read-only-endpoint route.");
             System.err.println("  With an endpoint URL, the circuit is built on that engine (e.g. GraphDB) instead");
             System.err.println("  of in-memory RDF4J -- the SAME standard-SPARQL-1.1 CONSTRUCTs, so the circuit is");
-            System.err.println("  byte-identical across engines. Non-path queries are read-only CONSTRUCTs (run on");
-            System.err.println("  ANY SPARQL 1.1 engine); property paths need a WRITABLE endpoint. Per-engine env:");
+            System.err.println("  byte-identical across engines. Factored BGPs and property paths need a WRITABLE");
+            System.err.println("  endpoint; --construction=flat runs non-path queries read-only. Per-engine env:");
             System.err.println("    CIRCUIT_UPDATE_ENDPOINT=<url>  (default <endpoint>/statements = GraphDB/RDF4J;");
             System.err.println("                                    Fuseki/Oxigraph = <base>/update, Virtuoso = /sparql)");
             System.err.println("    CIRCUIT_SKIP_LOAD=1            (data already bulk-loaded on the engine)");
@@ -49,11 +71,11 @@ public final class CircuitRun {
             System.exit(2);
             return;
         }
-        Reification scheme = Reification.fromName(args[0]);
-        File dataFile = new File(args[1]);
-        String query = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
-        String endpoint = args.length == 4 ? args[3] : null;
-        RDFFormat fmt = args[1].endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
+        Reification scheme = Reification.fromName(positional.get(0));
+        File dataFile = new File(positional.get(1));
+        String query = new String(Files.readAllBytes(Paths.get(positional.get(2))), StandardCharsets.UTF_8);
+        String endpoint = positional.size() == 4 ? positional.get(3) : null;
+        RDFFormat fmt = positional.get(1).endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
         // Per-engine configuration via environment (script-friendly; GraphDB defaults unchanged when unset).
         // Profiles for Fuseki/Oxigraph/QLever/MillenniumDB/Virtuoso/Stardog live in reference/engines/.
         String updateEndpointEnv = System.getenv("CIRCUIT_UPDATE_ENDPOINT");   // override; else <endpoint>/statements
@@ -61,8 +83,16 @@ public final class CircuitRun {
         boolean readOnly = "1".equals(System.getenv("CIRCUIT_READONLY"));      // engine exposes query only, no UPDATE
         if (readOnly) skipLoad = true;                                         // read-only implies data pre-loaded
 
-        CircuitRewriter rw = new CircuitRewriter(scheme);
+        CircuitRewriter rw = new CircuitRewriter(scheme, constructionMode, UUID.randomUUID().toString());
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
+        CircuitConstructionPlan constructionPlan = pathq == null ? rw.constructionPlan(query) : null;
+
+        if (readOnly && constructionPlan != null && constructionPlan.requiresFeedback()) {
+            System.err.println("# ERROR: factored BGP construction needs a WRITABLE endpoint for its private "
+                    + "message-relation passes. Re-run with --construction=flat on this read-only engine.");
+            System.exit(3);
+            return;
+        }
 
         Repository repo;
         if (endpoint != null) {
@@ -109,17 +139,13 @@ public final class CircuitRun {
             if (pathq != null) {
                 buildPathCircuit(con, pathq, circuit);          // client-driven iterative path fixpoint (below)
             } else {
-                java.util.List<String> planQueries = rw.plan(query);
-                System.err.println("# ---- circuit construction plan: " + planQueries.size() + " CONSTRUCT(s) ----");
-                for (int i = 0; i < planQueries.size(); i++) {
-                    System.err.println("# --- step " + (i + 1) + " ---");
-                    System.err.println(planQueries.get(i));
+                System.err.println("# ---- construction mode: requested="
+                        + constructionPlan.requestedMode().cliName() + ", effective="
+                        + constructionPlan.effectiveMode().cliName() + " ----");
+                if (constructionPlan.fallbackReason() != null) {
+                    System.err.println("# ---- explicit fallback: " + constructionPlan.fallbackReason() + " ----");
                 }
-                for (String construct : planQueries) {
-                    try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
-                        circuit.addAll(QueryResults.asModel(res));
-                    }
-                }
+                executeConstructionPlan(con, constructionPlan, circuit, true);
             }
             Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
             System.err.println("# circuit triples: " + circuit.size());
@@ -140,6 +166,57 @@ public final class CircuitRun {
             }
         }
         repo.shutDown();
+    }
+
+    /**
+     * Execute a non-path plan. Only private, session-scoped {@code urn:sc:*}
+     * message triples are fed back; circuit triples are accumulated in memory.
+     * The private workspace is removed in a finally block on success or failure.
+     */
+    static void executeConstructionPlan(RepositoryConnection con, CircuitConstructionPlan plan,
+                                        Model circuit, boolean logQueries) {
+        Model workspace = new LinkedHashModel();
+        try {
+            if (logQueries) {
+                System.err.println("# ---- circuit construction plan: " + plan.steps().size()
+                        + " CONSTRUCT(s) ----");
+            }
+            for (int i = 0; i < plan.steps().size(); i++) {
+                CircuitConstructionPlan.Step step = plan.steps().get(i);
+                if (logQueries) {
+                    // Keep this exact header stable: paper harnesses parse it as a machine boundary.
+                    System.err.println("# --- step " + (i + 1) + " ---");
+                    System.err.println(step.query());
+                    // Trailing SPARQL comment keeps each regex-delimited chunk starting at PREFIX.
+                    System.err.println("# step label: " + step.label());
+                }
+                Model emitted;
+                try (GraphQueryResult result = con.prepareGraphQuery(step.query()).evaluate()) {
+                    emitted = QueryResults.asModel(result);
+                }
+                Model messages = new LinkedHashModel();
+                for (Statement statement : emitted) {
+                    if (statement.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
+                        messages.add(statement);
+                    } else {
+                        circuit.add(statement);
+                    }
+                }
+                if (step.feedback() && !messages.isEmpty()) {
+                    con.add(messages);
+                    workspace.addAll(messages);
+                }
+            }
+        } finally {
+            if (!workspace.isEmpty()) {
+                try {
+                    con.remove(workspace);
+                } catch (RuntimeException cleanupFailure) {
+                    System.err.println("# WARNING: could not remove the private factored workspace ("
+                            + workspace.size() + " triples): " + cleanupFailure.getMessage());
+                }
+            }
+        }
     }
 
     /** Build a property-path circuit on `con` via the client-driven iterative fixpoint: bound the reach

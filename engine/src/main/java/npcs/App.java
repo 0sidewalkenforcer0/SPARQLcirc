@@ -13,7 +13,8 @@ import npcs.rewrite.Reification;
  * CLI entry point for both the circuit contribution and the NPCS-compatible
  * string-rewriting baseline:
  * <pre>
- *   java -jar npcs-rewrite.jar circuit &lt;scheme&gt; &lt;data&gt; &lt;query-file&gt; [&lt;endpoint&gt;]
+ *   java -jar npcs-rewrite.jar circuit [--construction=factored|flat]
+ *        &lt;scheme&gt; &lt;data&gt; &lt;query-file&gt; [&lt;endpoint&gt;]
  *   java -jar npcs-rewrite.jar rewrite &lt;scheme&gt; &lt;query|path&gt; &lt;value&gt;
  *
  *   // Backwards-compatible baseline form:
@@ -37,7 +38,8 @@ public final class App {
         }
         if (args.length != 3) {
             System.err.println("Usage:");
-            System.err.println("  java -jar npcs-rewrite.jar circuit <Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
+            System.err.println("  java -jar npcs-rewrite.jar circuit [--construction=factored|flat] "
+                    + "<Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
             System.err.println("  java -jar npcs-rewrite.jar rewrite <Standard|SPARQL_Star> <query|path> <text-or-file>");
             System.err.println("  java -jar npcs-rewrite.jar <Standard|SPARQL_Star> <query|path> <text-or-file>  # legacy baseline form");
             System.exit(2);

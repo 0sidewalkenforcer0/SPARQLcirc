@@ -39,7 +39,8 @@ import npcs.rewrite.Terms;
  *
  * A query is compiled to a <em>plan</em>: a list of CONSTRUCT queries whose
  * results are merged into one circuit (the paper's per-operator materialization).
- *   - BGP:      1 CONSTRUCT  (⊗ per derivation -> ⊕ per answer)
+ *   - BGP:      default multi-pass variable elimination (base/join/marginalize);
+ *               FLAT mode retains 1 CONSTRUCT (⊗ per derivation -> ⊕ per answer)
  *   - UNION:    one plan per branch, all keyed by the projection W, so the
  *               branches feed one shared answer ⊕ (that shared ⊕ IS the union)
  *   - MINUS:    guarded DIFF — ⊕_{P1}; per right branch overlapping P1: ⊕_{P2} and
@@ -55,13 +56,44 @@ public class CircuitRewriter {
 
     private static final String PRE = "PREFIX c: <urn:circuit:>\n";
     private final Reification scheme;
+    private final ConstructionMode constructionMode;
+    private final String workspaceId;
     private String generatedPrefix = "__sc0_";
 
     public CircuitRewriter(Reification scheme) {
-        this.scheme = scheme;
+        this(scheme, ConstructionMode.FACTORED);
     }
 
+    public CircuitRewriter(Reification scheme, ConstructionMode constructionMode) {
+        this(scheme, constructionMode, java.util.UUID.randomUUID().toString());
+    }
+
+    /**
+     * Create a rewriter with an explicit private workspace id. CircuitRun passes
+     * a fresh id per invocation so concurrent factored plans cannot consume or
+     * clean up one another's message rows. Gate ids do not depend on this id.
+     */
+    public CircuitRewriter(Reification scheme, ConstructionMode constructionMode, String workspaceId) {
+        this.scheme = scheme;
+        this.constructionMode = constructionMode;
+        this.workspaceId = workspaceId;
+    }
+
+    /**
+     * Compatibility view of {@link #constructionPlan(String)} for plan inspection.
+     * Callers executing a factored plan must honor its feedback markers; the
+     * production runner does so via {@link CircuitRun}.
+     */
     public List<String> plan(String query) {
+        return constructionPlan(query).queries();
+    }
+
+    /**
+     * Build an executable construction plan. Pure BGPs use min-scope variable
+     * elimination in FACTORED mode; UNION/MINUS/OPTIONAL retain the established
+     * flat operator plan and report that fallback explicitly in the plan.
+     */
+    public CircuitConstructionPlan constructionPlan(String query) {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
         QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
@@ -72,8 +104,25 @@ public class CircuitRewriter {
         for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
             if (!W.contains(pe.getName())) W.add(pe.getName());
         }
-        return branchPlan(normalize(projection.getArg()), W);
+        TupleExpr body = normalize(projection.getArg());
+        TupleExpr bgpCandidate = unwrapSetWrappers(body);
+        if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)) {
+            return FactoredBgpRewriter.build(scheme, generatedPrefix, workspaceId,
+                    collect(bgpCandidate), W);
+        }
+
+        List<String> queries = branchPlan(body, W);
+        List<CircuitConstructionPlan.Step> steps = new ArrayList<>();
+        for (int i = 0; i < queries.size(); i++) {
+            steps.add(new CircuitConstructionPlan.Step(queries.get(i), false, "flat[" + i + "]"));
+        }
+        String fallback = constructionMode == ConstructionMode.FACTORED
+                ? "query body is not a pure BGP; UNION/MINUS/OPTIONAL use the flat operator plan"
+                : null;
+        return new CircuitConstructionPlan(steps, constructionMode, ConstructionMode.FLAT, fallback);
     }
+
+    public ConstructionMode constructionMode() { return constructionMode; }
 
     /**
      * Normalize the algebra so every {@code Difference} (MINUS) has operands {@link
@@ -599,6 +648,26 @@ public class CircuitRewriter {
     private static List<StatementPattern> collect(TupleExpr te) {
         assertPureBgp(te);                       // fail fast; don't silently drop out-of-fragment ops
         return StatementPatternCollector.process(te);
+    }
+
+    /** DISTINCT and RDF4J's path-expansion Projection are set-semantic wrappers, not BGP operators. */
+    private static TupleExpr unwrapSetWrappers(TupleExpr body) {
+        TupleExpr current = body;
+        while (current instanceof Distinct || current instanceof Projection) {
+            current = current instanceof Distinct
+                    ? ((Distinct) current).getArg()
+                    : ((Projection) current).getArg();
+        }
+        return current;
+    }
+
+    private static boolean isPureBgp(TupleExpr body) {
+        try {
+            assertPureBgp(body);
+            return true;
+        } catch (UnsupportedOperationException unsupported) {
+            return false;
+        }
     }
 
     /**
