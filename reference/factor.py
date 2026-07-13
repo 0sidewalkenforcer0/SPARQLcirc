@@ -74,7 +74,9 @@ def factored_bgp(c, patterns, data, out_vars):
     """Return {frozenset((var,val)) over out_vars -> gate id}."""
     rels = base_relations(c, patterns, data)
     allv = set().union(*[set(v) for v, _ in rels]) if rels else set()
-    elim = [x for x in allv if x not in out_vars]
+    # Stable lexical tie-breaking makes the generated factored DAG reproducible
+    # across PYTHONHASHSEED values when two variables have the same min-fill cost.
+    elim = sorted(x for x in allv if x not in out_vars)
 
     while elim:
         # min-fill-ish: eliminate the var whose relations span the fewest vars
@@ -83,7 +85,7 @@ def factored_bgp(c, patterns, data, out_vars):
             for v, _ in rels:
                 if x in v: u |= set(v)
             return len(u)
-        x = min(elim, key=cost); elim.remove(x)
+        x = min(elim, key=lambda v: (cost(v), v)); elim.remove(x)
         involved = [r for r in rels if x in r[0]]
         rest = [r for r in rels if x not in r[0]]
         j = involved[0]

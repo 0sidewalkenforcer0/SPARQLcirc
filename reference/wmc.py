@@ -11,6 +11,7 @@ pwe(): ground truth by possible-world enumeration using PLAIN SPARQL semantics
 """
 from itertools import product
 from collections import defaultdict
+import sys
 import gamma
 
 
@@ -169,3 +170,75 @@ def check(circ, table, sel, q, data, P):
         else:
             fails.append((dict(k), round(cp, 6), round(tp, 6)))
     return ok, len(keys), fails
+
+
+def _selftest():
+    """Exercise correlation, negation, and cyclic reachability against PWE.
+
+    This deliberately builds fresh in-memory circuits rather than reading the
+    checked-in engine fixtures.  The Java-to-RDF integration is covered by
+    ``quick_verify.py``; this probe keeps ``python wmc.py`` dependency-free and
+    useful on its own.
+    """
+    import gates
+
+    cases = [
+        (
+            "shared-correlation",
+            {
+                "p1": ("A", "p", "B"),
+                "p2": ("B", "q", "C"),
+                "p3": ("A", "r", "B"),
+            },
+            ["?z"],
+            ("union",
+             ("bgp", [("A", "p", "?x"), ("?x", "q", "?z")]),
+             ("bgp", [("A", "r", "?x"), ("?x", "q", "?z")])),
+            {"p1": .9, "p2": .8, "p3": .6},
+        ),
+        (
+            "minus",
+            {
+                "k1": ("A", "knows", "B"),
+                "k2": ("A", "knows", "C"),
+                "b1": ("A", "blocks", "B"),
+            },
+            ["?y"],
+            ("minus",
+             ("bgp", [("A", "knows", "?y")]),
+             ("bgp", [("A", "blocks", "?y")])),
+            {"k1": .8, "k2": .7, "b1": .4},
+        ),
+        (
+            "cyclic-path",
+            {
+                "e1": ("A", "p", "B"),
+                "e2": ("B", "p", "C"),
+                "e3": ("C", "p", "A"),
+            },
+            ["?y"],
+            ("path", "A", ("plus", ("edge", "p")), "?y"),
+            {"e1": .9, "e2": .8, "e3": .7},
+        ),
+    ]
+
+    passed = True
+    for name, data, sel, q, weights in cases:
+        circ = gates.Circuit()
+        table = gamma.eval_q(circ, q, data)
+        ok, total, failures = check(circ, table, sel, q, data, weights)
+        case_ok = ok == total and not failures
+        passed &= case_ok
+        print(f"  [{'OK' if case_ok else 'FAIL'}] {name:18} {ok}/{total}")
+        for failure in failures[:3]:
+            print("       mismatch", failure)
+    print("WMC SELFTEST", "OK" if passed else "FAILED")
+    return passed
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(0 if _selftest() else 1)
+    except Exception as exc:
+        print(f"WMC SELFTEST ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        raise

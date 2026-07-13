@@ -1,0 +1,8 @@
+# The core tests, ROBDD/WMC implementation, and quick_verify.py use only Python's
+# standard library.  Install this file only for the extended/oracle experiments:
+#
+#   python -m pip install -r reference/requirements-optional.txt
+
+rdflib>=6.3,<8
+pysdd>=1.0,<2
+tqdm>=4.66,<5

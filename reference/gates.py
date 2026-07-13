@@ -11,12 +11,16 @@ Content addressing: a gate's id is a deterministic hash of its operator and its
 Def-"Gate congruence" simplifications) therefore get the SAME id and are stored
 once -> the circuit is a maximally shared DAG.
 
-Collision-freeness (the issue.txt concern): child order is canonicalized by
+Collision resistance (the issue.txt concern): child order is canonicalized by
 *sorting the child ids* (fixed-width sha1 hex strings), NOT by an order-invariant
 SUM/COUNT aggregate.  A commutative gate's key is  op | sorted(child_ids)  with a
 delimiter that cannot occur inside a sha1 hex id, so the serialization is
 injective on the child multiset (duplicates are kept -> no false idempotence);
 distinct gates collide only under a sha1 collision.
+
+This Python algebraic reference preserves those duplicate children. The Java engine's
+RDF interchange uses unindexed edges and is intentionally consumed as the Boolean/PQE
+quotient, where duplicate edges are idempotent; see TECHREPORT.md section 3.2.
 """
 import hashlib
 

@@ -1,5 +1,12 @@
 """Correctness battery: circuit-WMC vs possible-world enumeration across the
-non-monotone fragment, several datasets, several probability assignments."""
+non-monotone fragment, several datasets, several probability assignments.
+
+The module exposes :func:`main` for the unified smoke runner and exits non-zero
+when any answer differs.  Unhandled exceptions also propagate, which makes this
+file safe to use directly from CI rather than as a print-only demonstration.
+"""
+import sys
+
 import gates, gamma, wmc
 
 DS_paper = {
@@ -71,19 +78,28 @@ TESTS = [
 def assignments(toks, i):
     return {t: round(0.2 + 0.6 * (((j + i) % 5) / 4.0), 3) for j, t in enumerate(toks)}
 
-grand_ok = grand_tot = 0
-for name, data, sel, q in TESTS:
-    row_ok = row_tot = 0; fails = []
-    for i in range(3):
-        P = assignments(list(data), i)
-        circ = gates.Circuit()
-        table = gamma.eval_q(circ, q, data)
-        ok, tot, f = wmc.check(circ, table, sel, q, data, P)
-        row_ok += ok; row_tot += tot; fails += f
-    grand_ok += row_ok; grand_tot += row_tot
-    tag = "OK " if not fails else "FAIL"
-    print(f"  [{tag}] {name:12} {row_ok}/{row_tot}")
-    for fl in fails[:3]:
-        print("        mismatch", fl)
+def main():
+    grand_ok = grand_tot = 0
+    all_passed = True
+    for name, data, sel, q in TESTS:
+        row_ok = row_tot = 0; fails = []
+        for i in range(3):
+            P = assignments(list(data), i)
+            circ = gates.Circuit()
+            table = gamma.eval_q(circ, q, data)
+            ok, tot, f = wmc.check(circ, table, sel, q, data, P)
+            row_ok += ok; row_tot += tot; fails += f
+        row_passed = row_ok == row_tot and not fails
+        all_passed &= row_passed
+        grand_ok += row_ok; grand_tot += row_tot
+        tag = "OK " if row_passed else "FAIL"
+        print(f"  [{tag}] {name:12} {row_ok}/{row_tot}")
+        for fl in fails[:3]:
+            print("        mismatch", fl)
 
-print(f"\nTOTAL: {grand_ok}/{grand_tot} answer-probability checks passed")
+    print(f"\nTOTAL: {grand_ok}/{grand_tot} answer-probability checks passed")
+    return 0 if all_passed and grand_ok == grand_tot else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

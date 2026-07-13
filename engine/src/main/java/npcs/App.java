@@ -3,13 +3,20 @@ package npcs;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Arrays;
 
+import npcs.circuit.CircuitRun;
 import npcs.rewrite.NpcsRewriter;
 import npcs.rewrite.Reification;
 
 /**
- * CLI entry point, compatible with the original NPCS invocation:
+ * CLI entry point for both the circuit contribution and the NPCS-compatible
+ * string-rewriting baseline:
  * <pre>
+ *   java -jar npcs-rewrite.jar circuit &lt;scheme&gt; &lt;data&gt; &lt;query-file&gt; [&lt;endpoint&gt;]
+ *   java -jar npcs-rewrite.jar rewrite &lt;scheme&gt; &lt;query|path&gt; &lt;value&gt;
+ *
+ *   // Backwards-compatible baseline form:
  *   java -jar npcs-rewrite.jar &lt;scheme&gt; &lt;query|path&gt; &lt;value&gt;
  * </pre>
  * where {@code scheme} is Standard or SPARQL_Star, the second argument is the
@@ -21,8 +28,18 @@ import npcs.rewrite.Reification;
 public final class App {
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "circuit".equals(args[0])) {
+            CircuitRun.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "rewrite".equals(args[0])) {
+            args = Arrays.copyOfRange(args, 1, args.length);
+        }
         if (args.length != 3) {
-            System.err.println("Usage: java -jar npcs-rewrite.jar <Standard|SPARQL_Star> <query|path> <text-or-file>");
+            System.err.println("Usage:");
+            System.err.println("  java -jar npcs-rewrite.jar circuit <Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
+            System.err.println("  java -jar npcs-rewrite.jar rewrite <Standard|SPARQL_Star> <query|path> <text-or-file>");
+            System.err.println("  java -jar npcs-rewrite.jar <Standard|SPARQL_Star> <query|path> <text-or-file>  # legacy baseline form");
             System.exit(2);
             return;
         }

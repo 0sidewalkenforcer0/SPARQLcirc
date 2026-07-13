@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-core:
+    name: Python core (${{ matrix.python-version }}, stdlib only)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Reference correctness battery
+        run: python reference/tests.py
+      - name: Standalone WMC self-test
+        run: python reference/wmc.py
+      - name: Algebraic-to-Boolean serialization boundary
+        run: python reference/verify_boolean_boundary.py
+      - name: User-facing PQE CLI regression
+        run: python reference/verify_pqe_cli.py
+      - name: R9 hard-deadline and term-aware parity regressions
+        run: python reference/paper/test_r9_construction_harness.py
+
+  fresh-engine-circuit:
+    name: Maven build and fresh circuit to WMC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: maven
+          cache-dependency-path: engine/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the shaded engine JAR
+        run: mvn -q -f engine/pom.xml package
+      - name: Generate, parse, compile, and WMC a fresh circuit
+        run: python reference/quick_verify.py

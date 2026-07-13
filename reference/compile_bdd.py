@@ -7,7 +7,7 @@ Pure Python, zero dependencies (runs natively on Apple Silicon / M4).
 
 A circuit is a dict  node -> one of
    ('leaf', tokenName) | ('const', 0|1) | ('times', [child]) | ('plus', [child]) | ('minus', (m, s))
-(the format of provcircuit/gates.Circuit.gates; an adapter loads engine .nt too).
+(the format of `gates.Circuit.gates`; `circuit_io.py` loads engine N-Triples).
 """
 import itertools
 
