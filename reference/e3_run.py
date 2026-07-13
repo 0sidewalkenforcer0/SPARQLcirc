@@ -6,7 +6,9 @@ NPCS/SPARQLprov baselines run the official templates, and keeps the client bound
 the unbound query at 10M builds a multi-million-gate circuit that OOM'd the old
 full-parse harness). We then run the circuit CONSTRUCT on GraphDB and STREAM the
 N-Triples response line-by-line, counting gate types in O(1) memory; we time the build
-vs the plain NPCS SELECT and report c=build/plain and structural compactness. Entities
+vs the clean-room NPCS provenance SELECT and report the legacy c=build/`plain_ms` ratio and
+structural compactness. Despite its historical column name, `plain_ms` is not the original SPARQL
+query baseline. R9.2 adds separately measured B/R/N/C controls. Entities
 are found per-repo, so the same harness works at 10M and 100M (different entity sets).
 
 A build exceeding E3_TIMEOUT (default 300s) is recorded as `timeout`. Set E3_BOUND=0 to

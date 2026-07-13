@@ -1,14 +1,17 @@
 # SPARQLcirc — server experiment task (read me first)
 
-> **⇒ START HERE (2026-07-13). The current executable task is the `# RE-RUN CHECKLIST` section near the END
-> of this file.** ROUND 1–8 and the numbered experiments below it are a **historical log** (kept for
-> provenance) — do NOT execute them top-to-bottom; several statements are superseded. When the log and the
-> RE-RUN CHECKLIST disagree, **the CHECKLIST wins.** Superseded facts to know up front:
-> • **WatDiv 200 M is DROPPED** (the 2014 generator segfaults; 10 M / 100 M stand — ignore "200 M" in §2).
+> **⇒ START HERE (2026-07-13). The current executable task is `# ROUND 9 — PAPER FIGURE COVERAGE` at the
+> END of this file.** ROUND 1–8 and the old `RE-RUN CHECKLIST` are a **historical log** (kept for
+> provenance) — do NOT execute them top-to-bottom. The expensive ROUND-8 re-runs were completed before
+> ROUND 9 was written. When an older section disagrees with ROUND 9, **ROUND 9 wins.** Superseded facts:
+> • Do **not** ask the old WatDiv generator for a native 200 M graph (it segfaults). ROUND 9 optionally
+>   recreates NPCS's different **200M-multisource stress case** by duplicating each 100 M logical fact with
+>   a second provenance identifier; it is not a third ordinary scale point.
 > • **G2b is NOT a byte-size win** — ROUND 7's "10–27× more compact" is retracted; the RDF N-Triples circuit
 >   is usually byte-*larger*, compactness is *structural* only.
-> • The **ours-side canonical 5-run timing rows are current** (`5b34378`). The ProvSQL Q3 row must be
->   refreshed once: the old `count(*)` wrapper allowed PostgreSQL to prune the unused probability expression.
+> • The canonical 5-run rows, forced-evaluation ProvSQL Q3, keyed R8.3 parity, G2b/G8 byte metrics, and G6
+>   one-pass d-DNNF checks are already committed. ROUND 9 fills the **engine × query-pattern coverage grid**;
+>   it does not invalidate those results.
 
 **You are a coding agent on a server** that has the resources the dev laptop lacked: disk
 for large WatDiv, CPU, a Linux/x86 box (for d4), and ideally **GraphDB** and **PostgreSQL+ProvSQL**.
@@ -313,7 +316,7 @@ already done or already in flight from ROUND 6.
 | E9 TPC-H SF 0.01–1 | `e9_*.csv` |
 | E10 4-engine byte-identity (8 shapes) | `engines/RESULTS.md`, `engines/timing/*.csv` |
 | E11 + E11-real | `e11_*.csv` (reconvergence boundary) |
-| **G2b — WatDiv leg** (just landed) | `g2b_npcs_vs_ours.csv` — **real NpcsRewriter** vs ours on WatDiv 32.7M: **10–27× more compact** (validates E2 on the real system); NPCS ~1.8× faster to build. **Do NOT re-run the WatDiv comparison** — only the WDBench-curated leg remains (below) |
+| **G2b — WatDiv leg** (just landed) | `g2b_npcs_vs_ours.csv` — committed **clean-room NPCS reimplementation** vs ours on WatDiv 32.7M. The historical “10–27× more compact” wording was invalid because it mixed bytes and graph elements; `reference/G2b_RESULTS.md` contains the corrected same-unit result. **Do NOT re-run this legacy comparison** — R9.2 replaces its timing design. |
 
 Where a DONE row says "the SCALE version is Gx", that Gx is a **new experiment below**, not a re-run of the
 toy/partial one already done.
@@ -323,8 +326,8 @@ toy/partial one already done.
 remains — it was download-blocked, so unblock the graph or descope that leg)* · **G3** end-to-end latency ·
 **G4** rigor · (should-have) **G5 G6 G7 G8 G10** · (scope) **G9**. Definitions unchanged — see ROUND 6 above.
 If you have already started any of these, keep going; the notes below only *refine* them.
-Note: **G5 (NPCS side) is now partly done** — `g2b_npcs_vs_ours.py` runs the *real* NpcsRewriter; only the
-**SPARQLprov** artifact still needs measuring.
+Note: **G5 (NPCS side) is now partly done** — `g2b_npcs_vs_ours.py` runs the committed *clean-room*
+`NpcsRewriter`, not the authors' official artifact; only the **SPARQLprov** artifact still needs measuring.
 
 ## 🆕 NEW this round — RUN (not in ROUND 6)
 1. **E10 byte-identity — 13-shape re-run on GraphDB / QLever / MillenniumDB.** `verify_http.py` now
@@ -619,3 +622,255 @@ failure. A `sample-N` row is smoke-only and must never be cited as the full resu
 - **E5 factored**, **E11** (`e11_*.csv`) — `gates+edges` unaffected by the recovery-triple additions.
 - **G7 reification** — local `CircuitRun` circuit-diff, byte-identical under both schemes; unaffected.
 - **E4 core scaling result** — already done + correct with d4-v1 (`watdiv/e4_results.csv`); the d4-v2 pass above is a *confirmation*, not a redo.
+
+---
+
+# ROUND 9 — PAPER FIGURE COVERAGE (CURRENT EXECUTABLE TASK)
+
+## Goal and non-goals
+
+The current results establish the core claims, but the paper figures do not yet have the complete visual
+coverage used by SPARQLprov/NPCS: **engine × query-pattern × scale** small multiples with failures retained.
+Fill that grid with a single, checkpointed protocol. Do not re-run the already-current canonical Q3/R8.3/G6
+rows merely to rename them, and do not manufacture a rectangular matrix by silently dropping unsupported
+cells. Record `unsupported`, `timeout`, `oom`, and `not-run` explicitly.
+
+This round distinguishes two suites; never mix them under one `query_pattern` label:
+
+1. **Semantic gallery (validation):** the 13 E1 non-path shapes in
+   `reference/engines/_gallery_shapes.py` (`atom`, `join`, `union`, the OPTIONAL/MINUS variants, `distinct`),
+   plus a separate property-path gallery. These are tiny implementation checks, not a performance workload.
+2. **Performance workload:** WatDiv classes **L/S/F/C/O/M**. L/S/F/C are the standard WatDiv classes,
+   O is the five OPTIONAL templates used by SPARQLprov/NPCS, and M is our explicit MINUS class. Property
+   paths are a separate performance suite because they use the iterative writable-endpoint protocol.
+
+Before a long run, create `reference/paper/` and make every harness append/checkpoint one CSV row per timed
+cell. A killed process must resume without repeating completed 5-run cells. Every row must contain the git
+commit, engine/version, dataset id, query file SHA-256, bound values, status, timeout, warm-up count, run
+count, and raw per-run samples (JSON is acceptable for the sample column).
+
+## R9.0 — pull, build, smoke, and freeze the workload manifest
+
+```bash
+git pull --ff-only
+cd engine && mvn -q package && cd ../reference
+python3 verify_all.py
+python3 tests.py
+python3 verify_gallery.py
+python3 verify_engine_paths.py
+python3 verify_experiment_harness.py
+```
+
+Then create and commit `reference/paper/workload_manifest.csv` with:
+
+```text
+suite,class,template,instance,query_file,query_sha256,scale,bound_policy,notes
+```
+
+- Import the actual WatDiv L/S/F/C templates and the five O templates from the baseline artifacts where
+  licensing permits; do not silently invent different O queries and call them the baseline suite.
+- Include M separately. Use **all six classes L/S/F/C/O/M** in the performance matrix. Prefer five or more
+  concrete instances per class; if the artifact only yields fewer runnable instances, record the exact count.
+- Apply one deterministic binding policy across engines. Store the chosen RDF terms in the manifest so all
+  engines execute the same query, not each engine's own `LIMIT 1` result.
+- Paths get their own manifest (`p+`, `p*`, inverse/alternative, and every currently accepted compound form).
+- Keep datasets outside the repository.
+
+## R9.1 — validation matrix: every engine × every semantic pattern
+
+The non-path part is largely available already (`engines/e10_byte_identity.csv`: 13 shapes × GraphDB,
+Oxigraph, QLever, MillenniumDB = 52 checks). Re-run a cell only if the current-jar reference differs. Produce
+one normalized `reference/paper/validation_matrix.csv`:
+
+```text
+suite,pattern,engine,status,circuit_triples,circuit_sha256,wmc_pwe_max_abs_error,notes
+```
+
+Acceptance:
+
+- all supported non-path cells are byte-identical to the same current-jar reference;
+- every reference circuit used in the matrix has an E1 WMC==PWE oracle result;
+- path rows are a **separate block** and run only on engines where the iterative protocol actually works;
+- unsupported/not-run path cells stay visible as `N/A`, never as blank successes.
+
+The paper artifact for this RQ is a matrix/table, not a bar chart: equal-height “correct=1” bars contain no
+information. A narrow side column may show circuit-triple count.
+
+## R9.2 — SPARQLprov-style B/R/N/C timing decomposition (HIGHEST-PRIORITY NEW RUN)
+
+### Definitions — do not reuse the legacy `plain_ms` name
+
+SPARQLprov measured three *alternative executions*: `B` (original query on base data), `R` (the same query
+over reified data, but without provenance), and `P` (the provenance query over reified data). Its stacked
+shares are `B`, `R-B`, and `P-R`; **B/R/P are not three sequential stages that are added together.**
+
+Our faithful analogue uses four alternatives:
+
+- **B — base query:** the original SELECT over the unreified RDF graph.
+- **R — reification-only query:** preserve the original SPARQL algebra, but replace each triple pattern by
+  the selected reification scheme's statement lookup. No token output, GROUP_CONCAT, SHA256, gate IRI, or
+  CONSTRUCT template. This is the missing control.
+- **N_clean — NPCS-compatible provenance SELECT:** the committed `NpcsRewriter` output, producing
+  per-answer provenance strings. Its JavaDoc correctly calls it a **clean-room implementation** of the NPCS
+  rules; it is not the authors' official binary.
+- **N_official (preferred baseline where buildable):** the authors' NPCS artifact
+  (`https://github.com/ZubariaForthAcc/NPCS`). Pin its commit/version and run it through the same endpoint
+  protocol. If it cannot be built, keep `N_clean`, validate polynomial/answer parity on the small gallery,
+  and label it “NPCS reimplementation” in every paper artifact.
+- **C — SPARQLcirc circuit CONSTRUCT:** the actual `CircuitRewriter` plan, producing the shared circuit.
+
+The legacy E3/E6 column called `plain_ms` is **N_clean**, not B: those harnesses call the clean-room
+`get_npcs()`. Never relabel the old value as original-query time or as an official-NPCS measurement. In new
+artifacts use an `implementation` column plus `b_ms`, `r_ms`, `n_ms`, and `c_engine_ms`.
+
+Implement `reference/paper_construction_matrix.py` (or an equivalently named, documented harness) and a
+small algebra-preserving reification-only rewriter for R. It must support the six performance classes,
+including UNION/OPTIONAL/MINUS structure, and have parser/unit tests before server timing. A textual regex
+replacement that breaks nested SPARQL algebra is not acceptable.
+
+### Timing boundaries
+
+For each B/R/N/C execution use the same HTTP client, endpoint host, timeout, warm-up policy, and response
+drain. Record:
+
+- `rewrite_ms` separately for N/C query generation (diagnostic; not part of B/R/N/C engine execution);
+- `*_engine_ms`: POST immediately before send through the final response byte read;
+- `c_parse_ms`: parse/deduplicate the final circuit and recover answer bindings;
+- `construct_total_ms = c_engine_ms + c_parse_ms`;
+- later, end-to-end adds `compile_ms + wmc_ms` to `construct_total_ms` exactly once.
+
+Do **not** report “B + P + construct.” For SPARQLcirc, C already is provenance computation fused with
+circuit construction. The valid decompositions are:
+
+```text
+NPCS:       baseline B  + reification (R-B) + string provenance (N-R) = N
+SPARQLcirc: baseline B  + reification (R-B) + circuit provenance/construction (C-R) = C
+full PQE:   construct_total + compile + WMC
+```
+
+Store the raw B/R/N/C medians as primary data. Derive deltas only after aggregation. If `R<B`, `N<R`, or
+`C<R` because of optimizer choices/noise, do not clamp the delta to zero and do not draw a false positive
+stack: use grouped raw columns or signed deltas for that panel.
+
+### Matrix and protocol
+
+- Engines: **GraphDB, Oxigraph, QLever, MillenniumDB**. Attempt every non-path cell. Capability failures
+  are results (`unsupported` with the endpoint error), not reasons to delete an engine panel.
+- Scales: ordinary WatDiv **10M and 100M**.
+- Patterns: all **L/S/F/C/O/M** classes in the frozen manifest.
+- Per concrete query/method: 1–2 warm-ups + **5 timed runs**, 300 s timeout, quiescent machine; report median,
+  min, max, mean, and SD. Preserve timeouts at the 300 s plot boundary.
+- Maintain separate base and reified repositories built from the same logical facts. Verify B and R return
+  the same canonical answer multiset before timing; for N/C verify the same answer keys as B/R.
+
+Write `reference/paper/construction_brnc.csv`. Required columns include:
+
+```text
+commit,engine,engine_version,scale,class,template,instance,query_sha256,method,implementation,status,
+answers,median_ms,min_ms,max_ms,mean_ms,sd_ms,warmups,runs,timeout_s,response_bytes,
+c_parse_median_ms,gates,edges,notes
+```
+
+Preferred paper figure: one double-column `figure*`, **2 rows (10M/100M) × 4 engine columns**, identical
+query-class order and one shared legend. For each class, pair NPCS and SPARQLcirc totals and decompose each
+as B / R-B / N-R or C-R when the observed deltas are non-negative. This is the direct SPARQLprov-style
+overhead experiment. It also provides the NPCS-vs-SPARQLcirc construction cells for R9.3.
+
+### NPCS-style 200M-multisource stress case — separate, not a scale point
+
+Do not call the broken WatDiv generator. Mirror NPCS's construction: start from the 100M logical facts,
+duplicate each fact in the provenance-bearing representation, and assign a **different second provenance
+identifier**. Record all three counts: unique logical facts, provenance statements, and physical RDF triples
+(Standard reification stores several physical triples per statement).
+
+This changes source multiplicity, so `R-B` is no longer a pure reification overhead. Label the dataset
+`100M×2-sources` / `200M-multisource`, show it in a separate stress panel, and report raw R/N/C values; do
+not place it on the ordinary 10M→100M scale line or claim a clean 2× data-scaling result.
+
+## R9.3 — sharing boundary and actual NPCS comparison
+
+Reuse R9.2 N/C responses; do not issue a second long query merely to count bytes. Write
+`reference/paper/sharing_npcs.csv` with, per engine/query instance:
+
+- answers and derivations;
+- NPCS token occurrences and final UTF-8 CSV bytes;
+- SPARQLcirc gates+edges and final deduplicated N-Triples bytes;
+- N/C construction medians from R9.2;
+- explicit ratios in same units only (elements/elements, bytes/bytes).
+
+Aggregate and plot **all L/S/F/C/O/M classes**, retaining low-sharing counterexamples. The existing E2/E11
+synthetic reconvergence curves remain the controlled explanation; the new matrix supplies external validity.
+NPCS may be unsupported on an engine; record N/A. Do not infer its time from another engine.
+
+## R9.4 — compilation: all real query classes, but do NOT repeat identical circuits per engine
+
+Compilation is client-side. R9.1 already establishes that engines emit the same circuit, so recompiling the
+same bytes four times is pseudoreplication, not cross-engine evidence. Use one canonical emitted circuit per
+manifest instance and write `reference/paper/compile_patterns.csv` for all **L/S/F/C/O/M + path** classes:
+
+```text
+class,template,instance,input_gates,input_edges,cnf_vars,cnf_clauses,compiler,status,
+compile_median_ms,compile_sd_ms,compiled_nodes,wmc_ms,wmc_pwe_max_abs_error,timeout_s
+```
+
+- Compare OBDD and d4/d-DNNF with 1+5 where feasible; preserve timeout.
+- Keep E4's treewidth-controlled line plots as the scalability evidence.
+- Add a categorical grouped-column panel over the real query classes for compiled nodes/time.
+- WMC must agree with the available PWE/OBDD oracle on sampled small roots.
+
+## R9.5 — end-to-end PQE matrix and the applicable ProvSQL subset
+
+For each supported non-path R9.2 C cell, run the full pipeline and write `reference/paper/e2e_matrix.csv`:
+
+```text
+engine,scale,class,template,instance,status,answers,construct_total_ms,compile_ms,wmc_ms,
+total_ms,median_ms,sd_ms,probability_checksum
+```
+
+Use the same circuit/answer set and report construct/compile/WMC without overlap. Facet the SPARQLcirc-only
+figure by engine and query class. Because compile/WMC are engine-independent for an identical circuit, the
+caption must say that engine variation primarily reflects construction; do not present repeated compile
+numbers as independent compiler measurements.
+
+ProvSQL is an applicable baseline only for the matched TPC-H relational queries. Reuse the already-current
+forced-evaluation Q3 and keyed R8.3/Qrecon results; add scale/instance cells only if absent. Never manufacture
+ProvSQL bars for WatDiv graph patterns or property paths. Unsupported comparison cells must say `N/A`.
+
+## R9.6 — property-path matrix (separate writable protocol)
+
+Write `reference/paper/path_matrix.csv` covering every currently accepted path pattern from the frozen path
+manifest on every engine for which the iterative protocol actually completes. Record:
+
+```text
+engine,path_pattern,status,source,reachable_nodes,rounds,answers,gates,edges,construct_ms,
+compile_ms,wmc_ms,peak_rss_mb,circuit_sha256,wmc_pwe_max_abs_error,notes
+```
+
+- Keep non-writable/unsupported cells visible.
+- Separate semantic pattern breadth (`p+`, `p*`, inverse/alternative/accepted compound forms) from scaling.
+- For scaling, vary reachable-set size and graph density/cycles; use lines, not categorical bars.
+- State the IRI-frontier boundary and current compound/nested limitations in the result file.
+
+## R9.7 — output, audit, and commit discipline
+
+Create `reference/paper/PAPER_RESULTS.md` and `reference/paper/ENVIRONMENT.md`. Before committing:
+
+1. assert every CSV row maps to a manifest query hash;
+2. assert B/R answer multisets and N/C answer-key sets agree for every `ok` cell;
+3. assert run counts and timeout policy are uniform or explicitly explained;
+4. ensure all failed/unsupported cells survived aggregation;
+5. run `python3 verify_experiment_harness.py`, `python3 tests.py`, and `git diff --check`;
+6. never commit datasets, endpoint databases, raw multi-GB responses, or generated circuits.
+
+Suggested execution priority:
+
+1. R9.0 manifest + R rewriter/unit tests;
+2. R9.2 at 10M (all engines/classes) — validates the protocol and produces the main paper figure;
+3. R9.2 at 100M with checkpoint/resume;
+4. R9.1 path coverage + R9.6;
+5. R9.3/R9.4/R9.5 derived and compiler runs;
+6. optional `200M-multisource` stress panel last.
+
+Commit scripts/tests before starting multi-day runs so failures are reproducible. Commit result CSVs and
+environment logs in small batches. Push normally after each completed scale; do not wait for every optional
+cell before preserving completed work.

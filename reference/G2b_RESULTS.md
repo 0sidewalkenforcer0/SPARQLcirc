@@ -1,7 +1,9 @@
 # G2b — NPCS (per-answer how-provenance) vs ours (shared circuit): construction, THREE separate metrics
 
-Runs the **actual `NpcsRewriter`** (`App Standard query`) vs our CONSTRUCT plan, same bound queries +
-same GraphDB WatDiv (32.7 M reified), post-`1e67021`. `g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`.
+Runs the repository's executable **clean-room NPCS reimplementation** (`App Standard query`) vs our
+CONSTRUCT plan, same bound queries + same GraphDB WatDiv (32.7 M reified), post-`1e67021`.
+`g2b_npcs_vs_ours.py` → `g2b_npcs_vs_ours.csv`. This is not a run of the NPCS authors' official artifact;
+R9 therefore labels it “NPCS reimplementation” unless parity with a pinned official release is verified.
 
 > **Metric hygiene (R8.2).** An earlier version divided *NPCS bytes ÷ our gate-count* and reported it as
 > "10–27× smaller" — that is dimensionless nonsense. Sizes are reported as **three separate comparisons**,

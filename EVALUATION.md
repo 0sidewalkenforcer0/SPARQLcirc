@@ -16,7 +16,7 @@ claim from the paper.
 |---|---|---|
 | E1 Correctness | C | WMC == possible-world enumeration, exact, all operators |
 | E2 Compactness vs strings | B | flat ≈ strings on shallow (≈0.5–1×); factored/deep → 10²–10³×, unbounded |
-| E3 Construction scaling | A | build ≈ small const × plain-query time; near-linear; engine-agnostic circuit |
+| E3 Construction scaling | A | build ≈ small const × plain-query time; near-linear; engine-agnostic circuit *(pre-registered target; legacy `plain_ms` actually measured NPCS, so ROUND 9 adds true B/R controls)* |
 | E4 Compile+WMC vs treewidth | D | bounded-tw: d-DNNF linear in n, OBDD n^{O(tw)}; growing-tw: all blow up |
 | E5 Factored vs flat | D | star ≈ ∏deg/∑deg; deep chain ≈ W^{k−2}; path = 1× |
 | E6 Non-monotone | C | correct; ⊖ cost linear in operand size; baselines can't do it |
@@ -93,9 +93,16 @@ compilation.
 
 ## E3 — Construction scaling on a deployed, unmodified engine  *(status: piloted — `bench_engine.py`, `watdiv_run.py`)*
 
+> **Measurement correction.** The pre-registered comparison below is against the original query, but the
+> legacy `e3_run.py` implementation calls `get_npcs()` for its `plain_ms` column. Existing ratios are
+> therefore CONSTRUCT/NPCS-provenance-SELECT, not CONSTRUCT/B. `SERVER_TASK.md` ROUND 9 introduces
+> separate B (base), R (reification-only), N (NPCS), and C (circuit CONSTRUCT) measurements.
+
 - **Proves:** A + deployability.
 - **Independent variables:** data size (**WatDiv 10M / 100M / 1B**, see *E3 scale plan* below); engine (GraphDB for ≤100M, a lighter store for 1B).
-- **Metrics:** circuit-build wall-clock (engine runs our CONSTRUCT); circuit size; #answers; vs plain NPCS SELECT time on the same engine; the overhead constant `c = build / plain`.
+- **Metrics:** circuit-build wall-clock (engine runs our CONSTRUCT); circuit size; #answers. The implemented
+  legacy comparison is against the NPCS provenance SELECT (`plain_ms` is a misnomer), so its ratio is
+  `CONSTRUCT/NPCS`; ROUND 9 separately measures the true B/R/N/C controls.
 - **Cost model:** build is dominated by the engine's join evaluation (materializing derivations), plus a per-gate `SHA256`/comparator-network overhead of size `O(arity·log arity)`. So `build ≈ c · T_plain`, near-linear in #derivations.
 - **Prediction:** sub-second→low-seconds at 10⁶–10⁷ (pilot: 420 ms / 13.5k triples); **byte-identical circuits across engines** (deterministic content-addressing); `c` a small constant.
 - **Success:** near-linear scaling, `c` reported explicitly. **Risk:** if `SHA256` in SPARQL is slow on an engine, `c` could be several×; measure and report per engine.

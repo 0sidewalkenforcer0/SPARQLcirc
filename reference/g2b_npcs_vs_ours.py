@@ -1,5 +1,6 @@
 """G2b — NPCS (per-answer how-provenance) vs ours (shared circuit): CONSTRUCTION head-to-head,
-running the ACTUAL rewriters (not just E2's cost model), same query + same engine + same data.
+running the repository's executable clean-room NPCS reimplementation (not just E2's cost model),
+same query + same engine + same data.  This is not the NPCS authors' official artifact.
 
 NPCS side : `App Standard query` -> the NPCS rewrite = a SELECT that GROUP_CONCATs each answer's
             derivations into a per-answer provenance STRING; we POST it and measure eval time + the final
@@ -66,7 +67,7 @@ def main():
     import glob
     files = sorted(glob.glob(f"{qdir}/*.rq"))
     repo = e3_run.EP.rsplit("/", 1)[-1]
-    print(f"G2b — NPCS per-answer strings vs our shared circuit (construction), repo '{repo}'\n")
+    print(f"G2b — clean-room NPCS reimplementation vs our shared circuit (construction), repo '{repo}'\n")
     print(f"{'query':14} {'ans':>5} | {'STRUCTURAL: T_string':>20} {'T_circ':>7} {'share':>6} | "
           f"{'SERIALIZED: npcs_B':>18} {'ours_B':>8} {'B_ratio':>7} | {'npcs_ms':>7} {'ours_ms':>7}")
     print("  (structural share = flat token-occurrences ÷ shared gates+edges; serialized ratio is bytes÷bytes; "
@@ -90,7 +91,8 @@ def main():
     with open("g2b_npcs_vs_ours.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     print("\nwrote g2b_npcs_vs_ours.csv  |  STRUCTURAL share is the compactness claim (shared DAG vs flat "
-          "how-provenance); SERIALIZED bytes are reported honestly (our RDF is often larger). NPCS emits "
+          "how-provenance); SERIALIZED bytes are reported honestly (our RDF is often larger). The NPCS "
+          "reimplementation emits "
           "per-answer strings and stops (no probability); we emit the shared circuit and go on to PQE (G3).")
 
 if __name__ == "__main__":

@@ -71,7 +71,8 @@ enumeration` on the small checks, and `d4 / ProvSQL WMC == our OBDD` per instanc
 
 - **Setup.** The stock engine runs our CONSTRUCT and materialises the circuit. Source auto-bound (selective,
   as the baselines run the official WatDiv templates); the N-Triples response is **streamed** and counted in
-  O(1) memory. Metrics: circuit-build wall-clock, size, #answers, vs the plain NPCS SELECT (`c = build/plain`).
+  O(1) memory. Metrics: circuit-build wall-clock, size, #answers, vs the **NPCS provenance SELECT**
+  (`c = build/NPCS`). The legacy CSV name `plain_ms` is misleading; it calls `get_npcs()` and is not B.
 - **Predicted.** Build dominated by the engine's join evaluation ∝ #derivations, plus a per-gate
   `SHA256`/comparator overhead `O(arity·log arity)` ⇒ `build ≈ c·T_plain`, near-linear; sub-second→seconds at
   10⁶–10⁷; **byte-identical circuits across engines**; `c` a small constant.
@@ -95,7 +96,7 @@ enumeration` on the small checks, and `d4 / ProvSQL WMC == our OBDD` per instanc
   | S-star | 485,953 | 267,784 | 268,583 | 1,071,136 | 799 | 0.60× |
 
 - **Verdict.** ✅ build ∝ #derivations across **5 orders of magnitude** (slope ≈ 1 on log-log); 100M selective
-  sub-second (19–515 ms); `c` a small constant (1.6–6.8); cross-engine **byte-identity** confirmed
+  sub-second (19–515 ms); CONSTRUCT/NPCS is 1.6–6.8; cross-engine **byte-identity** confirmed
   (`verify_engine_agnostic`: GraphDB circuit == in-memory RDF4J). *Source:* `e3_run.py` →
   `e3_{10M,100M}{,_unbound}.csv`; fig `figures/E3_construction_scaling`.
 - **Honest boundary.** The *unbound* query at 100M exceeds the engine's heap while building the circuit — the
