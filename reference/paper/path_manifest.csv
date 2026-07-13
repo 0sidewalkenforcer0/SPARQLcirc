@@ -1,0 +1,6 @@
+suite,class,template,form,bound,query_file,query_sha256,dataset,notes
+watdiv-path,P,P-plus,p+,source=wsdbm:User0,watdiv/P-plus.rq,af958f596febc4e260b7fd74a6e4230931d6289c59869ff652926f9dc78a843d,watdiv-10M,friendOf+ single-source (cyclic/deep)
+watdiv-path,P,P-star,p*,source=wsdbm:User0,watdiv/P-star.rq,e3703ca8d974e49f830fd852343f462dd3119cc268c9b8edd511f43ebd0564bb,watdiv-10M,friendOf* incl zero-length
+watdiv-path,P,P-alt,(p|^p)+,source=wsdbm:User0,watdiv/P-alt.rq,fd0e00566194196ed2040652022bbcc65123026d72c364629169e8e16a35ea3c,watdiv-10M,compound: alternative+inverse closure
+watdiv-path,P,P-plus-all,p+,free (all-pairs),watdiv/P-plus-all.rq,3d061c4eace3dced59831b8219260b34c53196ed475bd14efe30b55afe65775b,watdiv-10M,"free endpoints; factor-|V|, keep at 10M"
+wikidata-path,P,WD-path,p+ (wdt:P279),source=wd:Q7397,wikidata/WD-path.rq,dbda19c811a10e435008910412717493397952429d38065a8258177dfd246d0a,wikidata-2.13B,transitive subclass-of; reachable-bounded
