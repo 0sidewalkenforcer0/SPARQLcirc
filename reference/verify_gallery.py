@@ -2,10 +2,13 @@
 
 For atom (BGP) / join (⊗) / union (⊕) / minus (⊖) / optional, build the circuit
 with the emitted CONSTRUCT (via CircuitRun on a tiny reified KG), evaluate WMC
-over the materialized circuit (Boolean abstraction: Times=∧, Plus=∨,
+over the materialized DAG (Boolean abstraction: Times=∧, Plus=∨,
 Minus(a,b)=a∧¬b), and check it equals possible-world enumeration over the
-operator's set semantics. This guards, in particular, against UNION being
-mis-compiled to a join (which a BGP-only test cannot catch).
+operator's set semantics.  The production invocation deliberately uses
+CircuitRun's default factored construction; a separate explicit ``flat`` run is
+kept as the ablation regression.  This guards, in particular, against UNION
+being mis-compiled to a join (which a BGP-only test cannot catch), and against a
+harness which only understands the old flat token→Times→Plus shape.
 
 Answer identity is TERM-AWARE: an answer gate is recovered from its structured
 `c:binding`/`c:var`/`c:val` nodes (which preserve IRI vs literal, datatype, lang,
@@ -63,9 +66,19 @@ def anskey(pairs):
     return "A|" + "|".join(sorted(f"{v}={c}" for v, c in pairs.items())) if pairs else "A"
 
 # ---- build the circuit on the unmodified in-memory engine, parse the RDF ----
-def circuit(op):
-    nt = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
-                         f"{G}/gallery.ttl", f"{G}/{op}.sparql"],
+def circuit(op, construction=None):
+    """Return the parsed engine circuit.
+
+    ``construction=None`` is intentional: it exercises CircuitRun's production
+    default.  Tests may pass ``"flat"`` only for the explicit ablation.
+    """
+    cmd = ["java", "-cp", JAR, "npcs.circuit.CircuitRun"]
+    if construction is not None:
+        if construction not in {"factored", "flat"}:
+            raise ValueError(f"unknown construction mode: {construction}")
+        cmd.append(f"--construction={construction}")
+    cmd += ["Standard", f"{G}/gallery.ttl", f"{G}/{op}.sparql"]
+    nt = subprocess.run(cmd,
                         capture_output=True, text=True, check=True).stdout
     kind, feeds, ins, mnd, sub = {}, {}, {}, {}, {}
     ans_gates, g_bnodes, b_var, b_val = set(), {}, {}, {}
@@ -95,17 +108,55 @@ def circuit(op):
         binds[g] = d
     return kind, feeders, ins, mnd, sub, ans_gates, binds
 
-def evalg(g, asn, kind, feeders, ins, mnd, sub):
-    k = kind.get(g)
-    if k == "Times": return all(asn[t] for t in ins.get(g, ()))
-    if k == "Minus": return evalg(mnd[g], asn, kind, feeders, ins, mnd, sub) and \
-                            not evalg(sub[g], asn, kind, feeders, ins, mnd, sub)
-    if k == "Plus":  return any(evalg(f, asn, kind, feeders, ins, mnd, sub)
-                                for f in feeders.get(g, ()))
-    return False
+def evalg(g, asn, kind, feeders, ins, mnd, sub, memo=None, active=None):
+    """Evaluate one node of an arbitrary nested circuit DAG.
 
-def circuit_wmc(op):
-    kind, feeders, ins, mnd, sub, ans_gates, binds = circuit(op)
+    Both c:in and c:feeds edges may point to another gate *or* directly to a
+    probabilistic token.  The latter is the base-Plus shape emitted by factored
+    construction.  ``memo`` preserves DAG sharing; ``active`` turns an invalid
+    cycle into a useful test failure rather than unbounded recursion.
+    """
+    if memo is None: memo = {}
+    if active is None: active = set()
+    if g in memo: return memo[g]
+
+    k = kind.get(g)
+    if k is None:
+        # c:in historically stored gallery tokens as the local t1 form, while
+        # c:feeds retains the full token IRI.  Accept either without treating an
+        # unknown RDF node as Boolean false (which used to hide nested-DAG bugs).
+        candidates = (g, g[len(EX):]) if g.startswith(EX) else (g,)
+        for token in candidates:
+            if token in asn:
+                memo[g] = bool(asn[token])
+                return memo[g]
+        raise ValueError(f"circuit leaf {g!r} has no probability assignment")
+
+    if g in active:
+        raise ValueError(f"cycle in materialized circuit at {g!r}")
+    active.add(g)
+    try:
+        if k == "Times":
+            value = all(evalg(child, asn, kind, feeders, ins, mnd, sub, memo, active)
+                        for child in ins.get(g, ()))
+        elif k == "Plus":
+            value = any(evalg(child, asn, kind, feeders, ins, mnd, sub, memo, active)
+                        for child in feeders.get(g, ()))
+        elif k == "Minus":
+            if g not in mnd or g not in sub:
+                raise ValueError(f"Minus gate {g!r} is missing an operand")
+            value = (evalg(mnd[g], asn, kind, feeders, ins, mnd, sub, memo, active)
+                     and not evalg(sub[g], asn, kind, feeders, ins, mnd, sub,
+                                   memo, active))
+        else:
+            raise ValueError(f"unknown circuit gate type {k!r} at {g!r}")
+    finally:
+        active.remove(g)
+    memo[g] = value
+    return value
+
+def circuit_wmc(op, construction=None):
+    kind, feeders, ins, mnd, sub, ans_gates, binds = circuit(op, construction)
     out = {}
     for gate in ans_gates:                                            # key by TERM-AWARE binding, not the string
         tot = 0.0
@@ -117,6 +168,66 @@ def circuit_wmc(op):
                 tot += w
         out[anskey(binds.get(gate, {}))] = round(tot, 10)
     return out
+
+def check_nested_evaluator():
+    """Truth-table regression for base-Plus→Times→Plus→Minus→answer.
+
+    This tiny synthetic DAG isolates the evaluator contract from Java query
+    generation.  The engine-output checks below separately prove that the same
+    nested shapes really occur on the default production path.
+    """
+    b1, b2, b3 = "urn:test:b1", "urn:test:b2", "urn:test:b3"
+    product, left, minus, answer = ("urn:test:product", "urn:test:left",
+                                    "urn:test:minus", "urn:test:answer")
+    kind = {b1: "Plus", b2: "Plus", b3: "Plus", product: "Times",
+            left: "Plus", minus: "Minus", answer: "Plus"}
+    feeders = {
+        b1: {EX + "t1"}, b2: {EX + "t2"}, b3: {EX + "t3"},
+        left: {product}, answer: {minus},
+    }
+    ins = {product: {b1, b2}}
+    mnd, sub = {minus: left}, {minus: b3}
+    ok = True
+    for bits in itertools.product((0, 1), repeat=3):
+        asn = dict(zip(("t1", "t2", "t3"), bits))
+        got = evalg(answer, asn, kind, feeders, ins, mnd, sub)
+        want = bool(asn["t1"] and asn["t2"] and not asn["t3"])
+        ok &= got == want
+    print(f"[nested ] base-Plus/Times/Minus evaluator: {'OK' if ok else 'FAIL'}")
+    return ok
+
+def check_construction_modes():
+    """Lock down default factored structure and the explicit flat ablation."""
+    jk, jf, ji, _, _, _, _ = circuit("join")       # no flag: production default
+    base_pluses = {g for g, k in jk.items() if k == "Plus"
+                   and any(source not in jk for source in jf.get(g, ()))}
+    nested_products = {g for g, k in jk.items() if k == "Times"
+                       and any(child in base_pluses for child in ji.get(g, ()))}
+    factored_shape = bool(base_pluses and nested_products)
+
+    mk, mf, _, mm, ms, ma, _ = circuit("minus")     # default requests factored; operator falls back
+    minus_gates = {g for g, k in mk.items() if k == "Minus"}
+    nested_minus = bool(minus_gates) and all(
+        mk.get(mm.get(g)) == "Plus" and mk.get(ms.get(g)) == "Plus"
+        for g in minus_gates
+    ) and any(any(source in minus_gates for source in mf.get(answer, ())) for answer in ma)
+
+    flat_ok = True
+    for op in ("atom", "join"):
+        flat = circuit_wmc(op, "flat")
+        truth = pwe(op)
+        keys = set(flat) | set(truth)
+        flat_ok &= all(abs(flat.get(k, 0.0) - truth.get(k, 0.0)) < 1e-9 for k in keys)
+    fk, ff, _, _, _, _, _ = circuit("join", "flat")
+    flat_has_base_plus = any(k == "Plus" and any(source not in fk for source in ff.get(g, ()))
+                             for g, k in fk.items())
+    flat_shape = not flat_has_base_plus
+
+    print(f"[default ] factored base-Plus -> Times nesting: {'OK' if factored_shape else 'FAIL'}")
+    print(f"[default ] nested Plus -> Minus -> answer: {'OK' if nested_minus else 'FAIL'}")
+    print(f"[flat    ] explicit BGP ablation WMC==PWE/old shape: "
+          f"{'OK' if flat_ok and flat_shape else 'FAIL'}")
+    return factored_shape and nested_minus and flat_ok and flat_shape
 
 # ---- ground truth: possible-world enumeration over the set semantics ----
 def answers_rdflib(op, T):
@@ -202,7 +313,7 @@ def check_guard():
     return all(r.values())
 
 if __name__ == "__main__":
-    allok = True
+    allok = check_nested_evaluator()
     for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
                "minus_chain", "opt_left", "opt_right", "distinct", "optional", "opt_disjoint"]:
         cw, tw = circuit_wmc(op), pwe(op)
@@ -213,6 +324,7 @@ if __name__ == "__main__":
         for k in keys:
             flag = "" if abs(cw.get(k, 0.) - tw.get(k, 0.)) < 1e-9 else "   <-- MISMATCH"
             print(f"    {k:<52} circuit={cw.get(k,0.):.6f}  pwe={tw.get(k,0.):.6f}{flag}")
+    allok &= check_construction_modes()
     allok &= check_guard()
     print("\nALL OK" if allok else "\nFAILURES")
     sys.exit(0 if allok else 1)
