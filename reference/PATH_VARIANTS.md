@@ -70,13 +70,17 @@ check the circuit builds with correct WMC. All on the current jar; `WMC==PWE` sa
   rather than silently mis-computing an unsupported compound path. Correct behaviour, but a coverage
   boundary: bounded single-predicate `p+`/`p*`/`p?` are supported; arbitrary compound-subpath closures not.
 - **Dense cyclic `friendOf+`** from a highly-connected WatDiv user (225 direct edges) fails the build with
-  an RDF4J **`Missing parameter: query`** error during frontier expansion — i.e. a frontier-step tuple
-  query was dispatched empty/malformed. This is a **client-side frontier-query bug for large/dense
-  frontiers** (likely an over-length `VALUES` GET or an empty-frontier edge case), *not* a computational
-  scale limit: the Wikidata DAG paths (small frontiers) build fine, and the circuit itself stays
-  polynomial by construction (G1). A bug report for the actively-developed path code, left un-patched here
-  to avoid churn; `friendOf+` from a sparse node is empty (no reach). Validated `p+` coverage = the two
-  Wikidata predicates; dense cyclic graphs need the frontier-query fix first.
+  an RDF4J `Missing parameter: query` error during frontier expansion. **Root cause confirmed (transport,
+  not computation):** as the frontier grows, `frontierStepQuery` builds a `VALUES ?u { … }` clause with
+  thousands of IRIs → a query string of **hundreds of KB**; RDF4J's `SPARQLRepository` sends it in the URL
+  (**GET**), and GraphDB/Tomcat rejects it with **HTTP 400 "Request header is too large"** (surfaced to
+  RDF4J as the misleading "Missing parameter: query"). Verified directly: a 280 KB `VALUES` query returns
+  **400 via GET but 200 via POST** on `/repositories/watdiv`. The circuit itself stays polynomial (G1);
+  only the *transport* fails. **Fix options** (in `CircuitRun`, the actively-developed path code — left to
+  the author to avoid churn): (a) force **POST** for the frontier tuple queries (engine-agnostic; a
+  connection-config change), or (b) **chunk** the frontier into ≤ ~500-node `VALUES` batches and union the
+  results (works even on GET-only endpoints). The Wikidata DAG paths (small frontiers) are unaffected, so
+  the validated `p+` coverage is the two Wikidata predicates; dense cyclic graphs need this transport fix.
 
 **Summary:** validated on **`p+` (two predicates) and `p*` at 2.13 B scale with WMC == PWE**; fail-fasts
 (not mis-computes) on unsupported compound modifiers; dense cyclic closures are a scale limit.
