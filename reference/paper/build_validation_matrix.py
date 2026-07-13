@@ -16,7 +16,7 @@ Acceptance encoded here:
 
   python3 build_validation_matrix.py            # writes reference/paper/validation_matrix.csv
 """
-import os, sys, csv, hashlib
+import os, sys, csv, hashlib, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REF = os.path.dirname(HERE)
@@ -72,36 +72,32 @@ def main():
                              circuit_triples=triples, circuit_sha256=sha,
                              wmc_pwe_max_abs_error=f"{err:.2e}", notes=note))
 
-    # ---------- path suite (separate block) ----------
-    # Reference (RDF4J embedded, == GraphDB's engine) circuit is compiled+WMC-checked by verify_engine_paths;
-    # e_paths.csv records its per-shape build result. The client-driven iterative writable protocol is NOT
-    # run on read-only engines, so only the reference column is a result here; the rest are explicit N/A.
-    WRITABLE_REF = "graphdb"                                    # RDF4J-backed reference endpoint
-    path_rows = []
-    if os.path.exists(EPATHS):
-        with open(EPATHS) as fh:
-            for r in csv.DictReader(fh):
-                path_rows.append(r)
-    for r in path_rows:
-        shape = r["query"]
-        st = r.get("status", "").strip()
+    # ---------- path suite (separate block): the 7 VALIDATED property-path shapes ----------
+    # verify_engine_paths.py checks engine-WMC == PWE for EXACTLY these 7 shapes (p+, p*, free p+, (p/q)+,
+    # (p|q)+, (^p)+, p?) on cyclic/compound graphs, via the RDF4J-EMBEDDED CircuitRun reference. Cross-engine
+    # HTTP path runs are NOT established, so the embedded reference verification gets its OWN explicit row
+    # (never labeled "graphdb"), and all four HTTP engines are explicit N/A.
+    import verify_engine_paths as vep
+    for qf, df, data, P, expr, subj, obj, sel in vep.TESTS:
+        shape = qf.replace(".sparql", "")
+        eng_wmc = vep.engine(qf, df, P)
+        tru = vep.oracle(expr, subj, obj, sel, data, P)
+        err = max((abs(eng_wmc.get(k, 0.0) - tru.get(k, 0.0)) for k in set(eng_wmc) | set(tru)), default=0.0)
+        nt = subprocess.run(["java", "-cp", vep.JAR, "npcs.circuit.CircuitRun", "Standard",
+                             f"{vep.G}/{df}", f"{vep.G}/{qf}"], capture_output=True, text=True, check=True).stdout
+        cpath = canon(nt)
+        rows.append(dict(suite="path", pattern=shape, engine="rdf4j-embedded (reference)",
+                         status="ok" if err < 1e-9 else "wmc!=pwe", circuit_triples=len(cpath.splitlines()),
+                         circuit_sha256=hashlib.sha256(cpath.encode()).hexdigest()[:16],
+                         wmc_pwe_max_abs_error=f"{err:.2e}",
+                         notes=f"{len(tru)} answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)"))
         for eng in ENGINES:
-            if eng == WRITABLE_REF:
-                status = "ok" if st == "ok" else st or "unknown"
-                triples = ""
-                note = f"reference (RDF4J); reach_nodes={r.get('reach_nodes','?')} rounds={r.get('rounds','?')}"
-                gates = r.get("gates", "")
-            else:
-                status = "N/A"; triples = ""; gates = ""
-                # RESULTS.md: the client-driven iterative path protocol needs a WRITABLE endpoint (frontier
-                # staging). QLever is read-only -> genuinely unsupported. Oxigraph is writable-capable; the
-                # HTTP path run is pending (reference verified on RDF4J). MDB writability unverified here.
-                note = {"qlever": "read-only endpoint: writable path protocol unsupported",
-                        "oxigraph": "writable-capable; HTTP iterative path run pending (RDF4J ref verified)",
-                        "millenniumdb": "writability for path protocol unverified; not run"}[eng]
-            rows.append(dict(suite="path", pattern=shape, engine=eng, status=status,
-                             circuit_triples=gates, circuit_sha256="",
-                             wmc_pwe_max_abs_error="", notes=note))
+            note = {"qlever": "read-only endpoint: writable iterative path protocol unsupported",
+                    "oxigraph": "writable-capable; cross-engine HTTP path run not yet executed",
+                    "graphdb": "writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)",
+                    "millenniumdb": "writability for path protocol unverified; not run"}[eng]
+            rows.append(dict(suite="path", pattern=shape, engine=eng, status="N/A",
+                             circuit_triples="", circuit_sha256="", wmc_pwe_max_abs_error="", notes=note))
 
     out = os.path.join(HERE, "validation_matrix.csv")
     cols = ["suite", "pattern", "engine", "status", "circuit_triples", "circuit_sha256",
@@ -116,9 +112,11 @@ def main():
     worst = max((float(r["wmc_pwe_max_abs_error"]) for r in g), default=0.0)
     print(f"gallery: worst WMC-PWE abs error = {worst:.2e}  (oracle threshold 1e-9)")
     p = [r for r in rows if r["suite"] == "path"]
-    pref = [r for r in p if r["engine"] == "graphdb"]
-    print(f"path:    {sum(1 for r in pref if r['status']=='ok')}/{len(pref)} reference shapes ok; "
-          f"{sum(1 for r in p if r['status']=='N/A')} N/A cells (read-only / protocol-not-run)")
+    pref = [r for r in p if r["engine"] == "rdf4j-embedded (reference)"]
+    pworst = max((float(r["wmc_pwe_max_abs_error"]) for r in pref if r["wmc_pwe_max_abs_error"]), default=0.0)
+    print(f"path:    {sum(1 for r in pref if r['status']=='ok')}/{len(pref)} validated shapes ok "
+          f"(embedded-RDF4J reference, worst WMC-PWE {pworst:.2e}); "
+          f"{sum(1 for r in p if r['status']=='N/A')} HTTP-engine cells N/A (cross-engine path HTTP not run)")
     print(f"wrote {out}  ({len(rows)} rows)")
 
 if __name__ == "__main__":

@@ -51,19 +51,38 @@ gallery,distinct,graphdb,ok,16,9aa896d71d541bf0,0.00e+00,
 gallery,distinct,oxigraph,ok,16,9aa896d71d541bf0,0.00e+00,
 gallery,distinct,qlever,ok,16,9aa896d71d541bf0,0.00e+00,
 gallery,distinct,millenniumdb,ok,16,9aa896d71d541bf0,0.00e+00,
-path,P-plus,graphdb,ok,6638,,,reference (RDF4J); reach_nodes=80 rounds=79
-path,P-plus,oxigraph,N/A,,,,writable-capable; HTTP iterative path run pending (RDF4J ref verified)
-path,P-plus,qlever,N/A,,,,read-only endpoint: writable path protocol unsupported
-path,P-plus,millenniumdb,N/A,,,,writability for path protocol unverified; not run
-path,P-star,graphdb,ok,12960,,,reference (RDF4J); reach_nodes=80 rounds=79
-path,P-star,oxigraph,N/A,,,,writable-capable; HTTP iterative path run pending (RDF4J ref verified)
-path,P-star,qlever,N/A,,,,read-only endpoint: writable path protocol unsupported
-path,P-star,millenniumdb,N/A,,,,writability for path protocol unverified; not run
-path,P-alt,graphdb,ok,19280,,,reference (RDF4J); reach_nodes=80 rounds=79
-path,P-alt,oxigraph,N/A,,,,writable-capable; HTTP iterative path run pending (RDF4J ref verified)
-path,P-alt,qlever,N/A,,,,read-only endpoint: writable path protocol unsupported
-path,P-alt,millenniumdb,N/A,,,,writability for path protocol unverified; not run
-path,P-plus-all,graphdb,ok,6719,,,reference (RDF4J); reach_nodes=80 rounds=79
-path,P-plus-all,oxigraph,N/A,,,,writable-capable; HTTP iterative path run pending (RDF4J ref verified)
-path,P-plus-all,qlever,N/A,,,,read-only endpoint: writable path protocol unsupported
-path,P-plus-all,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathplus,rdf4j-embedded (reference),ok,121,bb0fe8d6dc9e0302,0.00e+00,3 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathplus,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathplus,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathplus,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathplus,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathstar,rdf4j-embedded (reference),ok,138,62cf0056450f5910,0.00e+00,3 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathstar,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathstar,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathstar,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathstar,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathplus_free,rdf4j-embedded (reference),ok,298,d51b3ac43128dffb,0.00e+00,9 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathplus_free,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathplus_free,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathplus_free,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathplus_free,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathseq,rdf4j-embedded (reference),ok,51,f8ba6981eb292e94,0.00e+00,2 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathseq,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathseq,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathseq,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathseq,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathalt,rdf4j-embedded (reference),ok,500,f09270072d89fdbb,0.00e+00,16 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathalt,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathalt,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathalt,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathalt,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathinv,rdf4j-embedded (reference),ok,82,46fe3121216951bb,0.00e+00,2 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathinv,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathinv,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathinv,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathinv,millenniumdb,N/A,,,,writability for path protocol unverified; not run
+path,pathopt,rdf4j-embedded (reference),ok,76,96360198495e2477,0.00e+00,7 answers; embedded-RDF4J CircuitRun reference (WMC==PWE oracle)
+path,pathopt,graphdb,N/A,,,,"writable; cross-engine HTTP path run not yet executed (verified embedded, not via HTTP)"
+path,pathopt,oxigraph,N/A,,,,writable-capable; cross-engine HTTP path run not yet executed
+path,pathopt,qlever,N/A,,,,read-only endpoint: writable iterative path protocol unsupported
+path,pathopt,millenniumdb,N/A,,,,writability for path protocol unverified; not run

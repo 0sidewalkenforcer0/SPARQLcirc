@@ -55,7 +55,7 @@ ENGINES = {
 }
 
 # ---------- HTTP POST with POST->final-byte timing + byte/row counting ----------
-def post_timed(endpoint, body, accept, keep=False):
+def post_timed(endpoint, body, accept, keep=False, timeout=TIMEOUT):
     """POST a SPARQL query; drain the whole response. Returns (engine_ms, n_lines, n_bytes, text_or_None).
     engine_ms is measured from immediately-before-send through the final response byte (full drain)."""
     req = U.Request(endpoint, data=body.encode(), method="POST")
@@ -63,7 +63,7 @@ def post_timed(endpoint, body, accept, keep=False):
     req.add_header("Accept", accept)
     buf = [] if keep else None
     t = time.time(); nb = 0; nl = 0
-    resp = U.urlopen(req, timeout=TIMEOUT)
+    resp = U.urlopen(req, timeout=timeout)                    # per-call socket timeout (see cumulative deadline)
     for raw in resp:                                          # iterate to final byte == full response read
         nb += len(raw); nl += 1
         if keep:
@@ -145,22 +145,35 @@ def time_method(method, qtext, base_ep, reified_ep):
     """Return dict(status, answers, samples[ms], response_bytes, c_parse_samples, gates, edges, note)."""
     ep = base_ep if method == "B" else reified_ep
     accept = "application/n-triples" if method == "C" else "text/csv"
-    # generate the (rewritten) query once; rewrite time is diagnostic, not part of engine timing
-    if method == "B":   bodies = [q_base(qtext)]
-    elif method == "R": bodies = [q_reify(qtext)]
-    elif method == "N": bodies = [q_npcs(qtext)]
-    elif method == "C": bodies = c_construct_plan(qtext)
-    else: raise ValueError(method)
+    # generate the (rewritten) query once; rewrite time is diagnostic, not part of engine timing.
+    # A rewrite/App failure is a per-cell result, never a whole-run crash.
+    rw = time.time()
+    try:
+        if method == "B":   bodies = [q_base(qtext)]
+        elif method == "R": bodies = [q_reify(qtext)]
+        elif method == "N": bodies = [q_npcs(qtext)]
+        elif method == "C": bodies = c_construct_plan(qtext)
+        else: raise ValueError(method)
+    except Exception as ex:
+        return dict(status=f"err:rewrite:{type(ex).__name__}", answers=None, samples=[],
+                    response_bytes=None, c_parse=[], gates=None, edges=None, note=str(ex)[:120])
+    rewrite_ms = round((time.time() - rw) * 1000, 1)          # N/C query generation (diagnostic, not engine time)
 
     samples, cparse, ans, rbytes, gates, edges, deriv, ntok = [], [], None, None, None, None, None, None
     for i in range(WARMUPS + RUNS):
         try:
             if method == "C":
-                eng_ms = 0.0; nb = 0; tri = []
-                for b in bodies:                              # POST each CONSTRUCT; sum engine time + drain
-                    ms, nl, bts, text = post_timed(ep, b, accept, keep=True)
-                    eng_ms += ms; nb += bts
-                    tri.extend(l for l in text.splitlines() if l.endswith(" ."))
+                eng_ms = 0.0; uniq = set()                     # dedup circuit triples ACROSS all steps (D4)
+                deadline = time.time() + TIMEOUT               # ONE 300s budget for the WHOLE plan (D3)
+                for b in bodies:                              # POST each CONSTRUCT step within the shared budget
+                    remain = deadline - time.time()
+                    if remain <= 0:
+                        raise socket.timeout("cumulative CONSTRUCT-plan budget exhausted")
+                    ms, nl, bts, text = post_timed(ep, b, accept, keep=True, timeout=remain)
+                    eng_ms += ms
+                    uniq.update(l for l in text.splitlines() if l.endswith(" ."))
+                tri = uniq
+                nb = sum(len(l.encode()) + 1 for l in uniq)   # deduplicated N-Triples byte count (D4)
                 pt = time.time(); g, e, a, deriv = parse_circuit(tri); parse_ms = (time.time() - pt) * 1000
             elif method == "N" and i == WARMUPS:              # keep body ONCE to count ⊗ token occurrences
                 eng_ms, nl, nb, text = post_timed(ep, bodies[0], accept, keep=True)
@@ -187,7 +200,8 @@ def time_method(method, qtext, base_ep, reified_ep):
             samples.append(round(eng_ms, 2)); cparse.append(round(parse_ms, 2))
         ans, rbytes, gates, edges = a, nb, g, e
     return dict(status="ok", answers=ans, samples=samples, response_bytes=rbytes,
-                c_parse=cparse, gates=gates, edges=edges, derivations=deriv, ntok=ntok, note="")
+                c_parse=cparse, gates=gates, edges=edges, derivations=deriv, ntok=ntok,
+                rewrite_ms=rewrite_ms, note="")
 
 
 def load_manifest():
@@ -229,14 +243,16 @@ def main():
 
     for engine in engines:
         cfg = ENGINES.get(engine)
-        if not cfg:
-            print(f"[{engine}] not registered (base+reified endpoints unknown) -> skip"); continue
+        if not cfg:                                            # unregistered engine -> explicit not-run rows,
+            cfg = {"version": f"{engine} (not registered: base+reified endpoints unknown)"}   # never silent skip
+            print(f"[{engine}] not registered -> emitting explicit not-run rows")
         for scale in scales:
             eps = cfg.get(scale)
             for row in [r for r in manifest if r["scale"] == scale]:
                 cls, tmpl, inst = row["class"], row["template"], row["instance"]
                 qtext = open(os.path.join(REF, row["query_file"])).read()
-                # per-cell answer parity gate (B vs R counts; N vs C answer-gate counts) computed lazily
+                # answer counts recorded per method; rigorous term-aware B==R / N==C parity is a separate
+                # pass (verify_brnc_parity.py) so a legitimate bag-vs-set / OPTIONAL difference never aborts timing.
                 for method in methods:
                     key = (engine, scale, cls, tmpl, inst, method)
                     if key in done:
@@ -261,7 +277,7 @@ def main():
                         warmups=WARMUPS, runs=RUNS, timeout_s=TIMEOUT, response_bytes=rec["response_bytes"],
                         c_parse_median_ms=round(cp, 1) if cp is not None else None,
                         gates=rec["gates"], edges=rec["edges"], derivations=rec.get("derivations"),
-                        npcs_token_occurrences=rec.get("ntok"), rewrite_ms=None,
+                        npcs_token_occurrences=rec.get("ntok"), rewrite_ms=rec.get("rewrite_ms"),
                         samples_json=json.dumps(rec["samples"]), notes=rec["note"]))
                     fh.flush()
                     md = f"{s['median']:.0f}ms" if s else rec["status"]
