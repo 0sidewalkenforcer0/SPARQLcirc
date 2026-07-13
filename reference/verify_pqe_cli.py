@@ -1,4 +1,5 @@
-"""Offline regression for the user-facing circuit -> answer-probability CLI."""
+"""Regression for the user-facing circuit -> answer-probability CLI."""
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -8,7 +9,15 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--production", action="store_true",
+        help="exercise the default native CUDD path instead of the test oracle",
+    )
+    args = parser.parse_args(argv)
+    backend_args = [] if args.production else ["--oracle"]
+    expected_backend = "cudd" if args.production else "oracle"
     nt = """\
 <urn:test:t> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:circuit:Times> .
 <urn:test:t> <urn:circuit:in> <urn:test:x> .
@@ -26,20 +35,20 @@ def main():
         probabilities.write_text(json.dumps({"urn:test:x": 0.37}), encoding="utf-8")
         r = subprocess.run(
             [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
-             "--probabilities", str(probabilities), "--oracle",
+             "--probabilities", str(probabilities), *backend_args,
              "--compile-mode", "shared"],
             check=True, text=True, stdout=subprocess.PIPE,
         )
         per_root = subprocess.run(
             [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
-             "--probabilities", str(probabilities), "--oracle",
+             "--probabilities", str(probabilities), *backend_args,
              "--compile-mode", "per-root"],
             check=True, text=True, stdout=subprocess.PIPE,
         )
         probabilities.write_text("{}", encoding="utf-8")
         missing = subprocess.run(
             [sys.executable, str(HERE / "pqe.py"), "--circuit", str(circuit),
-             "--probabilities", str(probabilities), "--oracle"],
+             "--probabilities", str(probabilities), *backend_args],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         if (missing.returncode == 0 or "missing probabilities" not in missing.stderr
@@ -51,7 +60,7 @@ def main():
     if (result["answer_count"] != 1
             or row["binding"]["z"] != {"type": "iri", "value": "urn:test:answer"}
             or abs(row["probability"] - 0.37) >= 1e-12
-            or result["compilation"]["backend"] != "oracle"
+            or result["compilation"]["backend"] != expected_backend
             or result["compilation"]["mode"] != "shared"
             or per_root_result["compilation"]["mode"] != "per-root"
             or abs(per_root_result["answers"][0]["probability"] - row["probability"]) >= 1e-12):
