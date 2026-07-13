@@ -16,11 +16,12 @@ import os, sys, time, subprocess, statistics, csv, re
 sys.setrecursionlimit(1_000_000)
 import g3_pqe_latency as g3
 import e3_run
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 WARMUP = 1
 RUNS   = int(os.environ.get("G4_RUNS", "5"))
 GDB    = "http://localhost:7200/repositories"
-TIMEOUT = 300
+TIMEOUT = QUERY_TIMEOUT_S
 
 def stat(xs):
     xs = [x for x in xs if x is not None]
@@ -82,7 +83,8 @@ def ours_runs(name, ep, scheme, qf, is_path):
 
 def provsql_runs(schema, mktseg="BUILDING"):
     """Time ProvSQL Q3 probability_evaluate() in one psql session; force consumption via sum(p)."""
-    sql = (f"SET search_path={schema},public,provsql;\n"
+    sql = (f"SET statement_timeout='{TIMEOUT}s';\n"
+           f"SET search_path={schema},public,provsql;\n"
            "\\pset format unaligned\n\\pset tuples_only on\n\\pset fieldsep '|'\n\\timing on\n")
     # sum(p) makes the probability expression observable.  count(*) alone lets PostgreSQL prune the unused
     # target expression, accidentally timing only the relational join instead of exact PQE.

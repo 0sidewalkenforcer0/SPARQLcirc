@@ -19,6 +19,7 @@ import e3_run
 from e6_minus import parse_circuit, JAR, EMPTY, post
 import compile_bdd
 from e11_per_answer_vs_shared import global_order
+from experiment_timeouts import QUERY_TIMEOUT_S, COMPILE_TIMEOUT_S, compilation_timeout
 
 GDB = "http://localhost:7200/repositories"
 PLEAF = 0.5                                                # per-token probability (uniform)
@@ -54,7 +55,8 @@ def construct_bgp(endpoint, scheme, qtext):
 def construct_path(endpoint, qfile):
     t = time.time()
     r = subprocess.run(["java", "-Xmx8g", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
-                        EMPTY.name, qfile, endpoint], capture_output=True, text=True)
+                        EMPTY.name, qfile, endpoint], capture_output=True, text=True,
+                       timeout=QUERY_TIMEOUT_S)
     if r.returncode != 0:                                  # FAIL-FAST on a failed path build (writable-endpoint,
         raise RuntimeError(f"CircuitRun path build failed (rc={r.returncode}): {r.stderr[-500:]}")  # OOM, etc.)
     triples = set(l for l in r.stdout.splitlines() if l.endswith(" ."))
@@ -64,17 +66,19 @@ def construct_path(endpoint, qfile):
         raise RuntimeError(f"path build produced empty circuit / 0 answers ({qfile})")
     return circ, ans, ms
 
-def compile_wmc(circ, ans):
+def compile_wmc(circ, ans, timeout_s=COMPILE_TIMEOUT_S):
     """OUR pipeline: compile the SHARED circuit ONCE (one ROBDD, cross-answer node sharing) then WMC
-    every answer root. Returns (compile_ms, wmc_ms, n_answers, n_valid). (This is the shared-compile of
-    E11 Result 2 — Θ(N+S), not the per-answer Θ(N·S) a baseline would pay.)"""
+    every answer root. The compilation portion has the canonical hard wall-clock limit. Returns
+    (compile_ms, wmc_ms, n_answers, n_valid, probabilities). (This is the shared-compile of E11 Result 2 —
+    Θ(N+S), not the per-answer Θ(N·S) a baseline would pay.)"""
     P = {circ[n][1]: PLEAF for n in circ if circ[n][0] == "leaf"}
     roots = {key: node for node, key in ans.items()}                 # parse_circuit gives {node:key}; invert
     t = time.time()
-    order = global_order(circ, roots)                                # variable ordering IS part of compilation
-    bdd = compile_bdd.ROBDD(order); memo = {}; nodes = {}
-    for key, r in roots.items():
-        nodes[key] = compile_bdd.compile_root(circ, r, bdd, memo)     # shared unique-table + memo
+    with compilation_timeout(timeout_s):
+        order = global_order(circ, roots)                            # ordering IS part of compilation
+        bdd = compile_bdd.ROBDD(order); memo = {}; nodes = {}
+        for key, r in roots.items():
+            nodes[key] = compile_bdd.compile_root(circ, r, bdd, memo) # shared unique-table + memo
     comp = (time.time() - t) * 1000
     t = time.time(); probs = {key: bdd.wmc(n, P) for key, n in nodes.items()}; wmcms = (time.time() - t) * 1000
     ok = sum(1 for p in probs.values() if -1e-9 <= p <= 1.0 + 1e-9)

@@ -8,7 +8,7 @@ to a d-DNNF -- recording d-DNNF size vs our OBDD size against (n, tw).
 Prediction (EVALUATION.md E4): bounded tw -> d-DNNF linear in n while OBDD is
 n^{O(tw)}; growing tw -> both blow up (2^{Theta(tw)}). The blow-up is REAL and would
 OOM the box, so each instance runs in a subprocess under an address-space cap
-(E4_MEM_GB, default 8) + a wall-clock timeout (E4_TIMEOUT, default 120s); an instance
+(E4_MEM_GB, default 8) + the canonical 120 s compilation timeout; an instance
 that exceeds either is recorded as OOM / timeout -- that ceiling IS the data point.
 
 Run from reference/ with the sparqlcirc env active:
@@ -19,6 +19,7 @@ import os, re, csv, subprocess, random, resource, time
 import multiprocessing as mp
 import gen_families, factor, gates, export_cnf, compile_bdd
 import d4_pipeline as d4p
+from experiment_timeouts import COMPILE_TIMEOUT_S, CompilationTimeout, compilation_timeout
 try:
     from tqdm import tqdm
 except ImportError:                                   # graceful fallback if tqdm absent
@@ -26,7 +27,7 @@ except ImportError:                                   # graceful fallback if tqd
     tqdm.write = staticmethod(lambda *a, **k: print(*a))
 
 MEM_CAP = int(os.environ.get("E4_MEM_GB", "8")) * 1024 ** 3
-TIMEOUT = int(os.environ.get("E4_TIMEOUT", "120"))
+TIMEOUT = COMPILE_TIMEOUT_S
 D4 = os.environ.get("D4", "d4")
 CNFDIR = os.environ.get("E4_CNFDIR", "/tmp/e4cnf")
 os.makedirs(CNFDIR, exist_ok=True)
@@ -80,9 +81,12 @@ def _worker(ttl, q, meta, qout):
         base.update({"ddnnf_nodes": ddnnf_nodes, "d4_wmc": round(d4wmc, 6) if d4wmc is not None else None})
         qout.put({**base, "status": "partial", "obdd_size": None})     # kept if OBDD later dies
         # (2) OBDD (pure Python; the part that blows up on high tw / large n)
-        prob, obdd_size = compile_bdd.probability(c.gates, root, P)[:2]
+        with compilation_timeout(TIMEOUT):
+            prob, obdd_size = compile_bdd.probability(c.gates, root, P)[:2]
         qout.put({**base, "status": "ok", "obdd_size": obdd_size, "expected": round(prob, 6),
                   "match": d4wmc is not None and abs(d4wmc - prob) < 1e-6})
+    except CompilationTimeout:
+        qout.put({"status": "obdd-timeout"})
     except MemoryError:
         qout.put({"status": "OOM-obdd"})
     except Exception as ex:
@@ -92,7 +96,9 @@ def run_instance(family, ttl, q, meta):
     import queue as _q
     qout = mp.Queue()
     p = mp.Process(target=_worker, args=(ttl, q, meta, qout))
-    t0 = time.time(); p.start(); p.join(TIMEOUT + 30)
+    # Operational watchdog for two sequential compiler attempts (d4 then OBDD). Each attempt has its own
+    # canonical TIMEOUT above; the extra 30 s only covers process startup/result delivery.
+    t0 = time.time(); p.start(); p.join(2 * TIMEOUT + 30)
     killed = p.is_alive()
     if killed:
         p.terminate(); p.join()

@@ -37,6 +37,10 @@ PROVSQL_COMPILER = os.environ.get("LEVEL1_PROVSQL_COMPILER", "d4v2-cnf")
 PLEAF = 0.5
 GDB = "http://localhost:7200/repositories"
 TOL = 1e-6
+# This is a watchdog for one PostgreSQL batch that may launch thousands of per-answer compiler calls; it
+# is not the per-compilation cutoff used by R9.4. Our directly launched d4 calls use the canonical 120 s
+# limit through compile_portfolio.d4_compile_once().
+PROVSQL_BATCH_TIMEOUT_S = 3600
 
 
 @dataclass(frozen=True)
@@ -152,7 +156,8 @@ def provsql_sql(spec, emit_probabilities):
 
 def provsql_once(spec, emit_probabilities=False):
     proc = subprocess.run([_psql(), "-d", "provsqltest"], input=provsql_sql(spec, emit_probabilities),
-                          capture_output=True, text=True, env=dict(os.environ), timeout=3600)
+                          capture_output=True, text=True, env=dict(os.environ),
+                          timeout=PROVSQL_BATCH_TIMEOUT_S)
     if proc.returncode != 0:
         raise RuntimeError(f"ProvSQL Level-1 failed (rc={proc.returncode}): {proc.stderr[-1500:]}")
     times = [float(x) for x in re.findall(r"Time:\s+([\d.]+)\s+ms", proc.stdout)]

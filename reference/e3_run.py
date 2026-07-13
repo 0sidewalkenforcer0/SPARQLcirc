@@ -11,7 +11,7 @@ structural compactness. Despite its historical column name, `plain_ms` is not th
 query baseline. R9.2 adds separately measured B/R/N/C controls. Entities
 are found per-repo, so the same harness works at 10M and 100M (different entity sets).
 
-A build exceeding E3_TIMEOUT (default 300s) is recorded as `timeout`. Set E3_BOUND=0 to
+A build exceeding the canonical 300 s query limit is recorded as `timeout`. Set E3_BOUND=0 to
 run the raw unbound queries (heavy; streaming keeps it memory-safe but expect timeouts).
 
 Env: WATDIV_REPO (default watdiv); WATDIV_QDIR (dir of *.rq; unset -> S/L/F/M shapes);
@@ -20,6 +20,7 @@ E3_OUT (csv path, default watdiv/e3_results.csv). Run from reference/ with the e
 import os, re, sys, time, glob, socket, tempfile, csv
 import urllib.request as U, urllib.parse as UP, urllib.error
 from watdiv_run import get_construct, get_npcs, _arity
+from experiment_timeouts import QUERY_TIMEOUT_S
 try:
     from tqdm import tqdm
 except ImportError:
@@ -32,7 +33,7 @@ REPO = os.environ.get("WATDIV_REPO", "watdiv")
 # Defaults to the GraphDB repo; set SPARQLCIRC_ENDPOINT to point at ANY engine (Oxigraph/QLever/
 # MillenniumDB/...) for the E10 cross-engine portability runs -- same standard CONSTRUCTs, any store.
 EP = os.environ.get("SPARQLCIRC_ENDPOINT") or f"{GDB}/repositories/{REPO}"
-TIMEOUT = int(os.environ.get("E3_TIMEOUT", "300"))
+TIMEOUT = QUERY_TIMEOUT_S
 BOUND = os.environ.get("E3_BOUND", "1") != "0"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 MARK = [(b"urn:circuit:Times", "Times"), (b"urn:circuit:Plus", "Plus"),

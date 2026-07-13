@@ -6,6 +6,7 @@ map being accepted as successful keyed parity.
 """
 import os
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -14,6 +15,8 @@ import g3_pqe_latency as g3
 import g4_instances
 import g4_rigor
 import r8_3_reconvergent as r83
+import compile_portfolio
+import experiment_timeouts as limits
 
 
 CIRC = {
@@ -86,8 +89,24 @@ def check_g4_probability_consumption():
     return ok
 
 
+def check_canonical_timeouts():
+    compile_default = compile_portfolio.d4_compile_once.__defaults__[-1]
+    hard_deadline = False
+    try:
+        with limits.compilation_timeout(0.02):
+            time.sleep(0.1)
+    except limits.CompilationTimeout:
+        hard_deadline = True
+    ok = (limits.QUERY_TIMEOUT_S == 300 and limits.COMPILE_TIMEOUT_S == 120 and
+          compile_default == limits.COMPILE_TIMEOUT_S and
+          g3.compile_wmc.__defaults__[-1] == limits.COMPILE_TIMEOUT_S and
+          g4_rigor.TIMEOUT == limits.QUERY_TIMEOUT_S and hard_deadline)
+    print(f"[timeout policy ] query=300s + compile=120s wired to harnesses {'OK' if ok else 'FAIL'}")
+    return ok
+
+
 if __name__ == "__main__":
     all_ok = (check_compile_api() and check_parity_guards() and check_tagged_parser() and
-              check_g4_probability_consumption())
+              check_g4_probability_consumption() and check_canonical_timeouts())
     print("\nALL OK" if all_ok else "\nFAILURES")
     sys.exit(0 if all_ok else 1)

@@ -16,6 +16,7 @@ The compiler is invoked exactly once per CNF; ddnnf_wmc.py performs the subseque
 """
 import os, re, json, subprocess, csv, sys, shlex
 import ddnnf_wmc
+from experiment_timeouts import COMPILE_TIMEOUT_S
 
 D4 = os.environ.get("D4", "d4")
 V2 = os.environ.get("D4V2")
@@ -48,7 +49,8 @@ def main():
     for e in man:
         cnf = os.path.join("cnf", e["cnf"]); nnf = cnf + ".nnf"
         try:
-            subprocess.run(ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=600)
+            subprocess.run(ddnnf_cmd(cnf, nnf), check=True, capture_output=True,
+                           timeout=COMPILE_TIMEOUT_S)
             ev = ddnnf_wmc.evaluate_file(nnf, ddnnf_wmc.weights_from_dimacs(cnf))
             nodes, edges, d4wmc = ev.nodes, ev.edges, ev.probability
         except Exception as ex:

@@ -13,14 +13,14 @@ import urllib.request as U, urllib.parse as UP
 import e3_run                                           # bind_source uses e3_run.EP (set by WATDIV_REPO)
 from watdiv_run import get_npcs
 import compile_bdd, circuit_io
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 JAR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "engine", "target", "npcs-rewrite.jar"))
 EMPTY = tempfile.NamedTemporaryFile("w", suffix=".ttl", delete=False); EMPTY.write(""); EMPTY.close()
 RUNS = int(os.environ.get("E6_RUNS", "5"))
 BOUND = os.environ.get("E6_BOUND", "1") != "0"       # bound=selective; 0=raw unbound query
 MAXTRIP = int(os.environ.get("E6_MAXTRIP", "4000000"))  # safety cap on the collected circuit
-POST_TIMEOUT = int(os.environ.get("E6_POST_TIMEOUT", "300"))  # per-CONSTRUCT HTTP timeout (s); lower it
-# to bound huge/non-selective queries at Wikidata scale (they are recorded as errors, not hung on)
+POST_TIMEOUT = QUERY_TIMEOUT_S                         # canonical per-CONSTRUCT performance-cell limit
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"; C = "urn:circuit:"
 
 def plan_constructs(bound_query):

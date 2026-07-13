@@ -13,6 +13,7 @@ import sys, time, csv, random, subprocess, urllib.request as U
 sys.setrecursionlimit(1_000_000)
 sys.path.insert(0, ".")
 import compile_bdd
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 GDB = "http://localhost:7200"; REPO = "bench"
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -20,11 +21,13 @@ CONSTRUCT = open("bench_engine/twohop.construct.rq").read()
 NPCS = open("bench_engine/twohop.npcs.rq").read()
 random.seed(7)
 
-def post(path, body, ctype, accept=None):
+LOAD_TIMEOUT_S = 1200                                  # operational data load, not a timed query cell
+
+def post(path, body, ctype, accept=None, timeout=QUERY_TIMEOUT_S):
     req = U.Request(GDB + path, data=body.encode(), method="POST")
     req.add_header("Content-Type", ctype)
     if accept: req.add_header("Accept", accept)
-    t = time.time(); r = U.urlopen(req, timeout=1200); data = r.read()
+    t = time.time(); r = U.urlopen(req, timeout=timeout); data = r.read()
     return (time.time() - t) * 1000, data
 
 def clear():
@@ -91,7 +94,8 @@ def main():
     for N, deg in [(100, 3), (200, 3), (400, 3), (800, 3), (1500, 3)]:
         ttl, E = gen_ttl(N, deg)
         clear()
-        load_ms, _ = post(f"/repositories/{REPO}/statements", ttl, "text/turtle")
+        load_ms, _ = post(f"/repositories/{REPO}/statements", ttl, "text/turtle",
+                          timeout=LOAD_TIMEOUT_S)
         build_ms, circ_nt = post(f"/repositories/{REPO}", CONSTRUCT, "application/sparql-query", "application/n-triples")
         circ_tr = circ_nt.count(b" .\n") + circ_nt.count(b" .")  # rough triple count
         circ, ans = parse_circuit(circ_nt.decode("utf-8", "replace"))

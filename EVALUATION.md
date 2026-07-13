@@ -5,6 +5,10 @@ predicted result with its cost model before running**, so a surprising number re
 as a finding (or a bug) rather than a moving target. Each experiment maps to one
 claim from the paper.
 
+Unless an experiment explicitly measures loading or is a short correctness probe, the canonical wall-clock
+limits are **300 s per SELECT/CONSTRUCT execution** and **120 s per OBDD or d4/d-DNNF compilation attempt**
+(`reference/experiment_timeouts.py`). Timeout observations remain in result tables and plots.
+
 ## Claims the evaluation must defend
 
 - **A. Unmodified-engine construction** — a stock SPARQL engine builds the shared circuit (vs ProvSQL's modified PostgreSQL).

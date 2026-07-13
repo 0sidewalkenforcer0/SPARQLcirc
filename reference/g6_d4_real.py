@@ -25,6 +25,7 @@ sys.setrecursionlimit(1_000_000)
 import g3_pqe_latency as g3
 import compile_bdd, export_cnf
 import d4_pipeline as d4p
+from experiment_timeouts import COMPILE_TIMEOUT_S
 
 D4    = os.environ.get("D4", "/mnt/nfs/home/ac145595/workspace/tools/d4/d4")
 PLEAF = 0.5
@@ -40,7 +41,8 @@ def d4_ddnnf_wmc(circ, root, P, tag):
     cnf = os.path.join(TMP, tag + ".cnf"); nnf = cnf + ".nnf"
     open(cnf, "w").write(e["dimacs"])
     t = time.time()
-    subprocess.run(d4p.ddnnf_cmd(cnf, nnf), check=True, capture_output=True, timeout=600)
+    subprocess.run(d4p.ddnnf_cmd(cnf, nnf), check=True, capture_output=True,
+                   timeout=COMPILE_TIMEOUT_S)
     import ddnnf_wmc
     iw = {e["var_of"][n]: (P[pl], 1.0 - P[pl])
           for n, (op, pl) in circ.items() if op == "leaf" and n in e["var_of"]}

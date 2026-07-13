@@ -9,6 +9,7 @@ S/L/F smoke shapes)."""
 import os, sys, time, glob, subprocess, random, urllib.request as U
 sys.setrecursionlimit(1_000_000); sys.path.insert(0, ".")
 import compile_bdd
+from experiment_timeouts import QUERY_TIMEOUT_S
 random.seed(3)
 
 GDB = "http://localhost:7200"
@@ -19,7 +20,7 @@ RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 def post(body, ctype, accept):
     req = U.Request(f"{GDB}/repositories/{REPO}", data=body.encode(), method="POST")
     req.add_header("Content-Type", ctype); req.add_header("Accept", accept)
-    t = time.time(); data = U.urlopen(req, timeout=1200).read()
+    t = time.time(); data = U.urlopen(req, timeout=QUERY_TIMEOUT_S).read()
     return (time.time() - t) * 1000, data
 
 def get_construct(qfile):

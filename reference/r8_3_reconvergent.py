@@ -18,6 +18,7 @@ ProvSQL: GROUP BY c_custkey with probability_evaluate(provenance()) (its semirin
 import os, sys, subprocess, csv, statistics
 sys.setrecursionlimit(1_000_000)
 import g3_pqe_latency as g3
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 GDB = "http://localhost:7200/repositories"
 Q = "tpch/skeletons/Qrecon.rq"
@@ -68,14 +69,16 @@ def provsql(schema):
     # Per-customer probability AND an INDEPENDENT order count K (so the closed-form check is not circular).
     base = (f"FROM {schema}.customer c,{schema}.orders o "
             f"WHERE o.o_custkey=c.c_custkey AND c.c_mktsegment='BUILDING' GROUP BY c.c_custkey")
-    sql = (f"SET search_path={schema},public,provsql;\n\\timing on\n"
+    sql = (f"SET statement_timeout='{QUERY_TIMEOUT_S}s';\n"
+           f"SET search_path={schema},public,provsql;\n\\timing on\n"
            f"CREATE TEMP TABLE r AS SELECT c.c_custkey, probability_evaluate(provenance()) p {base};\n\\timing off\n"
            f"\\pset format unaligned\n\\pset tuples_only on\n\\pset fieldsep '|'\n"
            f"SELECT 'P', c_custkey, p FROM r ORDER BY c_custkey;\n"
            f"SELECT 'K', c.c_custkey, count(*) k {base} ORDER BY c.c_custkey;\n")  # independent K per customer
     env = dict(os.environ)
     r = subprocess.run([os.path.join(env.get("CONDA_PREFIX", ""), "bin", "psql"), "-d", "provsqltest"],
-                       input=sql, capture_output=True, text=True, env=env, timeout=300)
+                       input=sql, capture_output=True, text=True, env=env,
+                       timeout=QUERY_TIMEOUT_S)
     if r.returncode != 0:
         raise RuntimeError(f"ProvSQL query failed (exit {r.returncode}): {r.stderr[-500:]}")
     ms = [float(m) for m in re.findall(r"Time:\s+([\d.]+)\s+ms", r.stdout)]      # CREATE TABLE = the real work

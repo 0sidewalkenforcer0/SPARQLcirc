@@ -8,12 +8,13 @@ enumeration on a TINY subgraph. Full-scale single-user reach is a giant friendOf
 Usage: python3 e_paths.py <subgraph.reified.nt> <SRC-localname> [<tiny.reified.nt> <tiny-SRC>]
 """
 import subprocess, time, re, sys, os, itertools, random
+from experiment_timeouts import QUERY_TIMEOUT_S
 JAR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "engine", "target", "npcs-rewrite.jar"))
 C = "urn:circuit:"; RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 SUB = sys.argv[1]; SRC = sys.argv[2]
 QUERIES = ["P-plus", "P-star", "P-alt", "P-plus-all"]   # single-source ×3, all-pairs ×1
 
-def circuit_run(data, qtext, timeout=600):
+def circuit_run(data, qtext, timeout=QUERY_TIMEOUT_S):
     qf = "/tmp/_p.rq"; open(qf, "w").write(qtext)
     t = time.time()
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", data, qf],

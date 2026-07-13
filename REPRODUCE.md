@@ -15,6 +15,10 @@ external baselines (GraphDB, PySDD, d4) are optional and clearly marked.
 | d4 d-DNNF baseline (optional) | a Linux/x86 box — see `reference/D4_ON_LINUX.md` |
 | Deployed-engine + real-KG runs (optional) | GraphDB 10.x running on `localhost:7200` |
 
+For citable performance runs, `reference/experiment_timeouts.py` is the single source of truth:
+each timed SELECT/CONSTRUCT is capped at **300 s**, and each OBDD or d4/d-DNNF compilation attempt at
+**120 s**. Short correctness probes and untimed dataset loading may use different operational watchdogs.
+
 ## 1. Quick verify (~2 min, no external tools)
 
 ```bash

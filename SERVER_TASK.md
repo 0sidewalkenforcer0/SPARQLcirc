@@ -26,6 +26,11 @@ non-monotone OPTIONAL/MINUS and (new) property paths. Axis of difference vs base
 circuit + exact probabilities on a stock engine*. NPCS/SPARQLprov emit **per-answer provenance
 strings** (no probabilities); ProvSQL needs a **modified PostgreSQL**.
 
+**Canonical timeout policy (all new citable runs):** one timed **SELECT/CONSTRUCT cell = 300 s**; one
+**OBDD or d4/d-DNNF compilation attempt = 120 s**. Both values come from
+`reference/experiment_timeouts.py`. A short health/correctness probe may fail earlier, and an untimed data
+load may have a larger operational watchdog, but neither exception is a reported performance cell.
+
 **Read these repo docs before starting:** `TECHREPORT.md` (§10 evaluation plan, §4 construction,
 §4.6 paths, §5 DIFF/MINUS), `EVALUATION.md` (E1–E7, each with a *pre-registered predicted result* —
 compare your numbers to it), `REPRODUCE.md` (exact commands + data acquisition), `provsql/README.md`
@@ -814,6 +819,8 @@ compile_median_ms,compile_sd_ms,compiled_nodes,wmc_ms,wmc_pwe_max_abs_error,time
 ```
 
 - Compare OBDD and d4/d-DNNF with 1+5 where feasible; preserve timeout.
+- Apply the canonical **120 s per compilation attempt** to both compilers. Enforce an in-process OBDD limit
+  in a killable worker process; checking elapsed time only after compilation returns is not a timeout.
 - Keep E4's treewidth-controlled line plots as the scalability evidence.
 - Add a categorical grouped-column panel over the real query classes for compiled nodes/time.
 - WMC must agree with the available PWE/OBDD oracle on sampled small roots.
@@ -847,6 +854,8 @@ compile_ms,wmc_ms,peak_rss_mb,circuit_sha256,wmc_pwe_max_abs_error,notes
 ```
 
 - Keep non-writable/unsupported cells visible.
+- Apply the canonical **300 s** cap to the complete per-query iterative construction protocol and the
+  canonical **120 s** cap to each subsequent compiler attempt.
 - Separate semantic pattern breadth (`p+`, `p*`, inverse/alternative/accepted compound forms) from scaling.
 - For scaling, vary reachable-set size and graph density/cycles; use lines, not categorical bars.
 - State the IRI-frontier boundary and current compound/nested limitations in the result file.

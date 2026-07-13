@@ -33,7 +33,8 @@ D4=/path/to/d4 python3 d4_pipeline.py            # d4 v1
 
 `d4_pipeline.py` compiles each CNF to d-DNNF, records the **d-DNNF size**, then reads that dump and performs
 the exact weighted count locally in one linear pass (it does **not** launch d4 a second time), and writes
-`results.csv`. Two checks / outputs:
+`results.csv`. Each d4 compilation attempt uses the canonical **120 s** limit from
+`experiment_timeouts.py`, identical to the OBDD cutoff. Two checks / outputs:
 
 1. **Correctness:** the compiled-d-DNNF WMC equals `expected_wmc` for every instance (otherwise the CNF
    export, compiler output, NNF parser, or d4 flags are wrong). Expected values, e.g. drug/Omeprazole `0.774298`,

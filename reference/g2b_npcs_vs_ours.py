@@ -22,6 +22,7 @@ import os, sys, time, subprocess, tempfile, csv
 import urllib.request as U
 import e3_run
 from e6_minus import plan_constructs, parse_circuit, counts, JAR, post
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 def npcs_rewrite(qtext):
     qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(qtext); qf.close()
@@ -31,7 +32,7 @@ def npcs_rewrite(qtext):
 def run_select(select):
     req = U.Request(e3_run.EP, data=select.encode(), method="POST")
     req.add_header("Content-Type", "application/sparql-query"); req.add_header("Accept", "text/csv")
-    t = time.time(); raw = U.urlopen(req, timeout=300).read(); ms = (time.time()-t)*1000    # RAW response bytes
+    t = time.time(); raw = U.urlopen(req, timeout=QUERY_TIMEOUT_S).read(); ms = (time.time()-t)*1000
     body = raw.decode("utf-8", "replace")
     rows = [l for l in body.splitlines()[1:] if l.strip()]
     return ms, rows, len(raw)                                        # len(raw) = full serialized payload (bytes)

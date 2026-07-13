@@ -22,6 +22,7 @@ oracle (E1/G6); this module does not replace them.
 """
 import os, subprocess, tempfile, time, shutil
 import compile_bdd, export_cnf, ddnnf_wmc
+from experiment_timeouts import COMPILE_TIMEOUT_S, compilation_timeout
 
 SMALL = int(os.environ.get("PORTFOLIO_PWE_MAX", "20"))       # possible-worlds only below this #tokens (2^20 = 1M)
 
@@ -75,7 +76,7 @@ def prob_read_once(circ, root, P):
     return ev(root)
 
 
-def d4_compile_once(circ, root, P, d4bin=None, timeout=600):
+def d4_compile_once(circ, root, P, d4bin=None, timeout=COMPILE_TIMEOUT_S):
     """Force one ``Tseitin CNF -> d4 -> d-DNNF`` compilation, then WMC that dump locally.
 
     Returns probability, d-DNNF size and separate compile/WMC times.  It is intentionally strict: a forced
@@ -148,4 +149,6 @@ def probability(circ, root, P):
     r = d4_wmc(circ, root, P)                                  # Tseitin CNF -> d4 (if D4 set)
     if r is not None:
         return r[0], "compilation-d4"
-    return compile_bdd.probability(circ, root, P)[0], "obdd-fallback"   # portable fallback (no d4)
+    with compilation_timeout(COMPILE_TIMEOUT_S):
+        p = compile_bdd.probability(circ, root, P)[0]                  # portable fallback (no d4)
+    return p, "obdd-fallback"
