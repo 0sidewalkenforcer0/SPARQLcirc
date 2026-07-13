@@ -43,10 +43,10 @@ def fig_e4_bounded():
     ax.plot(n, dd, "s-", color=ALT, label="d-DNNF (d4)")
     tout = min(int(x["n_tokens"]) for x in r if x["status"] == "obdd-timeout")
     ax.axvline(tout, color=BASE, ls=":", alpha=0.6)
-    ax.text(tout, ax.get_ylim()[1] * 0.4, "  OBDD times out\n  (>300 s) →", color=BASE, fontsize=9, va="center")
+    ax.text(tout, ax.get_ylim()[1] * 0.4, "  OBDD hits the\n  120 s timeout →", color=BASE, fontsize=9, va="center")
     ax.set_yscale("log"); ax.set_xscale("log")
     ax.set_xlabel("circuit size  (#tokens)"); ax.set_ylabel("compiled size  (nodes, log)")
-    ax.set_title("E4 — bounded treewidth (tw=2): d-DNNF stays polynomial,\nfixed-order OBDD blows up")
+    ax.set_title("E4 — bounded treewidth (tw=2): d-DNNF stays polynomial while the\nfixed-order OBDD blows up (motivates order-robust d-DNNF compilation)")
     ax.legend(loc="lower right")
     save(fig, "fig1_E4_bounded_treewidth.png")
 
@@ -62,7 +62,7 @@ def fig_e4_growing():
     ax.plot(tw, dd, "s-", color=ALT, label="d-DNNF (d4)")
     ax.set_yscale("log")
     ax.set_xlabel("treewidth  tw"); ax.set_ylabel("compiled size  (nodes, log)")
-    ax.set_title("E4 — growing treewidth: BOTH hit the #P wall (2^Θ(tw)),\nd-DNNF later & smaller")
+    ax.set_title("E4 — growing treewidth: both compiled forms grow exponentially in tw;\nd-DNNF becomes smaller from tw ≈ 5")
     ax.legend(loc="upper left")
     save(fig, "fig2_E4_growing_treewidth.png")
 
@@ -81,8 +81,8 @@ def fig_e2_compactness():
     ax.annotate("201×", (4096, 201.4), textcoords="offset points", xytext=(-4, 6), color=ALT, fontweight="bold")
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("#derivations  D  (grows with query depth/branching)")
-    ax.set_ylabel("compactness  =  per-answer strings ÷ shared circuit")
-    ax.set_title("E2 — sharing pays off with depth:\nflat ≈ strings, deep queries → 100×+ smaller circuit")
+    ax.set_ylabel("STRUCTURAL compactness  =  string tokens ÷ circuit (gates+edges)")
+    ax.set_title("E2 — STRUCTURAL sharing (tokens vs gates+edges, NOT serialized bytes):\nflat ≈ strings, deep queries → 100×+  (on selective queries our RDF bytes are larger — see G2b)")
     ax.legend(loc="upper left")
     save(fig, "fig3_E2_compactness.png")
 
@@ -92,10 +92,10 @@ def fig_e11_shared():
     r = rd("e11_scale.csv")
     N = [int(x["N"]) for x in r]
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    ax.plot(N, [float(x["perans_ms"]) for x in r], "s-", color=BASE, label="per-answer (NPCS/SPARQLprov style)  Θ(N·S)")
+    ax.plot(N, [float(x["perans_ms"]) for x in r], "s-", color=BASE, label="simulated per-answer, same OBDD compiler  Θ(N·S)")
     ax.plot(N, [float(x["shared_ms"]) for x in r], "o-", color=OURS, label="shared circuit (ours)  Θ(N+S)")
     ax.set_xlabel("#answers  N"); ax.set_ylabel("compile+WMC time  (ms)")
-    ax.set_title("E11 — one shared compile vs per-answer:\nsame probabilities (Δ=0), ~9× faster at N=1000")
+    ax.set_title("E11 — shared vs per-answer compile (SYNTHETIC shared-prefix family):\nsame probabilities (Δ=0), ~9× faster at N=1000  (real tree-joins: representation win ≤1)")
     ax.legend(loc="upper left")
     save(fig, "fig4_E11_shared_vs_peranswer.png")
 
@@ -106,59 +106,75 @@ def fig_provsql():
     seg = [x["instance"][:4] for x in r]
     ours = [float(x["ours_median_ms"]) / 1000 for x in r]
     prov = [float(x["provsql_median_ms"]) / 1000 for x in r]
+    ours_sd = [float(x["ours_sd_ms"]) / 1000 for x in r]
+    prov_sd = [float(x["provsql_sd_ms"]) / 1000 for x in r]
     x = np.arange(len(seg)); w = 0.38
-    fig, ax = plt.subplots(figsize=(6.8, 4.2))
-    ax.bar(x - w/2, ours, w, color=OURS, label="ours (stock SPARQL engine)")
-    ax.bar(x + w/2, prov, w, color=BASE, label="ProvSQL (modified PostgreSQL)")
+    fig, ax = plt.subplots(figsize=(6.8, 4.4))
+    ax.bar(x - w/2, ours, w, yerr=ours_sd, capsize=3, color=OURS, label="ours (stock SPARQL engine)")
+    ax.bar(x + w/2, prov, w, yerr=prov_sd, capsize=3, color=BASE, label="ProvSQL (modified PostgreSQL)")
     ax.set_xticks(x); ax.set_xticklabels(seg)
-    ax.set_ylabel("PQE latency  (s, 5-run median)")
+    ax.set_ylabel("PQE latency  (s, 5-run median ± sd)")
     ax.set_xlabel("TPC-H Q3-SPJ  ·  c_mktsegment instance")
-    ax.set_title("ProvSQL head-to-head (G4): exact PQE, no engine fork\nours comparable / slightly faster on all 5")
+    ax.set_title("Forced probability evaluation on TPC-H Q3 (G4):\nours faster on all 5 segments — exact PQE, no engine fork")
     ax.legend(loc="upper right")
+    ax.text(0.02, 0.02, "per-answer probability parity (max_abs_error = 0) verified separately on a\nreconvergent query — R8.3, not this Q3 chart",
+            transform=ax.transAxes, fontsize=8, color="#555", va="bottom")
     save(fig, "fig5_provsql_headtohead.png")
 
 
 # ---- Fig 6: G3 canonical end-to-end PQE breakdown (WMC is tiny; Q3 compile = pure-Python ordering)
 def fig_pqe_breakdown():
-    # transcribed from reference/CANONICAL_TIMINGS.md (current HEAD, 5-run): construct / compile / WMC (ms)
-    rows = [("WatDiv S-star\n(2 ans)", 10, 2, 0),
-            ("TPC-H Q3\n(14 908 ans)", 3080, 3300, 36),
-            ("Wikidata WD-path\n(P279+, 16 ans)", 2144, 1, 0)]
-    labels = [r[0] for r in rows]
-    construct = np.array([r[1] for r in rows]) / 1000
-    compile_ = np.array([r[2] for r in rows]) / 1000
-    wmc = np.array([r[3] for r in rows]) / 1000
-    x = np.arange(len(rows))
-    fig, ax = plt.subplots(figsize=(6.8, 4.2))
-    ax.bar(x, construct, 0.55, color=OURS, label="construct (engine + RDF parse)")
-    ax.bar(x, compile_, 0.55, bottom=construct, color="#ff7f0e", label="compile (ROBDD + variable ordering)")
+    g = rd("g4_rigor.csv")                                          # 5-run medians, current HEAD (not hardcoded)
+    def stage(q, s):
+        return next(float(x["median_ms"]) for x in g
+                    if x["system"] == "ours" and x["query"] == q and x["stage"] == s)
+    qs = [("WatDiv S-star\n(2 ans)", "watdiv-Sstar"),
+          ("TPC-H Q3\n(14 908 ans)", "tpch-Q3"),
+          ("Wikidata WD-path\n(P279+, 16 ans)", "wikidata-WDpath")]
+    labels = [a for a, _ in qs]
+    construct = np.array([stage(q, "construct") for _, q in qs]) / 1000
+    compile_ = np.array([stage(q, "compile") for _, q in qs]) / 1000
+    wmc = np.array([stage(q, "wmc") for _, q in qs]) / 1000
+    x = np.arange(len(qs))
+    fig, ax = plt.subplots(figsize=(6.8, 4.4))
+    ax.bar(x, construct, 0.55, color=OURS, label="construct (engine CONSTRUCT + RDF parse)")
+    ax.bar(x, compile_, 0.55, bottom=construct, color="#ff7f0e", label="compile (variable ordering + ROBDD build)")
     ax.bar(x, wmc, 0.55, bottom=construct + compile_, color=ALT, label="WMC (weighted count)")
-    for i, r in enumerate(rows):
-        ax.text(i, (r[1]+r[2]+r[3])/1000 + 0.12, f"WMC={r[3]} ms", ha="center", fontsize=8.5, color=ALT)
+    for i, (_, q) in enumerate(qs):
+        ax.text(i, construct[i] + compile_[i] + wmc[i] + 0.12, f"WMC={stage(q,'wmc'):.0f} ms",
+                ha="center", fontsize=8.5, color=ALT)
     ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=9)
-    ax.set_ylim(0, 7.6)
-    ax.set_ylabel("end-to-end PQE latency  (s)")
-    ax.set_title("G3 — end-to-end PQE breakdown (5-run):\nweighted count is never the cost (≤36 ms); Q3 compile = pure-Python ordering")
-    ax.legend(loc="upper left", fontsize=9)
+    ax.set_ylim(0, max(construct + compile_ + wmc) * 1.18)
+    ax.set_ylabel("end-to-end PQE latency  (s, 5-run median)")
+    ax.set_title("G3 — end-to-end PQE breakdown (g4_rigor 5-run):\nWMC ≤ 36 ms in all three; TPC-H Q3 is dominated by the current pure-Python variable ordering")
+    ax.legend(loc="upper right", fontsize=9)
     save(fig, "fig6_G3_pqe_breakdown.png")
 
 
 # ---- Fig 7: G6 — correctness on REAL circuits: d4 == OBDD == PWE, 26/26
 def fig_correctness():
+    # A residual TABLE, not a scatter: the 8 Q3 answers all sit at p=0.125 (overlap), and a scatter can't
+    # show d4 vs PWE — the table reports max |method − ground-truth| per workload, which IS the claim.
     r = rd("g6_d4.csv")
-    fams = sorted(set(x["query"] for x in r))
-    cmap = {f: c for f, c in zip(fams, [OURS, "#ff7f0e", ALT])}
-    fig, ax = plt.subplots(figsize=(5.6, 4.6))
+    fams = ["watdiv-Sstar", "tpch-Q3", "wikidata-WDpath"]
+    body, tot_n, tot_o, tot_d = [], 0, 0.0, 0.0
     for f in fams:
         pts = [x for x in r if x["query"] == f]
-        ax.scatter([float(x["pwe"]) for x in pts], [float(x["obdd_wmc"]) for x in pts],
-                   s=46, color=cmap[f], label=f"{f}  ({len(pts)})", alpha=0.8, edgecolor="white", linewidth=0.5)
-    ax.plot([0, 1], [0, 1], "--", color="gray", alpha=0.7, label="y = x")
-    ax.set_xlabel("possible-world enumeration  (ground truth)")
-    ax.set_ylabel("our OBDD-WMC")
-    ax.set_title("G6 — exact on real circuits:\nOBDD = PWE = d4, 26/26 (incl. all 16 property paths)")
-    ax.legend(loc="upper left", fontsize=9)
-    ax.set_xlim(-0.03, 1.03); ax.set_ylim(-0.03, 1.03)
+        mo = max(abs(float(x["obdd_wmc"]) - float(x["pwe"])) for x in pts)
+        md = max(abs(float(x["d4_wmc"]) - float(x["pwe"])) for x in pts)
+        body.append([f, str(len(pts)), f"{mo:.0e}", f"{md:.0e}"])
+        tot_n += len(pts); tot_o = max(tot_o, mo); tot_d = max(tot_d, md)
+    body.append(["all", str(tot_n), f"{tot_o:.0e}", f"{tot_d:.0e}"])
+    col = ["workload", "# circuits", "max|OBDD−PWE|", "max|d4−PWE|"]
+    fig, ax = plt.subplots(figsize=(7.6, 2.9)); ax.axis("off")
+    t = ax.table(cellText=body, colLabels=col, loc="center", cellLoc="center",
+                 colWidths=[0.30, 0.16, 0.27, 0.27])
+    t.auto_set_font_size(False); t.set_fontsize(10.5); t.scale(1, 1.7)
+    for j in range(len(col)):
+        t[0, j].set_facecolor("#e8eef5"); t[0, j].set_text_props(fontweight="bold")
+        t[len(body), j].set_text_props(fontweight="bold")
+    ax.set_title("G6 — exact on 26 sampled answer circuits (incl. all 16 property paths):\n"
+                 "OBDD = PWE = d4, three independent methods, max error 0", pad=16)
     save(fig, "fig7_G6_correctness.png")
 
 

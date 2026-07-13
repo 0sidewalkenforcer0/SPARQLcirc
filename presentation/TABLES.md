@@ -7,8 +7,8 @@ timing table (`reference/CANONICAL_TIMINGS.md`, current HEAD, post-`PathIsoSeq`)
 | query | dataset | answers | construct | compile | WMC | **total** |
 |---|---|--:|--:|--:|--:|--:|
 | WatDiv S-star | WatDiv 32.7 M | 2 | 10 ms | 2 ms | 0 ms | **12 ms** |
-| TPC-H Q3 | TPC-H SF 0.01 (1.26 M) | 14 908 | 3 080 ms | 3 300 ms* | 36 ms | **6.40 s** |
-| Wikidata WD-path (`P279+`) | Wikidata 2.13 B | 16 | 2 144 ms | 1 ms | 0 ms | **2.14 s** |
+| TPC-H Q3 | TPC-H SF 0.01 (1.26 M) | 14 908 | 3 097 ms | 3 330 ms* | 35 ms | **6.45 s** |
+| Wikidata WD-path (`P279+`) | 60 M P279 subgraph (from 2.13 B) | 16 | 2 158 ms | 1 ms | 0 ms | **2.16 s** |
 
 \* Q3 "compile" is the pure-Python **variable ordering** over ~45 k tokens (removable); the ROBDD build + WMC are tiny. WMC ≤ 36 ms everywhere.
 
@@ -37,8 +37,8 @@ timing table (`reference/CANONICAL_TIMINGS.md`, current HEAD, post-`PathIsoSeq`)
 | 14 | 44 | 40 |
 | 62 | 24 897 | 666 |
 | 94 | 299 481 | 1 193 |
-| 126 | **times out (>300 s)** | 2 067 |
-| 254 | **times out** | 5 270 |
+| 126 | **hits 120 s timeout** | 2 067 |
+| 254 | **hits 120 s timeout** | 5 270 |
 
 **Growing treewidth (depth 4):**
 | tw | OBDD nodes | d-DNNF nodes |
@@ -47,7 +47,7 @@ timing table (`reference/CANONICAL_TIMINGS.md`, current HEAD, post-`PathIsoSeq`)
 | 6 | 26 502 | 11 908 |
 | 8 | 375 501 | 211 964 |
 
-d4 weighted count == expected on **34/34** instances.
+d4 == OBDD on **32/32** instances where both completed; d4 additionally compiled the **3** instances where the OBDD timed out (so d4 covers more, not fewer). 35 instances total.
 
 ## T4 · Compactness: shared circuit vs per-answer strings (E2)
 | instance | #derivations | per-answer string | shared circuit | **compactness** |
@@ -75,12 +75,12 @@ d4 weighted count == expected on **34/34** instances.
 ## T7 · Correctness & portability
 - **G6:** OBDD = PWE = d4 on **26/26** real circuits (2 WatDiv S-star + 8 TPC-H Q3 + 16 Wikidata paths).
 - **E1:** 171/171 reference WMC == possible-world enumeration; exact for all operators.
-- **E10:** byte-identical circuit across **GraphDB, Fuseki, Oxigraph, QLever, MillenniumDB** (Java / Rust / C++).
+- **E10:** byte-identical circuit across **4 engines — GraphDB, Oxigraph, QLever, MillenniumDB** (Java / Rust / C++); 13 shapes × 4 = 52 checks. (Fuseki is planned but not in the committed matrix.)
 - **E6:** non-monotone MINUS at 10 M / 100 M, WMC == PWE (Δ ≤ 1.1e-16).
 - **G7:** SPARQL-star reification = 1 triple/fact vs Standard 3× (1.9× fewer bytes); circuit identical.
 
 ## T8 · Scope / real-KG reach
-- **E8 Wikidata 2.13 B:** 33/41 single queries build (8 too-large/OOM); largest circuit ~772 k gates.
-- **G8:** WD-path over 2.13 B — peak RSS **166 MB**, 2.3 s.
+- **E8 Wikidata 2.13 B:** **31/41** single queries build directly on the 2.13 B corpus (9 too-large + 1 OOM); largest circuit ~772 k gates.
+- **G8:** WD-path over the **60 M P279/P131 subgraph** (extracted from the 2.13 B corpus) — peak RSS **166 MB**, 2.3 s.
 - **G10:** WatDiv Complex (C1, 8-pattern) builds at 10 M — full L/S/F/C taxonomy covered.
-- **Property paths:** P +/*/alt/all — the operator class NPCS/SPARQLprov/ProvSQL do **not** support.
+- **Property paths** (the operator class NPCS/SPARQLprov/ProvSQL do **not** support): single-predicate `p+`/`p*`/`p?` validated (incl. `P279+`, `P131+` at scale, WMC==PWE); compound closures gallery-only / partly fail-fast; frontier IRI-only; dense cyclic needs a GET→POST transport fix.
