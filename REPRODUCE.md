@@ -15,29 +15,39 @@ external baselines (GraphDB, PySDD, d4) are optional and clearly marked.
 | d4 d-DNNF baseline (optional) | a Linux/x86 box — see `reference/D4_ON_LINUX.md` |
 | Deployed-engine + real-KG runs (optional) | GraphDB 10.x running on `localhost:7200` |
 
-For citable performance runs, `reference/experiment_timeouts.py` is the single source of truth:
-each timed SELECT/CONSTRUCT is capped at **300 s**, and each OBDD or d4/d-DNNF compilation attempt at
-**120 s**. Short correctness probes and untimed dataset loading may use different operational watchdogs.
+The core/CI path deliberately performs no `pip install`.  Optional oracle and
+compiler dependencies are listed separately in `reference/requirements-optional.txt`.
 
-## 1. Quick verify (~2 min, no external tools)
+For citable performance runs, `reference/experiment_timeouts.py` is the single source of truth:
+the query-side budget is **300 s**, and each OBDD or d4/d-DNNF compilation attempt is capped at
+**120 s**. Single-shot/legacy query harnesses apply 300 s per execution; the R9.2 B/R/N/C matrix
+applies one hard 300 s deadline to the entire method cell (rewrite, warm-ups, measured runs, full
+response drains, and all C-plan steps). Short correctness probes and untimed dataset loading may use
+different operational watchdogs.
+
+## 1. Quick verify (~2 min, no external services)
 
 ```bash
-# build the rewriter
-cd engine && mvn -q package            # -> target/npcs-rewrite.jar
+# from the repository root: build the current Java sources
+mvn -q -f engine/pom.xml package       # -> engine/target/npcs-rewrite.jar
 
-# rewrite a query and let a stock in-memory engine materialize the circuit
-java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
-     Standard examples/circuit/drug.reified.ttl examples/circuit/drug3hop.sparql \
-     2>plan.txt >circuit.nt            # circuit.nt = 25-triple circuit (19 core gates + 6 c:binding recovery; paper Fig. 2)
-
-# compile + WMC + cross-check against possible-world enumeration
-cd ../reference
-python3 verify_all.py                  # expect: ... ALL OK
-python3 wmc.py                         # exact WMC == enumeration on the example circuits
+# one smoke command: reference tests + WMC self-test + live Java/RDF pipeline
+python3 reference/quick_verify.py       # expect: QUICK VERIFY ALL OK
 ```
 
-`verify_all.py` printing `ALL OK` establishes: circuits are correct, gate IDs are
-canonical (no congruent ⊗), and WMC == possible-world enumeration.
+The smoke runner first exercises the standard-library reference checks and an
+offline `pqe.py` CLI regression. It then invokes `CircuitRun`, consumes the
+N-Triples emitted by that exact invocation, parses its structured answer bindings,
+compiles each fresh answer circuit to an ROBDD, and checks WMC against possible-world
+enumeration. Finally it runs the documented `pqe.py --jar ...` command end to end,
+so both the fat-JAR dispatcher and the user-facing construction branch are covered.
+It does **not** read the checked-in `reference/data/*.circuit.nt` fixtures. Both
+`reference/tests.py` and `reference/wmc.py` now exit non-zero on a mismatch or
+exception, so the same commands are safe CI gates.
+
+GitHub Actions repeats the standard-library-only Python checks on Python 3.9 and
+3.12, then performs a clean Maven build followed by the fresh-circuit smoke path.
+No Maven wrapper JAR or generated circuit is committed.
 
 ## 2. Reproduce the evaluation tables
 

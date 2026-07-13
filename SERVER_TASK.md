@@ -739,8 +739,10 @@ For each B/R/N/C execution use the same HTTP client, endpoint host, timeout, war
 drain. Record:
 
 - `rewrite_ms` separately for N/C query generation (diagnostic; not part of B/R/N/C engine execution);
-- `*_engine_ms`: POST immediately before send through the final response byte read;
-- `c_parse_ms`: parse/deduplicate the final circuit and recover answer bindings;
+- `*_engine_ms` / network time: POST immediately before send through the final response byte read,
+  ending before client-side body assembly or decoding;
+- `c_parse_ms`: assemble and UTF-8-decode every C response body, split lines, deduplicate triples,
+  parse the final circuit, and recover structured answer bindings;
 - `construct_total_ms = c_engine_ms + c_parse_ms`;
 - later, end-to-end adds `compile_ms + wmc_ms` to `construct_total_ms` exactly once.
 
@@ -766,7 +768,14 @@ stack: use grouped raw columns or signed deltas for that panel.
 - Per concrete query/method: 1–2 warm-ups + **5 timed runs**, 300 s timeout, quiescent machine; report median,
   min, max, mean, and SD. Preserve timeouts at the 300 s plot boundary.
 - Maintain separate base and reified repositories built from the same logical facts. Verify B and R return
-  the same canonical answer multiset before timing; for N/C verify the same answer keys as B/R.
+  the same canonical answer multiset before timing; verify N and C have the same term-aware candidate-key
+  set. Do not force OPTIONAL/MINUS candidate domains to equal the full-world B/R answer domain.
+
+The R9.2 harness registers GraphDB, Oxigraph, QLever, and MillenniumDB with separate localhost base/reified
+instances at both scales. Deployments may override any endpoint with
+`PCM_<ENGINE>_<SCALE>_{BASE,REIFIED}_ENDPOINT` (for example,
+`PCM_OXIGRAPH_10M_REIFIED_ENDPOINT`). Connection/capability failures are recorded results, never silent
+`not-run` panels.
 
 Write `reference/paper/construction_brnc.csv`. Required columns include:
 

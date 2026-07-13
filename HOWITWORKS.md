@@ -136,12 +136,17 @@ each gate's IRI is a **hash of its meaning**: `IRI("urn:g:t:" + SHA256(key))` fo
 these triples, RDF set-semantics collapses the duplicates — **so sharing is produced by the engine,
 automatically, with no bookkeeping on our side.**
 
-**(c) The comparator network makes the ⊗ id canonical.** A product's id must depend on its child
-*multiset*, not their textual order (otherwise `⊗(p1,p2,p3)` and a re-ordered derivation would look
-like different gates). So we SHA256 each token to fixed-width hex, **sort the hashes with a
+**(c) The comparator network makes the ⊗ id canonical.** A product's id depends on its sorted child
+sequence (including repeats), not textual order (otherwise `⊗(p1,p2,p3)` and a re-ordered derivation
+would look like different gates). We SHA256 each token to fixed-width hex, **sort the hashes with a
 comparator (bubble-sort) network written as `BIND(IF(?a<=?b,…))`**, and hash the sorted tuple. Fixed
-width makes the delimiter safe → the id is a collision-free function of the multiset. (This closes a
-real hole in NPCS's naive string concatenation.)
+width makes the pre-hash serialization unambiguous; the final SHA-256 id is collision-resistant.
+
+There is one important representation boundary: `c:in` and `c:feeds` are ordinary RDF predicates.
+If exactly the same edge is emitted twice, RDF set semantics stores it once. The materialized graph is
+therefore a **Boolean event circuit for PQE** (`x∧x=x`, `g∨g=g`), not a reversible serialization of
+`N[X]` coefficients such as `x²` or `2g`. The Python algebraic reference retains those duplicate
+children; an RDF interchange format for them would need indexed occurrence edges.
 
 **(d) The answer key** `"A|z=<value>"` encodes the projected binding; it is what makes the answer ⊕
 content-addressed and, later, lets us recover the SELECT row.

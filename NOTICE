@@ -29,10 +29,13 @@ Third-party dependencies
 engine/ (Java, see engine/pom.xml):
   Eclipse RDF4J          BSD-3-Clause / Eclipse Distribution License 1.0
   SLF4J                  MIT License
+  JUnit 4 (tests only)   Eclipse Public License 1.0
 
 reference/ (Python):
   PySDD (optional)       Apache-2.0     — SDD compilation
-  Standard library only otherwise.
+  RDFLib (optional)      BSD-3-Clause   — independent SPARQL oracle / native factoring
+  tqdm (optional)        MPL-2.0 / MIT  — progress reporting in extended experiments
+  The core reference, ROBDD/WMC, CLI, and CI smoke path use the standard library only.
 
 Benchmarks reference, but do not bundle, the WatDiv benchmark data generator
 (http://dsg.uwaterloo.ca/watdiv/) and the GraphDB triplestore

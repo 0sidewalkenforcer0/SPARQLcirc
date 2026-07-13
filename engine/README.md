@@ -1,33 +1,44 @@
-# npcs-rewrite-clean
+# SPARQL_circ engine and NPCS baseline
 
-A clean-room Java reimplementation of the **NPCS** query rewriting
-(Asma et al., *NPCS: Native Provenance Computation for SPARQL*, WWW'24),
-following the paper's **Definitions 4.1 / 4.2 / 4.6**.
+This module contains two modes. `npcs.circuit` is SPARQL_circ's main contribution:
+it makes a stock SPARQL engine materialize a shared RDF event circuit for exact PQE.
+`npcs.rewrite` is a clean-room Java reimplementation of the **NPCS** provenance-string
+baseline (Asma et al., *NPCS: Native Provenance Computation for SPARQL*, WWW'24),
+following that paper's **Definitions 4.1 / 4.2 / 4.6**.
 
-It rewrites a SELECT query so that an extra projected variable
+The baseline rewrites a SELECT query so that an extra projected variable
 (`?finalprovennacevariable`) carries the spm-semiring how-provenance polynomial
 of each answer, computed natively by the SPARQL endpoint via `BIND` /
 `GROUP_CONCAT`.
 
-Built on the **same RDF4J version (4.2.1)** as the original NPCS project, so
-IRIs, variable rendering and query structure line up with the original
-`ReifySparqlByte.jar` output.
+Built on the **same RDF4J version (4.2.1)** as the original NPCS project. The
+NPCS differential harness compares query structure after capture-avoiding gensym
+normalization; generated variable spellings are intentionally not an API.
 
 ## Build
 
 ```
 mvn -q package
-# -> target/npcs-rewrite.jar  (self-contained fat jar, Main-Class npcs.App)
+# -> target/npcs-rewrite.jar  (self-contained fat jar, Main-Class npcs.App dispatcher)
 ```
 
 ## Run
 
 ```
+# Main contribution: construct an RDF event circuit on in-memory RDF4J.
+java -jar target/npcs-rewrite.jar circuit \
+  Standard ../reference/data/drug.reified.ttl ../reference/queries/drug3hop.sparql
+
+# NPCS-compatible provenance-string baseline.
+java -jar target/npcs-rewrite.jar rewrite <Standard|SPARQL_Star> query "<sparql text>"
+java -jar target/npcs-rewrite.jar rewrite <Standard|SPARQL_Star> path path/to/query.sparql
+
+# The historical three-argument baseline form remains accepted.
 java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> query "<sparql text>"
 java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> path  path/to/query.sparql
 ```
 
-Example (Standard reification):
+Conceptual NPCS output (generated variables are shortened here for readability):
 
 ```
 SELECT ?v0 ?v1 (CONCAT("⊕(", GROUP_CONCAT(?fjoin0), ")") AS ?finalprovennacevariable)
@@ -90,7 +101,7 @@ All 139 real BGP queries are semantically identical to the original NPCS output
 for both schemes. The single "error" is `L3/10.sparql`, which is an **empty
 file** that both this JAR and the original reject identically.
 
-## Scope / status
+## NPCS string-baseline scope / status
 
 - **BGP (conjunctive):** implemented and verified **semantically identical to the
   original NPCS** — 139/139 WatDiv Basic BGP queries, both schemes (see above).
@@ -123,17 +134,20 @@ file** that both this JAR and the original reject identically.
   contains a nested non-BGP (e.g. nested OPTIONAL, UNION-inside-OPTIONAL). None
   appear in the WatDiv Standard/SPARQL-star query set. (MINUS/OPTIONAL/UNION with
   BGP operands, and MINUS with a UNION subtrahend, *are* supported and verified.)
-- **Solution modifiers dropped:** `DISTINCT`, `ORDER BY`, `LIMIT`/`OFFSET` on the
+- **Default graph only:** `GRAPH`, `FROM`, and `FROM NAMED` are rejected rather than
+  silently losing their graph/dataset semantics. The circuit rewriter has the same guard.
+- **Solution modifiers dropped by the string baseline:** `DISTINCT`, `ORDER BY`, `LIMIT`/`OFFSET` on the
   input query are ignored (the provenance GROUP BY already deduplicates; ordering
-  a provenance-annotated relation is out of scope). The WHERE-clause provenance
-  is unaffected.
+  a provenance-annotated relation is out of scope). The circuit route instead rejects
+  `ORDER BY` and `LIMIT/OFFSET`; `DISTINCT` is an implicit no-op.
 
 ## Layout
 
 ```
 src/main/java/npcs/
-├── App.java            CLI: <scheme> query|path <arg>  (+ parsecheck mode)
+├── App.java            fat-JAR dispatcher: circuit / rewrite / legacy baseline form
 ├── ExecCheck.java      in-memory execution-equivalence check
+├── circuit/            CircuitRewriter plans + CircuitRun execution entry
 └── rewrite/
     ├── Prov.java       Def 4.1 operators: ⊕( , (⊗ , (⊕ , (⊖
     ├── Terms.java      RDF term/IRI rendering (prefix expansion)
@@ -145,4 +159,3 @@ verify/
 ├── results.txt           latest BGP diff result
 └── optional_results.txt  latest OPTIONAL validation result
 ```
-

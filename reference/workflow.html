@@ -564,10 +564,10 @@ A→A  <span class="num">0.602000</span>   <span class="c"># e4·(e3 ∨ e1·e2)
 
     <div class="card">
       <span class="tag">03 · canonicalization</span>
-      <h3>A product's children are an <em>unordered set</em></h3>
+      <h3>A product key uses an <em>unordered multiset</em></h3>
       <p class="prob">A self-join yields <span class="mono">⊗(t1,t2)</span> and <span class="mono">⊗(t2,t1)</span> — the same gate in two orders. They must collapse to one. But an order-invariant multiset hash from <span class="mono">SUM+COUNT</span> is <b>not injective</b> (<span class="mono">{1,4}</span> vs <span class="mono">{2,3}</span> collide) — wrong merges give wrong probabilities.</p>
-      <p class="sol"><b>Solution.</b> A <b>comparator network in pure SPARQL 1.1</b>: hash each child to fixed-width hex, <b>sort the hashes</b>, concatenate (delimiter-safe), hash again. The id is a canonical, order-independent, collision-free function of the child multiset.</p>
-      <span class="verified">#Times-gates == #distinct child-multisets on every test (no congruent duplicates)</span>
+      <p class="sol"><b>Solution.</b> A <b>comparator network in pure SPARQL 1.1</b>: hash each child to fixed-width hex, <b>sort the hashes</b> (retaining repeats), concatenate with unambiguous delimiters, then hash again. The pre-hash key is canonical and order-independent; the final SHA-256 id is collision-resistant. Ordinary duplicate RDF edges subsequently fold at the documented Boolean/PQE serialization boundary.</p>
+      <span class="verified">Sorted-key regressions + Boolean circuit WMC == possible-world enumeration</span>
     </div>
 
     <div class="card">

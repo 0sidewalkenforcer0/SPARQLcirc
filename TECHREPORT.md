@@ -49,7 +49,8 @@ deduplicates shared gates automatically.
 
 ## 2. Scope
 
-- **Data:** ABox only (no TBox/reasoning).
+- **Data:** ABox only (no TBox/reasoning), one default graph. `GRAPH`, `FROM`, and `FROM NAMED`
+  are rejected fail-fast; the current token layouts do not encode graph context.
 - **Queries:** `SELECT`; the algebra fragment **BGP/AND, UNION, OPTIONAL, MINUS**, **property paths**
   (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6).
 - **Excluded (by design):** `FILTER`, `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
@@ -75,8 +76,8 @@ bind the matching statement's id to a fresh variable `?fprovN`:
 
 A token is the unit of uncertainty: one independent Boolean variable with probability `p(t)`.
 
-### 3.2 spm-semiring
-Provenance lives in the free **semiring-with-monus** `N[X]` over the token set `X`, with:
+### 3.2 Algebraic provenance and the PQE quotient
+The algebraic specification lives in the free **semiring-with-monus** `N[X]` over the token set `X`, with:
 - **⊕** (sum) — alternative derivations / UNION;
 - **⊗** (product) — joint use / JOIN;
 - **⊖** (monus) — difference / anti-join (DIFF; and the negative branch of OPTIONAL/MINUS).
@@ -85,15 +86,24 @@ For **PQE** we use the Boolean/event abstraction: **⊗ ↦ ∧, ⊕ ↦ ∨, �
 `Pr[·]` = weighted model count (WMC) with weights `p(t)`, `1−p(t)`. This is exact for
 tuple-independent PQE (the Boolean function is the possible-world indicator; WMC is its expectation).
 
+The two representations in this repository deliberately stop at different points. The Python algebraic
+reference (`reference/gates.py`) retains repeated children and can therefore represent `N[X]`
+multiplicity. The engine-materialized RDF circuit is the **Boolean/event quotient used for PQE**:
+`c:in` and `c:feeds` are ordinary, unindexed RDF edges, so two identical edges collapse under RDF set
+semantics. Thus `x⊗x` is read as `x∧x=x` and two identical derivations as one event. This is lossless for
+PQE, but the RDF graph cannot be used to reconstruct polynomial coefficients such as `x²` or `2x`.
+Faithful `N[X]` interchange would require occurrence/index nodes on circuit edges. **[impl, verified]**
+
 ---
 
 ## 4. The provenance circuit and the γ rewriting
 
-### 4.1 Circuit as RDF
+### 4.1 Boolean event circuit as RDF
 Vocabulary `urn:circuit:` — node types `Times`, `Plus`, `Minus`; edges `in` (⊗→leaf), `feeds`
 (gate→parent-⊕), `minuend`/`subtrahend` (⊖ operands), `answer` (⊕→its answer key). A **leaf** is a
 token node (no wrapper). The circuit is a set of N-Triples; RDF set-semantics deduplicates any gate
-emitted more than once.
+or identical edge emitted more than once. This is the serialized Boolean quotient described in §3.2,
+not a multiplicity-preserving `N[X]` exchange format.
 
 ### 4.2 Content-addressing (the sharing mechanism)
 Every gate's IRI is a deterministic hash of its *meaning*:
@@ -104,12 +114,15 @@ Equal gates ⇒ equal IRIs ⇒ the engine stores them once ⇒ **sharing is auto
 with no coordination. Prefixes: `urn:g:t:` (⊗), `urn:g:a:` (answer ⊕), and `urn:g:p1: p2: sub: m:`
 (MINUS internals).
 
-**Canonical ⊗ key (collision-free, order-independent).** A product's key must be a function of its
-child *multiset*, not their order (so a self-join's two orderings collapse). We SHA256 each child
+**Canonical ⊗ key (collision-resistant, order-independent).** A product's key is a function of its
+sorted child sequence (including repeats), not their order (so a self-join's two orderings collapse).
+We SHA256 each child
 token to fixed-width hex, **sort the hashes with a comparator (bubble-sort) network expressed in
 pure SPARQL 1.1** (`BIND(IF(?a<=?b, …))`), then hash the concatenation:
-`CONCAT("T","|",h_(1),…,"|",h_(k))`. Fixed-width hex is delimiter-safe, closing the multiset-hash
-collision hole that NPCS's naive string concatenation has. **[impl]**
+`CONCAT("T","|",h_(1),…,"|",h_(k))`. Fixed-width hex makes the serialization injective before the
+final SHA-256 and closes NPCS's ambiguous-concatenation hole; the resulting IRI is collision-resistant,
+not mathematically collision-free. Repeated RDF edges are still folded by the Boolean serialization
+boundary in §3.2. **[impl]**
 
 **Answer identity & recovery.** An answer ⊕'s IDENTITY is a term-type-aware key (`idKey`): per projected
 variable, a kind-tagged (IRI / blank / literal-with-datatype-and-lang / unbound) SHA-256 component, so
@@ -176,8 +189,10 @@ Property paths need the provenance of *reachability*, which is recursive — a p
 connected by unboundedly many walks (infinitely many on a cyclic graph). SPARQL_circ evaluates paths
 in the **absorptive semiring PosBool(X)** (⊕, ⊗ idempotent, absorption `a ⊕ (a⊗b) = a`), so paths have
 **set semantics**: a reachable pair appears once regardless of the number of paths, and alternative-path
-duplicates (`:p|:q`) collapse. Idempotence/absorption are legal **only** inside path subcircuits; the
-non-path fragment keeps bag-valued ⊕ (`g⊕g = 2g`). **[impl, verified]**
+duplicates (`:p|:q`) collapse. The Python algebraic reference applies these stronger PosBool
+simplifications only inside path subcircuits; its non-path constructors retain `N[X]` multiplicity.
+The engine's serialized RDF output, for paths and non-path queries alike, is evaluated through the
+Boolean/PQE quotient in §3.2. **[impl, verified]**
 
 **Level-indexed fixpoint.** An arbitrary-length path `e+` is the transitive closure computed by a
 level-indexed iteration
@@ -408,8 +423,9 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 - **`verify_engine_native.py`** — the drug running example on the deployed-engine circuit:
   `Clopidogrel = 0.358800`, `Omeprazole = 0.774298`, both equal to possible-world enumeration
   (note `Omeprazole ≠ 0.8308` — the shared edge `p3` is counted once). **[impl]**
-- **`verify_all.py`** / **`verify_nonmono.py`** — content-addressing canonicality (no congruent ⊗)
-  and non-monotone correctness vs PWE across drug/selfjoin/minus/optional. **[impl]**
+- **`verify_all.py`** / **`verify_nonmono.py`** — fixture structure/sharing counts and non-monotone
+  correctness vs PWE across drug/selfjoin/minus/optional. Java source-level tests separately cover
+  product-key canonicalization and independent MINUS/OPTIONAL operator identities. **[impl]**
 - **Engine-agnostic:** GraphDB and RDF4J emit the identical drug circuit (19 triples; `p1`,`p3`
   shared). **[impl]**
 
@@ -417,8 +433,8 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 
 ## 12. Complexity summary
 
-- **Rewrite (γ):** `O(query size)`; the ⊗ comparator network adds `O(arity·log arity)` BINDs per
-  product. The circuit rewriter is stateless.
+- **Rewrite (γ):** `O(query size + arity²)` for the current implementation; the emitted bubble-sort
+  comparator network adds `O(arity²)` `BIND`s per product.
 - **Construction (engine):** dominated by the engine's join evaluation, ∝ #derivations `D`
   materialized; near-linear in data size for fixed query shape. **[pilot]** GraphDB build was
   sub-second→low-seconds at ~10⁴ triples; scaling to 10⁶–10⁷ is E3.
@@ -477,6 +493,10 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
     `Value.stringValue()` and re-wraps it as `<…>`, so blank-node / literal path nodes are coerced to IRIs
     and a path *through* such a node can be missed. All benchmark paths are IRI→IRI; general frontiers need
     skolemization or a typed `VALUES`.
+12. **RDF multiplicity boundary** — the engine output is a Boolean lineage/PQE circuit. Ordinary RDF
+    edges have no occurrence index, so it does not preserve coefficients of the source `N[X]`
+    polynomial. That limitation does not change tuple-independent PQE, where repeated event operands
+    are idempotent; a general polynomial-provenance export would need explicit occurrence nodes.
 
 ---
 

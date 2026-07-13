@@ -73,8 +73,9 @@ enumeration` on the small checks, and `d4 / ProvSQL WMC == our OBDD` per instanc
   as the baselines run the official WatDiv templates); the N-Triples response is **streamed** and counted in
   O(1) memory. Metrics: circuit-build wall-clock, size, #answers, vs the **NPCS provenance SELECT**
   (`c = build/NPCS`). The legacy CSV name `plain_ms` is misleading; it calls `get_npcs()` and is not B.
-- **Predicted.** Build dominated by the engine's join evaluation ∝ #derivations, plus a per-gate
-  `SHA256`/comparator overhead `O(arity·log arity)` ⇒ `build ≈ c·T_plain`, near-linear; sub-second→seconds at
+- **Predicted.** Build dominated by the engine's join evaluation ∝ #derivations, plus per-gate
+  `SHA256` and `O(arity²)` `BIND`s from the current bubble-sort comparator network. At fixed query arity,
+  `build ≈ c·T_plain` remains near-linear in derivations; sub-second→seconds at
   10⁶–10⁷; **byte-identical circuits across engines**; `c` a small constant.
 - **Actual — bound (selective) S/L/F, 5-run average.**
 

@@ -1,16 +1,17 @@
-# provcircuit — shared provenance circuits for probabilistic SPARQL (reference impl)
+# SPARQL_circ — Python reference, compilers, and evaluation
 
 Implementation of the VLDB draft's core: build a **shared, content-addressed
 provenance circuit** for a SPARQL query over a token-labeled probabilistic ABox,
-then do exact **probabilistic query evaluation** on it. Property paths are out of
-scope (deferred to the recursive follow-up).
+then do exact **probabilistic query evaluation** on it. The Python reference covers
+the non-monotone fragment plus property-path operators `/ | ^ + * ?`; the engine
+scope and its endpoint restrictions are documented in `TECHREPORT.md` §4.6.
 
 ## Modules
-- `gates.py` — the circuit DAG + **collision-free content-addressed** gate
+- `gates.py` — the circuit DAG + **collision-resistant content-addressed** gate
   constructors (`leaf/times/plus/minus`). Congruent gates (same op + canonicalized
   children) collapse to one id → maximal sharing. Canonical id = `sha1(op | sorted(child-ids))`,
   duplicates kept (no idempotence, since `g⊕g = 2g` in `N[X]`). This is the
-  collision-free fix for the `issue.txt` SUM+COUNT concern.
+  unambiguous pre-hash serialization that fixes the `issue.txt` SUM+COUNT concern.
 - `gamma.py` — builds the shared circuit for the non-monotone fragment
   (`bgp / union / join / optional / minus`), mirroring spm-semiring semantics
   (`OPTIONAL = (P1 AND P2) UNION (P1 DIFF P2)`), one root per answer, plus `project`.
@@ -18,18 +19,20 @@ scope (deferred to the recursive follow-up).
   abstraction (`⊗→∧, ⊕→∨, ⊖(a,b)→a∧¬b`), memoized over the DAG; `pwe()` = ground
   truth by possible-world enumeration; `check()` compares them.
 - `demo.py` — the paper's drug running example (Fig. 1/2).
+- `pqe.py` — user-facing JSON CLI for existing circuits or a fresh Java construction.
 - `tests.py` — correctness battery.
 
 ## Run
 ```
 python3 demo.py      # reproduces Fig. 2: p1, p3 shared; probs match PWE
-python3 tests.py     # 66/66 answer-probability checks vs PWE
+python3 tests.py     # 171/171 answer-probability checks vs PWE
+python3 pqe.py --circuit data/drug.circuit.nt --probabilities data/drug.probabilities.json
 ```
 
 ## Status
-- ✅ Circuit model + content-addressed sharing (collision-free).
+- ✅ Circuit model + content-addressed sharing (collision-resistant ids).
 - ✅ Non-monotone fragment (OPTIONAL/MINUS via ⊖ gates) — the moat.
-- ✅ Exact PQE, verified == possible-world enumeration (66/66).
+- ✅ Exact PQE, verified == possible-world enumeration (171/171).
 - ✅ Reproduces the running-example shared circuit (Fig. 2).
 
 ## Engine-native construction (the paper's headline claim) — BGP done ✅
@@ -43,11 +46,12 @@ with content-addressed gate IRIs (`IRI("urn:g:t:"+SHA256(...))`). Leaves are the
 ```
 # run the emitted CONSTRUCT on an in-memory engine, get the circuit as N-Triples:
 cd ../engine && mvn -q package
-java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
-     Standard ../provcircuit/data/drug.reified.ttl ../provcircuit/queries/drug3hop.sparql \
-     > ../provcircuit/data/drug.circuit.nt
-# verify WMC over the engine-built circuit == PWE:
-cd ../provcircuit && python3 verify_engine_native.py     # -> p1,p3 shared; ALL MATCH
+java -jar target/npcs-rewrite.jar circuit \
+     Standard ../reference/data/drug.reified.ttl ../reference/queries/drug3hop.sparql \
+     > /tmp/drug.circuit.nt
+# compile and WMC exactly that newly built circuit:
+cd ../reference && python3 pqe.py --circuit /tmp/drug.circuit.nt \
+     --probabilities data/drug.probabilities.json
 ```
 
 Reproduces Fig. 2 (p1, p3 shared across gates) and both answer probabilities match PWE.
@@ -70,25 +74,33 @@ java -cp ../engine/target/npcs-rewrite.jar npcs.circuit.CircuitRun \
 python3 verify_nonmono.py       # MINUS + OPTIONAL: ALL MATCH PWE
 ```
 
-## Canonical, collision-free ⊗ gates in SPARQL — done ✅
+## Canonical, collision-resistant ⊗ gate ids in SPARQL — done ✅
 
 `CircuitRewriter` emits a **comparator network** (bubble sort in pure SPARQL 1.1
 `IF/CONCAT/STR/<=`) that hashes each ⊗-child with `SHA256`, sorts the fixed-width
 hex hashes, and concatenates them (delimiter-safe) before the final `SHA256` gate
-IRI. A ⊗-gate's content address is thus a **canonical, order-independent,
-injective** function of its child *multiset* — closing the `issue.txt`
-multiset-hash concern (no SUM/COUNT; sorted-hash serialization is injective).
+IRI. Before the final SHA-256, a ⊗-gate's key is a **canonical, order-independent,
+injective serialization** of its sorted child sequence — closing the `issue.txt`
+ambiguous-concatenation concern (no SUM/COUNT). The resulting id is collision-resistant.
 Products differing only in derivation order (e.g. a self-join's two orderings)
 collapse to one shared gate.
 
-`verify_all.py` checks per example both correctness (WMC == PWE) and
-canonicalization (#Times-gates == #distinct child-multisets ⇒ no congruent ⊗):
+The engine's emitted RDF is consumed as a **Boolean event circuit for PQE**. Identical
+`c:in`/`c:feeds` triples are set-deduplicated, so this RDF interchange does not preserve
+`N[X]` coefficients such as `x²` or `2x`; `gates.py` does retain that algebraic
+multiplicity. Boolean WMC is unchanged because repeated event operands are idempotent.
+
+`verify_all.py` checks per example both correctness (WMC == PWE) and stable
+fixture-level Times counts (the self-join count is the derivation-order sharing regression):
 ```
-[drug]     correctness=OK  Times=3 distinct-multisets=3 canonical=YES
-[selfjoin] correctness=OK  Times=3 distinct-multisets=3 canonical=YES   (was 4 without sorting)
-[minus]    correctness=OK  Times=4 distinct-multisets=4 canonical=YES
-[optional] correctness=OK  Times=6 distinct-multisets=6 canonical=YES
+[drug]     correctness=OK  Times-gates=3/3 structure=OK Boolean-child-set-aliases=0
+[selfjoin] correctness=OK  Times-gates=3/3 structure=OK Boolean-child-set-aliases=0
+[minus]    correctness=OK  Times-gates=4/4 structure=OK Boolean-child-set-aliases=0
+[optional] correctness=OK  Times-gates=6/6 structure=OK Boolean-child-set-aliases=0
 ```
+RDF child sets alone cannot prove multiset-key uniqueness because `[x]` and `[x,x]`
+serialize to the same unindexed edge set; the Java source-level tests exercise key
+fingerprinting and independent MINUS/OPTIONAL identities directly.
 ⊕/answer/group/reach gate keys are now **collision-resistant + term-type-aware**: each binding is
 kind-tagged (IRI/literal/blank/unbound) and per-part `SHA256`-hashed before concatenation (`termHash`,
 same discipline as the product-gate key), so distinct RDF terms — IRI vs same-lexical literal, differing

@@ -15,7 +15,14 @@ with ProvSQL, which requires a **modified** database engine. Here the engine is 
 the circuit is a normal RDF graph, so RDF set-semantics deduplicates shared gates
 automatically.
 
-**Scope.** ABox only (no TBox). **Property paths** are supported via recursive provenance in the
+The engine output is specifically a **Boolean event circuit for PQE**. Because identical RDF edges
+are set-deduplicated, it does not preserve free-semiring coefficients (`x²`, `2x`); the Python
+algebraic reference does preserve that multiplicity. This distinction is immaterial to exact Boolean
+WMC, where repeated event operands are idempotent, and is documented in `TECHREPORT.md` §3.2.
+
+**Scope.** ABox only (no TBox), currently over one default graph. `GRAPH`, `FROM`, and
+`FROM NAMED` are rejected fail-fast because the reification layout does not encode graph context.
+**Property paths** are supported via recursive provenance in the
 absorptive semiring PosBool (arbitrary-length `+`/`*` and `/ | ^ ?`); reachability is a level-indexed
 fixpoint whose gates stay an acyclic, polynomial DAG even on cyclic graphs (Python reference: all
 operators; engine: `+`/`*` single predicate, **IRI frontier only** — blank-node/literal path nodes are
@@ -47,7 +54,7 @@ sparqlcirc/
 │   ├── examples/            runnable BGP / UNION / OPTIONAL / MINUS examples
 │   └── verify/              correctness oracle + consistency diff vs. the original
 ├── reference/    Python: reference circuit, compilers, WMC, and all evaluation
-│   ├── gates.py             collision-free content-addressed circuit constructors
+│   ├── gates.py             collision-resistant content-addressed circuit constructors
 │   ├── gamma.py             client-side circuit builder (bgp/union/join/optional/minus)
 │   ├── factor.py            factored construction (variable elimination)
 │   ├── compile_bdd.py       self-contained ROBDD + WMC (zero-dependency)
@@ -61,7 +68,8 @@ sparqlcirc/
 
 ## Quick start
 
-**Build the rewriter** (Java 11+, Maven; depends only on Eclipse RDF4J + SLF4J):
+**Build the rewriter** (Java 11+, Maven; runtime depends on Eclipse RDF4J + SLF4J,
+with JUnit used only for tests):
 
 ```bash
 cd engine
@@ -73,20 +81,39 @@ mvn -q package            # -> target/npcs-rewrite.jar
 
 ```bash
 cd engine
-java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun \
+java -jar target/npcs-rewrite.jar circuit \
      Standard examples/circuit/drug.reified.ttl examples/circuit/drug3hop.sparql \
      2>plan.txt >circuit.nt   # -> 25-triple circuit (19 core gates + 6 c:binding recovery; paper Fig. 2)
 # plan.txt = the CONSTRUCT plan;  circuit.nt = the materialized circuit (N-Triples)
 ```
 
-**Compile + weighted model count** (Python 3.9+, standard library only for the
-zero-dependency path):
+**Compile + weighted model count the circuit generated immediately above** (Python 3.9+,
+standard library only):
 
 ```bash
-cd reference
-python3 wmc.py            # exact WMC vs. possible-world enumeration on the examples
-python3 verify_all.py     # end-to-end correctness across all example circuits
+# continuing from engine/
+cd ../reference
+python3 pqe.py --circuit ../engine/circuit.nt \
+  --probabilities data/drug.probabilities.json
+python3 tests.py          # independent 171-case reference-semantics battery
 ```
+
+Or run the complete local construction → ROBDD → answer-probability path through one
+command (after `mvn package`):
+
+```bash
+# from reference/
+python3 pqe.py --jar ../engine/target/npcs-rewrite.jar \
+  --data data/drug.reified.ttl --query queries/drug3hop.sparql \
+  --probabilities data/drug.probabilities.json
+```
+
+To evaluate an existing circuit, replace the `--jar/--data/--query` options with
+`--circuit data/drug.circuit.nt`. Output is JSON with term-aware RDF bindings,
+probabilities, and compiled BDD sizes.
+
+For the complete clean-build regression used by CI, run `python3 reference/quick_verify.py`
+from the repository root after packaging the JAR.
 
 See `engine/README.md` and `reference/README.md` for details.
 

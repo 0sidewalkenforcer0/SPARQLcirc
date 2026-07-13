@@ -6,8 +6,10 @@ as a finding (or a bug) rather than a moving target. Each experiment maps to one
 claim from the paper.
 
 Unless an experiment explicitly measures loading or is a short correctness probe, the canonical wall-clock
-limits are **300 s per SELECT/CONSTRUCT execution** and **120 s per OBDD or d4/d-DNNF compilation attempt**
-(`reference/experiment_timeouts.py`). Timeout observations remain in result tables and plots.
+limits are a **300 s query-side hard budget** and **120 s per OBDD or d4/d-DNNF compilation attempt**
+(`reference/experiment_timeouts.py`). Single-shot/legacy scripts apply the query budget per execution;
+the R9.2 B/R/N/C protocol applies it once to the whole method cell, including rewrite, warm-ups,
+measured runs, response drains, and all C-plan steps. Timeout observations remain in result tables and plots.
 
 ## Claims the evaluation must defend
 
@@ -107,7 +109,10 @@ compilation.
 - **Metrics:** circuit-build wall-clock (engine runs our CONSTRUCT); circuit size; #answers. The implemented
   legacy comparison is against the NPCS provenance SELECT (`plain_ms` is a misnomer), so its ratio is
   `CONSTRUCT/NPCS`; ROUND 9 separately measures the true B/R/N/C controls.
-- **Cost model:** build is dominated by the engine's join evaluation (materializing derivations), plus a per-gate `SHA256`/comparator-network overhead of size `O(arity·log arity)`. So `build ≈ c · T_plain`, near-linear in #derivations.
+- **Cost model:** build is dominated by the engine's join evaluation (materializing derivations), plus
+  `O(arity²)` `BIND`s for the current bubble-sort comparator network and per-gate `SHA256` work. For
+  fixed query arity this remains a constant-factor overhead, so `build ≈ c · T_plain`, near-linear in
+  the number of derivations.
 - **Prediction:** sub-second→low-seconds at 10⁶–10⁷ (pilot: 420 ms / 13.5k triples); **byte-identical circuits across engines** (deterministic content-addressing); `c` a small constant.
 - **Success:** near-linear scaling, `c` reported explicitly. **Risk:** if `SHA256` in SPARQL is slow on an engine, `c` could be several×; measure and report per engine.
 
