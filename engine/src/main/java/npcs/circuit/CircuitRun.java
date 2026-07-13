@@ -163,7 +163,7 @@ public final class CircuitRun {
                 java.util.Set<String> next = new java.util.LinkedHashSet<>();
                 try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
                     while (r.hasNext()) {
-                        org.eclipse.rdf4j.model.Value v = r.next().getValue("v");
+                        org.eclipse.rdf4j.model.Value v = r.next().getValue(pathq.frontierValueBinding());
                         if (v != null && reach.add(v.stringValue())) next.add(v.stringValue());
                     }
                 }
@@ -175,7 +175,7 @@ public final class CircuitRun {
         } else {
             int nGlobal;                               // variable source (all-pairs): fall back to the global bound
             try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
-                nGlobal = ((Literal) r.next().getValue("c")).intValue();
+                nGlobal = ((Literal) r.next().getValue(pathq.nodeCountBinding())).intValue();
             }
             cap = Math.max(1, nGlobal - 1);
         }

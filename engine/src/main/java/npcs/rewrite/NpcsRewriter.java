@@ -1,8 +1,10 @@
 package npcs.rewrite;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -42,7 +44,9 @@ public class NpcsRewriter {
     private int joinCounter = 0;   // ?fjoinN — per-BGP products
     private int unionCounter = 0;  // ?funionN — union sums
     private int diffCounter = 0;   // ?fdiffN — monus results
-    private int aggCounter = 0;    // ?faggN — sealed sub-select outputs
+    private String generatedPrefix = "__npcs0_";
+    private final Set<String> userVariableNames = new HashSet<>();
+    private String provenanceOutputVariable = "finalprovennacevariable";
 
     public NpcsRewriter(Reification scheme) {
         this.scheme = scheme;
@@ -60,7 +64,9 @@ public class NpcsRewriter {
 
     public String rewrite(String queryStr) {
         ParsedQuery pq = new SPARQLParser().parseQuery(queryStr, null);
+        QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
+        initializeGeneratedVariables(te);
 
         Projection proj = outerProjection(te);
         if (proj == null) {
@@ -74,11 +80,19 @@ public class NpcsRewriter {
         }
 
         Frag top = beta(proj.getArg());
+        String outputVar = userVariableNames.contains("finalprovennacevariable")
+                ? generated("finalprovennacevariable") : "finalprovennacevariable";
+        provenanceOutputVariable = outputVar;
 
         // Def 4.2 rule 6: SELECT W (ProvAggSum(?z) AS ?final) WHERE β(body) GROUP BY W
         String p = String.join(" ", withQ(projVars));
-        return "SELECT " + p + " (" + Prov.aggSum(top.provVar) + " AS ?finalprovennacevariable) \n"
+        return "SELECT " + p + " (" + Prov.aggSum(top.provVar) + " AS ?" + outputVar + ") \n"
              + "WHERE { \n" + top.body + " }\n GROUP BY " + p;
+    }
+
+    /** Actual output binding used for the provenance column (fresh if the query owns the legacy name). */
+    public String provenanceOutputVariable() {
+        return provenanceOutputVariable;
     }
 
     // ----------------------------------------------------------------- β dispatch
@@ -110,11 +124,11 @@ public class NpcsRewriter {
         StringBuilder body = new StringBuilder();
         List<String> provVars = new ArrayList<>();
         for (StatementPattern sp : sps) {
-            String pv = "fprov" + (provCounter++);
+            String pv = generated("fprov" + (provCounter++));
             provVars.add(pv);
             body.append(scheme.reify(sp, pv));
         }
-        String joinVar = "fjoin" + (joinCounter++);
+        String joinVar = generated("fjoin" + (joinCounter++));
         body.append("\tBIND (").append(Prov.prod(provVars)).append(" AS ?").append(joinVar).append(") . \n");
         return new Frag(body.toString(), joinVar, queryVars(node));
     }
@@ -126,7 +140,7 @@ public class NpcsRewriter {
 
     /** ⊕ of two already-rewritten fragments under one shared provenance var. */
     private Frag unionFrags(Frag l, Frag r) {
-        String z = "funion" + (unionCounter++);
+        String z = generated("funion" + (unionCounter++));
         LinkedHashSet<String> vars = new LinkedHashSet<>(l.vars);
         vars.addAll(r.vars);
         String body = "{\n" + seal(l, z) + "\n}\n UNION \n{\n" + seal(r, z) + "\n}\n";
@@ -168,9 +182,9 @@ public class NpcsRewriter {
         renameNonShared(right, left.vars);   // ν
         Frag rght = beta(right);
 
-        String zL = "fdl" + diffCounter;
-        String zR = "fdr" + diffCounter;
-        String zDiff = "fdiff" + (diffCounter++);
+        String zL = generated("fdl" + diffCounter);
+        String zR = generated("fdr" + diffCounter);
+        String zDiff = generated("fdiff" + (diffCounter++));
 
         String group = String.join(" ", withQ(left.vars)) + " ?" + zL;
         String body = "{ SELECT " + group + " (" + Prov.diffAgg(zL, zR) + " AS ?" + zDiff + ") \n"
@@ -181,7 +195,7 @@ public class NpcsRewriter {
     }
 
     /** vars(a) ∩ vars(b) over the real (named, bound) query variables. */
-    private static LinkedHashSet<String> sharedVars(TupleExpr a, TupleExpr b) {
+    private LinkedHashSet<String> sharedVars(TupleExpr a, TupleExpr b) {
         LinkedHashSet<String> s = queryVars(a);
         s.retainAll(queryVars(b));
         return s;
@@ -209,14 +223,15 @@ public class NpcsRewriter {
     }
 
     /** Real (named, non-constant, non-anonymous) query variables of a subtree, in order. */
-    private static LinkedHashSet<String> queryVars(TupleExpr node) {
+    private LinkedHashSet<String> queryVars(TupleExpr node) {
         LinkedHashSet<String> vars = new LinkedHashSet<>();
         node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
             @Override public void meet(StatementPattern sp) {
                 add(sp.getSubjectVar()); add(sp.getPredicateVar()); add(sp.getObjectVar());
             }
             private void add(Var v) {
-                if (v != null && !v.hasValue() && !v.isAnonymous() && !v.getName().startsWith("_")) {
+                if (v != null && !v.hasValue() && !v.isAnonymous()
+                        && !v.getName().startsWith(generatedPrefix)) {
                     vars.add(v.getName());
                 }
             }
@@ -226,14 +241,50 @@ public class NpcsRewriter {
 
     /** ν: rename variables of {@code node} that are not shared with {@code shared}. */
     private void renameNonShared(TupleExpr node, LinkedHashSet<String> shared) {
+        java.util.Map<String, String> renamed = new java.util.LinkedHashMap<>();
         node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
             @Override public void meet(Var v) {
                 if (!v.hasValue() && !v.isAnonymous()
-                        && !v.getName().startsWith("_") && !shared.contains(v.getName())) {
-                    v.setName(v.getName() + "_nu" + diffCounter);
+                        && !v.getName().startsWith(generatedPrefix) && !shared.contains(v.getName())) {
+                    String old = v.getName();
+                    v.setName(renamed.computeIfAbsent(old,
+                            name -> generated(name + "_nu" + diffCounter)));
                 }
             }
         });
+    }
+
+    /**
+     * Put every internal variable below a query-specific prefix which no user variable can start with.
+     * Keeping one prefix for the full rewrite makes repeated occurrences deterministic while making
+     * capture impossible even for adversarial names such as ?fprov0, ?fjoin0, or a generated ν name.
+     */
+    private void initializeGeneratedVariables(TupleExpr te) {
+        provCounter = joinCounter = unionCounter = diffCounter = 0;
+        userVariableNames.clear();
+        userVariableNames.addAll(te.getBindingNames());
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(Var v) {
+                if (v.getName() != null) userVariableNames.add(v.getName());
+            }
+        });
+        int n = 0;
+        while (true) {
+            String candidate = "__npcs" + n + "_";
+            boolean collision = false;
+            for (String user : userVariableNames) {
+                if (user.startsWith(candidate)) { collision = true; break; }
+            }
+            if (!collision) {
+                generatedPrefix = candidate;
+                return;
+            }
+            n++;
+        }
+    }
+
+    private String generated(String hint) {
+        return generatedPrefix + hint;
     }
 
     private static boolean isPureBgp(TupleExpr node) {

@@ -41,7 +41,9 @@ public final class RunExample {
         String query = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
 
         RDFFormat fmt = args[1].endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
-        String rewritten = new NpcsRewriter(scheme).rewrite(query);
+        NpcsRewriter rewriter = new NpcsRewriter(scheme);
+        String rewritten = rewriter.rewrite(query);
+        String provenanceBinding = rewriter.provenanceOutputVariable();
 
         Repository repo = new SailRepository(new MemoryStore());
         try (RepositoryConnection con = repo.getConnection()) {
@@ -60,12 +62,12 @@ public final class RunExample {
                     BindingSet bs = res.next();
                     StringBuilder row = new StringBuilder();
                     for (String n : bs.getBindingNames()) {
-                        if (n.equals("finalprovennacevariable")) {
+                        if (n.equals(provenanceBinding)) {
                             continue;
                         }
                         row.append(n).append("=").append(shorten(bs.getValue(n))).append("  ");
                     }
-                    Value prov = bs.getValue("finalprovennacevariable");
+                    Value prov = bs.getValue(provenanceBinding);
                     row.append("|  ").append(prov == null ? "∅" : shorten(prov));
                     System.out.println("  " + row);
                 }

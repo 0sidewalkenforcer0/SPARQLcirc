@@ -69,17 +69,19 @@ public final class ExecCheck {
     }
 
     private static void run(RepositoryConnection con, String label, String baseQuery) {
-        String rq = new NpcsRewriter(Reification.STANDARD).rewrite(baseQuery);
+        NpcsRewriter rewriter = new NpcsRewriter(Reification.STANDARD);
+        String rq = rewriter.rewrite(baseQuery);
+        String provenanceBinding = rewriter.provenanceOutputVariable();
         System.out.println("\n==================== " + label + " ====================");
         try (TupleQueryResult res = con.prepareTupleQuery(rq).evaluate()) {
             while (res.hasNext()) {
                 BindingSet bs = res.next();
                 StringBuilder row = new StringBuilder();
                 for (String n : bs.getBindingNames()) {
-                    if (n.equals("finalprovennacevariable")) continue;
+                    if (n.equals(provenanceBinding)) continue;
                     row.append(n).append("=").append(shorten(bs.getValue(n))).append("  ");
                 }
-                row.append("| prov=").append(bs.getValue("finalprovennacevariable").stringValue());
+                row.append("| prov=").append(bs.getValue(provenanceBinding).stringValue());
                 System.out.println("  " + row);
             }
         }

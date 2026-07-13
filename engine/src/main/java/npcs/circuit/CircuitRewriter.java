@@ -1,6 +1,8 @@
 package npcs.circuit;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,6 +28,8 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 
 import npcs.rewrite.Reification;
+import npcs.rewrite.QueryGuard;
+import npcs.rewrite.Terms;
 
 /**
  * Circuit rewriting (the paper's gamma) built on the NPCS rewriting: reified
@@ -51,6 +55,7 @@ public class CircuitRewriter {
 
     private static final String PRE = "PREFIX c: <urn:circuit:>\n";
     private final Reification scheme;
+    private String generatedPrefix = "__sc0_";
 
     public CircuitRewriter(Reification scheme) {
         this.scheme = scheme;
@@ -58,7 +63,9 @@ public class CircuitRewriter {
 
     public List<String> plan(String query) {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
+        QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
+        initializeGeneratedVariables(te);
         rejectSequenceModifiers(te);                 // LIMIT/OFFSET/ORDER BY don't apply to a circuit
         Projection projection = outerProjection(te);
         List<String> W = new ArrayList<>();
@@ -181,31 +188,41 @@ public class CircuitRewriter {
         if (scheme != Reification.STANDARD)
             throw new UnsupportedOperationException("Zero-length paths (:p?) currently support Standard reification only.");
         Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
+        String u = qv("u"), tok = qv("tok"), times = qv("t");
+        String ans = qv("ans"), anskey = qv("anskey");
         List<String> zv = new ArrayList<>();                   // projected endpoint vars (both bound to ?u)
         for (String w : W)
             if ((!s.hasValue() && w.equals(s.getName())) || (!o.hasValue() && w.equals(o.getName())))
                 zv.add(w);
         StringBuilder rk = new StringBuilder("CONCAT(\"A\""), idk = new StringBuilder("CONCAT(\"A\"");
         for (String w : zv) {                                  // rk = readable label; idk = identity
-            rk.append(", \"|").append(w).append("=\", STR(?u)");
-            idk.append(", ").append(termHash(w, "?u"));
+            rk.append(", \"|").append(w).append("=\", STR(").append(u).append(")");
+            idk.append(", ").append(termHash(w, u));
         }
         rk.append(")"); idk.append(")");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ?t a c:Times ; c:in ?tok ; c:feeds ?ans .\n")
-         .append("  ?ans a c:Plus ; c:answer ?anskey .\n");
-        for (String w : zv)
-            q.append("  ?ans c:binding ?b_").append(w).append(" . ?b_").append(w)
-             .append(" c:var \"").append(w).append("\" ; c:val ?u .\n");
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ; c:in ").append(tok)
+         .append(" ; c:feeds ").append(ans).append(" .\n  ").append(ans)
+         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n");
+        for (String w : zv) {
+            String b = qv("b_" + w);
+            q.append("  ").append(ans).append(" c:binding ").append(b).append(" . ").append(b)
+             .append(" c:var \"").append(w).append("\" ; c:val ").append(u).append(" .\n");
+        }
         q.append("}\nWHERE {\n")
-         .append("  { ?tok <").append(RDF_S).append("> ?u . } UNION { ?tok <").append(RDF_O).append("> ?u . }\n");
-        if (s.hasValue()) q.append("  FILTER(?u = <").append(s.getValue().stringValue()).append(">)\n");
-        if (o.hasValue()) q.append("  FILTER(?u = <").append(o.getValue().stringValue()).append(">)\n");
-        q.append("  BIND(").append(rk).append(" AS ?anskey)\n")
-         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?tok)))))) AS ?t)\n")
-         .append("  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(").append(idk).append("))) AS ?ans)\n");
-        for (String w : zv)
-            q.append("  BIND(IRI(CONCAT(STR(?ans), \"#").append(w).append("\")) AS ?b_").append(w).append(")\n");
+         .append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
+         .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u).append(" . }\n");
+        if (s.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(s)).append(")\n");
+        if (o.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(o)).append(")\n");
+        q.append("  BIND(").append(rk).append(" AS ").append(anskey).append(")\n")
+         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(")
+         .append(tok).append(")))))) AS ").append(times).append(")\n")
+         .append("  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(").append(idk).append("))) AS ").append(ans).append(")\n");
+        for (String w : zv) {
+            String b = qv("b_" + w);
+            q.append("  BIND(IRI(CONCAT(STR(").append(ans).append("), \"#").append(w)
+             .append("\")) AS ").append(b).append(")\n");
+        }
         q.append("}\n");
         return q.toString();
     }
@@ -215,14 +232,16 @@ public class CircuitRewriter {
         List<String> toks = new ArrayList<>();
         StringBuilder where = reify(sps, "a", toks);
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
+        String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ?t a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
         for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
-        q.append(" c:feeds ?ans .\n  ?ans a c:Plus ; c:answer ?anskey .\n").append(bindingCtor(W))
+        q.append(" c:feeds ").append(ans).append(" .\n  ").append(ans)
+         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
-        q.append(bind("?anskey", ansKey(W, setOf(W))));                 // readable label (display/debug)
-        q.append(bindIri("?t", "urn:g:t:", tkey));
-        q.append(bindIri("?ans", "urn:g:a:", idKey(W, "A")));           // collision-resistant identity
+        q.append(bind(anskey, ansKey(W, setOf(W))));                 // readable label (display/debug)
+        q.append(bindIri(times, "urn:g:t:", tkey));
+        q.append(bindIri(ans, "urn:g:a:", idKey(W, "A")));           // collision-resistant identity
         q.append(bindingWhere(W));                                      // recoverable per-var RDF bindings
         q.append("}\n");
         return q.toString();
@@ -249,13 +268,16 @@ public class CircuitRewriter {
             plan.add(bgp(L, W));
             return plan;
         }
-        plan.add(productPlus(L, "a", "urn:g:p1:", "P1", V1));          // ⊗ -> ⊕_{P1}(V1)
+        String p1Tag = "P1@" + bgpFingerprint(L);
+        String opFp = diffFingerprint(L, removing);
+        plan.add(productPlus(L, "a", "urn:g:p1:", p1Tag, V1));          // ⊗ -> ⊕_{P1}(V1)
         for (List<StatementPattern> Rb : removing) {
             LinkedHashSet<String> V2 = vars(Rb);
-            plan.add(productPlus(Rb, "b", "urn:g:p2:", "P2", V2));     // ⊗ -> ⊕_{P2}(V2)
-            plan.add(subFeeds(L, Rb, V1, V2));                        // ⊕_{P2} -> ⊕_{sub}(V1)
+            String p2Tag = "P2@" + bgpFingerprint(Rb);
+            plan.add(productPlus(Rb, "b", "urn:g:p2:", p2Tag, V2));     // ⊗ -> ⊕_{P2}(V2)
+            plan.add(subFeeds(L, Rb, V1, V2, p2Tag, opFp));              // ⊕_{P2} -> ⊕_{sub}(V1)
         }
-        plan.add(minusRoot(L, V1, W));                                 // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
+        plan.add(minusRoot(L, V1, W, p1Tag, opFp));                    // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
         return plan;
     }
 
@@ -277,45 +299,52 @@ public class CircuitRewriter {
         List<String> toks = new ArrayList<>();
         StringBuilder where = reify(sps, tokPrefix, toks);
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
+        String times = qv("t"), plus = qv("pg");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ?t a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
         for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
-        q.append(" c:feeds ?pg .\n  ?pg a c:Plus .\n}\nWHERE {\n").append(where);
-        q.append(bindIri("?t", "urn:g:t:", tkey));
-        q.append(bindIri("?pg", plusPrefix, idKey(new ArrayList<>(groupVars), groupTag)));
+        q.append(" c:feeds ").append(plus).append(" .\n  ").append(plus).append(" a c:Plus .\n}\nWHERE {\n").append(where);
+        q.append(bindIri(times, "urn:g:t:", tkey));
+        q.append(bindIri(plus, plusPrefix, idKey(canonicalVars(groupVars), groupTag)));
         q.append("}\n");
         return q.toString();
     }
 
     /** For each compatible (P1,P2) pair, ⊕_{P2}(μ2) feeds ⊕_{sub}(μ1). */
     private String subFeeds(List<StatementPattern> L, List<StatementPattern> R,
-                            LinkedHashSet<String> V1, LinkedHashSet<String> V2) {
+                            LinkedHashSet<String> V1, LinkedHashSet<String> V2,
+                            String p2Tag, String opFp) {
         List<String> ta = new ArrayList<>(), tb = new ArrayList<>();
         StringBuilder where = reify(L, "a", ta);
         where.append(reify(R, "b", tb));                                 // natural join on shared vars
+        String p2 = qv("p2"), sub = qv("sub");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ?p2 c:feeds ?sub .\n}\nWHERE {\n").append(where);
-        q.append(bindIri("?p2", "urn:g:p2:", idKey(new ArrayList<>(V2), "P2")));
-        q.append(bindIri("?sub", "urn:g:sub:", idKey(new ArrayList<>(V1), "SUB")));
+        q.append("CONSTRUCT {\n  ").append(p2).append(" c:feeds ").append(sub).append(" .\n}\nWHERE {\n").append(where);
+        q.append(bindIri(p2, "urn:g:p2:", idKey(canonicalVars(V2), p2Tag)));
+        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
         q.append("}\n");
         return q.toString();
     }
 
     /** ⊖(⊕_{P1}(μ1), ⊕_{sub}(μ1)) feeding the answer ⊕, keyed by the projection. */
-    private String minusRoot(List<StatementPattern> L, LinkedHashSet<String> V1, List<String> W) {
+    private String minusRoot(List<StatementPattern> L, LinkedHashSet<String> V1, List<String> W,
+                             String p1Tag, String opFp) {
         List<String> ta = new ArrayList<>();
         StringBuilder where = reify(L, "a", ta);
+        String minus = qv("m"), p1 = qv("p1"), sub = qv("sub");
+        String ans = qv("ans"), anskey = qv("anskey");
         StringBuilder q = new StringBuilder(PRE);
         q.append("CONSTRUCT {\n");
-        q.append("  ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?ans .\n");
-        q.append("  ?sub a c:Plus .\n");
-        q.append("  ?ans a c:Plus ; c:answer ?anskey .\n").append(bindingCtor(W))
+        q.append("  ").append(minus).append(" a c:Minus ; c:minuend ").append(p1)
+         .append(" ; c:subtrahend ").append(sub).append(" ; c:feeds ").append(ans).append(" .\n");
+        q.append("  ").append(sub).append(" a c:Plus .\n");
+        q.append("  ").append(ans).append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
-        q.append(bindIri("?p1", "urn:g:p1:", idKey(new ArrayList<>(V1), "P1")));
-        q.append(bindIri("?sub", "urn:g:sub:", idKey(new ArrayList<>(V1), "SUB")));
-        q.append(bindIri("?m", "urn:g:m:", idKey(new ArrayList<>(V1), "M")));
-        q.append(bind("?anskey", ansKey(W, V1)));                        // readable label (W vars not in V1 -> NULL)
-        q.append(bindIri("?ans", "urn:g:a:", idKey(W, "A")));            // collision-resistant identity
+        q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), p1Tag)));
+        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
+        q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + opFp)));
+        q.append(bind(anskey, ansKey(W, V1)));                        // readable label (W vars not in V1 -> NULL)
+        q.append(bindIri(ans, "urn:g:a:", idKey(W, "A")));            // collision-resistant identity
         q.append(bindingWhere(W));
         q.append("}\n");
         return q.toString();
@@ -335,10 +364,13 @@ public class CircuitRewriter {
         // (⊖(⊕_{P1}, ⊕ all P2)); a shared variable instead makes it a natural join. Guarding this on
         // shared variables (as MINUS does) would leave a bare P1 present even when P2 matches — wrong.
         LinkedHashSet<String> V1 = vars(L), V2 = vars(R);
-        plan.add(productPlus(L, "a", "urn:g:p1:", "P1", V1));
-        plan.add(productPlus(R, "b", "urn:g:p2:", "P2", V2));
-        plan.add(subFeeds(L, R, V1, V2));
-        plan.add(minusRoot(L, V1, W));
+        String p1Tag = "P1@" + bgpFingerprint(L);
+        String p2Tag = "P2@" + bgpFingerprint(R);
+        String opFp = diffFingerprint(L, Collections.singletonList(R));
+        plan.add(productPlus(L, "a", "urn:g:p1:", p1Tag, V1));
+        plan.add(productPlus(R, "b", "urn:g:p2:", p2Tag, V2));
+        plan.add(subFeeds(L, R, V1, V2, p2Tag, opFp));
+        plan.add(minusRoot(L, V1, W, p1Tag, opFp));
         return plan;
     }
 
@@ -346,7 +378,7 @@ public class CircuitRewriter {
     private StringBuilder reify(List<StatementPattern> sps, String tokPrefix, List<String> toksOut) {
         StringBuilder w = new StringBuilder();
         for (int i = 0; i < sps.size(); i++) {
-            String t = tokPrefix + i;
+            String t = generated(tokPrefix + i);
             toksOut.add(t);
             w.append(scheme.reify(sps.get(i), t));
         }
@@ -358,21 +390,21 @@ public class CircuitRewriter {
      * the hashes with a comparator network, and return the canonical product-key
      * expression {@code CONCAT("T","|",<sorted child hashes>)}.
      *
-     * This makes a ⊗-gate's content address a canonical, collision-free function
-     * of its child MULTISET (order-independent), so products that differ only in
-     * derivation order (e.g. a self-join's two orderings) collapse to one gate.
+     * This makes a ⊗-gate's content address canonical, order-independent and
+     * collision-resistant over its child MULTISET, so products that differ only
+     * in derivation order (e.g. a self-join's two orderings) collapse to one gate.
      * Each child is first SHA256-hashed to fixed-width hex (delimiter-safe), the
      * hex strings are sorted (bubble/comparator network in pure SPARQL 1.1), and
-     * concatenated; the caller hashes the result into the gate IRI. This is the
-     * SPARQL realization of the sorted-child-id canonicalization used in the
-     * reference implementation, closing the multiset-hash collision concern.
+     * concatenated; the caller hashes the result into the gate IRI. The fixed-width
+     * preimage preserves child-hash boundaries and multiplicity, while SHA-256 is
+     * collision-resistant rather than mathematically collision-free.
      */
-    private static String emitSortedProdKey(StringBuilder where, List<String> toks) {
+    private String emitSortedProdKey(StringBuilder where, List<String> toks) {
         int k = toks.size();
         String[] cur = new String[k];
         int[] fresh = {0};
         for (int i = 0; i < k; i++) {
-            String v = "srt" + (fresh[0]++);
+            String v = generated("srt" + (fresh[0]++));
             where.append("  BIND(SHA256(STR(?").append(toks.get(i)).append(")) AS ?").append(v).append(")\n");
             cur[i] = v;
         }
@@ -380,7 +412,8 @@ public class CircuitRewriter {
         for (int pass = 0; pass < k - 1; pass++) {
             for (int i = 0; i < k - 1 - pass; i++) {
                 String a = "?" + cur[i], b = "?" + cur[i + 1];
-                String lo = "srt" + (fresh[0]++), hi = "srt" + (fresh[0]++);
+                String lo = generated("srt" + (fresh[0]++));
+                String hi = generated("srt" + (fresh[0]++));
                 where.append("  BIND(IF(").append(a).append(" <= ").append(b).append(", ")
                      .append(a).append(", ").append(b).append(") AS ?").append(lo).append(")\n");
                 where.append("  BIND(IF(").append(a).append(" <= ").append(b).append(", ")
@@ -453,6 +486,87 @@ public class CircuitRewriter {
             throw new RuntimeException(e);                         // SHA-256 is guaranteed on every JVM
         }
     }
+
+    /** Canonical fingerprint of one BGP (independent of the physical leaf-reification syntax). */
+    private String bgpFingerprint(List<StatementPattern> patterns) {
+        return sha256hex(bgpSemanticKey(patterns));
+    }
+
+    /**
+     * Fingerprint the semantic anti-join operator, not its traversal position.  Equivalent repeated
+     * DIFFs therefore hash-cons, while a different right operand (the historical
+     * {@code {A MINUS P} UNION {A MINUS Q}} collision) necessarily gets a different SUB/M identity.
+     * Right UNION alternatives are sorted because Boolean union is associative/commutative/idempotent.
+     */
+    private String diffFingerprint(List<StatementPattern> left, List<List<StatementPattern>> rights) {
+        List<String> rkeys = new ArrayList<>();
+        for (List<StatementPattern> right : rights) rkeys.add(bgpSemanticKey(right));
+        Collections.sort(rkeys);
+        StringBuilder key = new StringBuilder("DIFF|").append(part(bgpSemanticKey(left)));
+        String previous = null;
+        for (String rkey : rkeys) {
+            if (!rkey.equals(previous)) key.append(part(rkey));       // UNION duplicate is Boolean-idempotent
+            previous = rkey;
+        }
+        return sha256hex(key.toString());
+    }
+
+    /** BGP conjunction is order/association independent, so sort its fully typed pattern keys. */
+    private static String bgpSemanticKey(List<StatementPattern> patterns) {
+        List<String> keys = new ArrayList<>();
+        for (StatementPattern sp : patterns) {
+            keys.add("SP" + part(varSemanticKey(sp.getSubjectVar()))
+                    + part(varSemanticKey(sp.getPredicateVar()))
+                    + part(varSemanticKey(sp.getObjectVar())));
+        }
+        Collections.sort(keys);
+        StringBuilder out = new StringBuilder("BGP");
+        for (String key : keys) out.append(part(key));
+        return out.toString();
+    }
+
+    private static String varSemanticKey(Var v) {
+        if (v == null) return "N";
+        if (v.hasValue()) return "C" + part(Terms.value(v.getValue()));
+        return (v.isAnonymous() ? "X" : "V") + part(v.getName());
+    }
+
+    private static String part(String value) {
+        return value.length() + ":" + value;
+    }
+
+    private static List<String> canonicalVars(Set<String> vars) {
+        List<String> out = new ArrayList<>(vars);
+        Collections.sort(out);
+        return out;
+    }
+
+    /** Initialize a deterministic namespace which cannot overlap any parsed query variable. */
+    private void initializeGeneratedVariables(TupleExpr te) {
+        Set<String> user = new HashSet<>(te.getBindingNames());
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(Var v) {
+                if (v.getName() != null) user.add(v.getName());
+            }
+        });
+        int n = 0;
+        while (true) {
+            String candidate = "__sc" + n + "_";
+            boolean collision = false;
+            for (String name : user) {
+                if (name.startsWith(candidate)) { collision = true; break; }
+            }
+            if (!collision) {
+                generatedPrefix = candidate;
+                return;
+            }
+            n++;
+        }
+    }
+
+    private String generated(String hint) { return generatedPrefix + hint; }
+    private String qv(String hint) { return "?" + generated(hint); }
+
     /** Gate-IDENTITY key: CONCAT("tag", termHash(v1), termHash(v2), ...). Replaces raw-STR ansKey for
      *  every gate IRI; bound/unbound is decided at RUNTIME by BOUND() inside termHash. */
     private static String idKey(List<String> vars, String tag) {
@@ -463,17 +577,22 @@ public class CircuitRewriter {
     }
     /** CONSTRUCT triples recording each projected var's binding as recoverable RDF (preserves term
      *  type/datatype/lang). Unbound vars get a binding node with no c:val. `?ans` must already be bound. */
-    private static String bindingCtor(List<String> vars) {
+    private String bindingCtor(List<String> vars) {
         StringBuilder sb = new StringBuilder();
-        for (String v : vars)
-            sb.append("  ?ans c:binding ?b_").append(v).append(" . ?b_").append(v)
+        for (String v : vars) {
+            String b = qv("b_" + v);
+            sb.append("  ").append(qv("ans")).append(" c:binding ").append(b).append(" . ").append(b)
               .append(" c:var \"").append(v).append("\" ; c:val ?").append(v).append(" .\n");
+        }
         return sb.toString();
     }
-    private static String bindingWhere(List<String> vars) {
+    private String bindingWhere(List<String> vars) {
         StringBuilder sb = new StringBuilder();
-        for (String v : vars)
-            sb.append("  BIND(IRI(CONCAT(STR(?ans), \"#").append(v).append("\")) AS ?b_").append(v).append(")\n");
+        for (String v : vars) {
+            String b = qv("b_" + v);
+            sb.append("  BIND(IRI(CONCAT(STR(").append(qv("ans")).append("), \"#").append(v)
+              .append("\")) AS ").append(b).append(")\n");
+        }
         return sb.toString();
     }
 
@@ -521,7 +640,7 @@ public class CircuitRewriter {
     }
 
     private static void add(Set<String> s, Var v) {
-        if (v != null && !v.hasValue() && !v.isAnonymous() && !v.getName().startsWith("_")) {
+        if (v != null && !v.hasValue() && !v.isAnonymous()) {
             s.add(v.getName());
         }
     }
@@ -579,7 +698,9 @@ public class CircuitRewriter {
     /** Parse an arbitrary-length path query; {@code null} if the query has no such path. */
     public PathQuery pathQuery(String query) {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
+        QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
+        initializeGeneratedVariables(te);
         ArbitraryLengthPath[] found = {null};
         te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
             @Override public void meet(ArbitraryLengthPath node) { if (found[0] == null) found[0] = node; }
@@ -602,7 +723,8 @@ public class CircuitRewriter {
         List<List<StatementPattern>> branches = new ArrayList<>();
         for (List<StatementPattern> br : unionBranches(alp.getPathExpression())) {
             List<StatementPattern> nb = new ArrayList<>();
-            for (StatementPattern sp : br) nb.add(subst(sp, subjName, objName));
+            for (StatementPattern sp : br)
+                nb.add(subst(sp, subjName, objName, generated("u"), generated("v")));
             branches.add(nb);
         }
         List<String> W = new ArrayList<>();
@@ -628,34 +750,40 @@ public class CircuitRewriter {
         // queries on the SAME writable endpoint can never compose with (or collapse onto) each other's
         // persisted reach/base gates. Same query => same fp => byte-identical, idempotent re-runs.
         String fp = sha256hex(String.join("", branchWheres) + "star=" + star);   // star MUST be in the fp: :p* persists zero-length gates :p+ must not read
+        String times = qv("t"), reach = qv("rg"), u = qv("u"), v = qv("v");
         List<String> baseC = new ArrayList<>();
         for (int i = 0; i < branches.size(); i++) {
             StringBuilder where = whereFull.get(i);
             StringBuilder q = new StringBuilder(PRE);
-            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base", fp)).append(" .\n  ?t a c:Times ;");
+            q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base", fp, generatedPrefix))
+             .append(" .\n  ").append(times).append(" a c:Times ;");
             for (String t : tokss.get(i)) q.append(" c:in ?").append(t).append(" ;");
-            q.append(" c:feeds ?rg .\n}\nWHERE {\n").append(where)
-             .append(PathQuery.reachIri("?u", "?v", "base", fp)).append(bindIri("?t", "urn:g:t:", tkeys.get(i))).append("}\n");
+            q.append(" c:feeds ").append(reach).append(" .\n}\nWHERE {\n").append(where)
+             .append(PathQuery.reachIri(u, v, "base", fp, generatedPrefix))
+             .append(bindIri(times, "urn:g:t:", tkeys.get(i))).append("}\n");
             baseC.add(q.toString());
         }
-        return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName), star, W, fp);
+        return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
+                star, W, fp, generatedPrefix);
     }
 
     private static PathQuery.End endOf(Var v, String name) {
-        return v.hasValue() ? new PathQuery.End(false, "<" + v.getValue().stringValue() + ">", name)
+        return v.hasValue() ? new PathQuery.End(false, Terms.render(v), name)
                             : new PathQuery.End(true, null, name);
     }
     // Substitute a path sub-pattern's endpoints (the ALP subject/object vars) with fresh ?u/?v so the
     // base relation is computed all-pairs; internal (intermediate) vars are kept.
-    private static StatementPattern subst(StatementPattern sp, String subjName, String objName) {
-        return new StatementPattern(sv(sp.getSubjectVar(), subjName, objName),
+    private static StatementPattern subst(StatementPattern sp, String subjName, String objName,
+                                          String generatedSubject, String generatedObject) {
+        return new StatementPattern(sv(sp.getSubjectVar(), subjName, objName, generatedSubject, generatedObject),
                                     (Var) sp.getPredicateVar().clone(),
-                                    sv(sp.getObjectVar(), subjName, objName));
+                                    sv(sp.getObjectVar(), subjName, objName, generatedSubject, generatedObject));
     }
-    private static Var sv(Var v, String subjName, String objName) {
+    private static Var sv(Var v, String subjName, String objName,
+                          String generatedSubject, String generatedObject) {
         if (v == null) return null;
-        if (v.getName().equals(subjName)) return new Var("u");
-        if (v.getName().equals(objName)) return new Var("v");
+        if (v.getName().equals(subjName)) return new Var(generatedSubject);
+        if (v.getName().equals(objName)) return new Var(generatedObject);
         return (Var) v.clone();
     }
 
@@ -678,26 +806,35 @@ public class CircuitRewriter {
         private final End subj, obj; private final boolean star;
         private final List<String> W;
         private final String fp;                                 // per-path fingerprint (isolates reach/base gates)
+        private final String gp;                                 // capture-avoiding generated-variable prefix
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
-        PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj, boolean star, List<String> W, String fp) {
+        PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj,
+                  boolean star, List<String> W, String fp, String generatedPrefix) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
             this.subj = subj; this.obj = obj; this.star = star; this.W = W; this.fp = fp;
+            this.gp = generatedPrefix;
         }
+        private static String pv(String gp, String hint) { return "?" + gp + hint; }
+        private String v(String hint) { return pv(gp, hint); }
         /** The per-path fingerprint (for logging / cross-checking gate isolation). */
         public String fingerprint() { return fp; }
         /** G1: is the path source a bound constant? (only then can we restrict the base to a reachable subgraph). */
         public boolean boundSource() { return !subj.isVar; }
         public String sourceValue() { return subj.iri.replaceAll("^<|>$", ""); }   // bare source IRI
         public void setReachable(java.util.Set<String> r) { this.reachable = r; }
+        /** Binding names consumed by CircuitRun; generated names must not be hard-coded by the client. */
+        public String frontierValueBinding() { return gp + "v"; }
+        public String nodeCountBinding() { return gp + "c"; }
         /** G1 BFS step: the sub-path targets ?v reachable in ONE hop from ?u ∈ frontier (read-only). */
         public String frontierStepQuery(java.util.Collection<String> frontier) {
-            StringBuilder q = new StringBuilder(PRE).append("SELECT DISTINCT ?v WHERE {\n").append(valuesClause(frontier));
+            StringBuilder q = new StringBuilder(PRE).append("SELECT DISTINCT ").append(v("v"))
+                    .append(" WHERE {\n").append(valuesClause(frontier));
             for (int i = 0; i < branchWheres.size(); i++)
                 q.append(i == 0 ? "  { " : "  UNION { ").append(branchWheres.get(i)).append(" }\n");
             return q.append("}\n").toString();
         }
-        private static String valuesClause(java.util.Collection<String> nodes) {
-            StringBuilder sb = new StringBuilder("  VALUES ?u {");
+        private String valuesClause(java.util.Collection<String> nodes) {
+            StringBuilder sb = new StringBuilder("  VALUES ").append(v("u")).append(" {");
             for (String n : nodes) sb.append(" <").append(n).append(">");
             return sb.append(" }\n").toString();
         }
@@ -707,30 +844,36 @@ public class CircuitRewriter {
         }
         // A BOUND source restricts reach^0 (and zero-length) to (source, .) -> single-source
         // O(|V_s|.|E_s|); a variable source keeps all pairs. The from-var in reach heads is ?u.
-        private String sourceFilter() { return subj.isVar ? "" : "  FILTER(?u = " + subj.iri + ")\n"; }
-        static String reachIri(String from, String to, String lvl, String fp) {  // reach gate IRI = f(path fp, level, from, to)
+        private String sourceFilter() { return subj.isVar ? "" : "  FILTER(" + v("u") + " = " + subj.iri + ")\n"; }
+        static String reachIri(String from, String to, String lvl, String fp, String gp) {  // reach gate IRI = f(path fp, level, from, to)
             return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|\", \"" + fp + "|\", SHA256(\"" + lvl + "\"), \"|\", "
-                 + termHash("f", from) + ", " + termHash("t", to) + ")))) AS ?rg)\n";
+                 + termHash("f", from) + ", " + termHash("t", to) + ")))) AS " + pv(gp, "rg") + ")\n";
         }
-        static String reachHead(String lvl, String fp) {                          // gate carries its path fp for the c:rpath guard
-            return "?rg a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rpath \"" + fp + "\" ; c:rfrom ?u ; c:rto ?v";
+        static String reachHead(String lvl, String fp, String gp) {                          // gate carries its path fp for the c:rpath guard
+            return pv(gp, "rg") + " a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rpath \"" + fp
+                    + "\" ; c:rfrom " + pv(gp, "u") + " ; c:rto " + pv(gp, "v");
         }
         private String rpathGuard() { return " ; c:rpath \"" + fp + "\""; }       // append to any reach/base match pattern
-        static String comp2(String c0, String c1, String out) {  // content-addressed 2-child ⊗ gate
-            return "  BIND(SHA256(STR(" + c0 + ")) AS ?h0)\n  BIND(SHA256(STR(" + c1 + ")) AS ?h1)\n"
-                 + "  BIND(IF(?h0 <= ?h1, ?h0, ?h1) AS ?lo)\n  BIND(IF(?h0 <= ?h1, ?h1, ?h0) AS ?hi)\n"
-                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ?lo, \"|\", ?hi)))) AS " + out + ")\n";
+        static String comp2(String c0, String c1, String out, String gp) {  // content-addressed 2-child ⊗ gate
+            String h0 = pv(gp, "h0"), h1 = pv(gp, "h1"), lo = pv(gp, "lo"), hi = pv(gp, "hi");
+            return "  BIND(SHA256(STR(" + c0 + ")) AS " + h0 + ")\n  BIND(SHA256(STR(" + c1 + ")) AS " + h1 + ")\n"
+                 + "  BIND(IF(" + h0 + " <= " + h1 + ", " + h0 + ", " + h1 + ") AS " + lo + ")\n"
+                 + "  BIND(IF(" + h0 + " <= " + h1 + ", " + h1 + ", " + h0 + ") AS " + hi + ")\n"
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", " + lo + ", \"|\", " + hi + ")))) AS " + out + ")\n";
         }
         String zeroLenConstruct() {                              // reach^0(u,u) = OR of tokens mentioning u
-            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp) + " .\n  ?tg a c:Times ; c:in ?z ; c:feeds ?rg .\n}\nWHERE {\n"
-                 + "  { ?z <" + RDF_S + "> ?u . } UNION { ?z <" + RDF_O + "> ?u . }\n"
-                 + "  BIND(?u AS ?v)\n" + sourceFilter() + reachIri("?u", "?u", "0", fp)
-                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(?z)))))) AS ?tg)\n}\n";
+            String u = v("u"), vv = v("v"), z = v("z"), tg = v("tg"), rg = v("rg");
+            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp, gp) + " .\n  " + tg
+                 + " a c:Times ; c:in " + z + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
+                 + "  { " + z + " <" + RDF_S + "> " + u + " . } UNION { " + z + " <" + RDF_O + "> " + u + " . }\n"
+                 + "  BIND(" + u + " AS " + vv + ")\n" + sourceFilter() + reachIri(u, u, "0", fp, gp)
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(" + z + ")))))) AS " + tg + ")\n}\n";
         }
         /** Distinct-node count over the reified data, to size the loop (rounds = N-1 simple-path bound). */
         public String nodeCountQuery() {
-            return PRE + "SELECT (COUNT(DISTINCT ?n) AS ?c) WHERE {\n"
-                 + "  { ?t <" + RDF_S + "> ?n . } UNION { ?t <" + RDF_O + "> ?n . }\n}\n";
+            String n = v("n"), t = v("t");
+            return PRE + "SELECT (COUNT(DISTINCT " + n + ") AS " + v("c") + ") WHERE {\n"
+                 + "  { " + t + " <" + RDF_S + "> " + n + " . } UNION { " + t + " <" + RDF_O + "> " + n + " . }\n}\n";
         }
         /** Materialize the base relation, then seed reach^0 from it (restricted to the source),
          *  plus the zero-length pairs for :p*. */
@@ -748,47 +891,55 @@ public class CircuitRewriter {
         }
         // reach^0(u,v) fed by base(u,v); sourceFilter() makes it single-source when the source is bound.
         private String seedReach0() {
-            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp) + " .\n  ?rb c:feeds ?rg .\n}\nWHERE {\n"
-                 + "  ?rb a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom ?u ; c:rto ?v .\n"
-                 + sourceFilter() + reachIri("?u", "?v", "0", fp) + "}\n";
+            String rb = v("rb"), rg = v("rg"), u = v("u"), vv = v("v");
+            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp, gp) + " .\n  " + rb + " c:feeds " + rg + " .\n}\nWHERE {\n"
+                 + "  " + rb + " a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + vv + " .\n"
+                 + sourceFilter() + reachIri(u, vv, "0", fp, gp) + "}\n";
         }
         /** reach^{k+1} from reach^k: (A) compose reach^k(u,w) ⊗ reach^0(w,v), (B) carry forward. */
         public List<String> step(int k) {
             String kL = "\"" + k + "\"", k1 = Integer.toString(k + 1);
+            String rg = v("rg"), rk = v("rk"), rb = v("rb"), comp = v("comp");
+            String u = v("u"), vv = v("v"), w = v("w");
             List<String> out = new ArrayList<>();
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
-                  + "  ?comp a c:Times ; c:in ?rk ; c:in ?rb ; c:feeds ?rg .\n}\nWHERE {\n"
-                  + "  ?rk a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom ?u ; c:rto ?w .\n"
-                  + "  ?rb a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom ?w ; c:rto ?v .\n"
-                  + reachIri("?u", "?v", k1, fp) + comp2("?rk", "?rb", "?comp") + "}\n");
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp) + " .\n  ?rk c:feeds ?rg .\n}\nWHERE {\n"  // (B) carry
-                  + "  ?rk a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom ?u ; c:rto ?v .\n"
-                  + reachIri("?u", "?v", k1, fp) + "}\n");
+            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
+                  + "  " + comp + " a c:Times ; c:in " + rk + " ; c:in " + rb + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
+                  + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + w + " .\n"
+                  + "  " + rb + " a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom " + w + " ; c:rto " + vv + " .\n"
+                  + reachIri(u, vv, k1, fp, gp) + comp2(rk, rb, comp, gp) + "}\n");
+            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n  " + rk + " c:feeds " + rg + " .\n}\nWHERE {\n"  // (B) carry
+                  + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + vv + " .\n"
+                  + reachIri(u, vv, k1, fp, gp) + "}\n");
             return out;
         }
         /** Project reach^{lastLevel} to answer gates, filtering bound endpoints and keying by the free ones. */
         public List<String> projectAnswers(int lastLevel) {
-            String fromPat = subj.pat("?u"), toPat = obj.pat("?v");
+            String fromPat = subj.pat(v("u")), toPat = obj.pat(v("v"));
             java.util.List<String[]> proj = new ArrayList<>();          // {var, term(?u|?v)}
             for (String w : W) {
-                String term = subj.isVar && w.equals(subj.var) ? "?u"
-                            : (obj.isVar && w.equals(obj.var) ? "?v" : null);
+                String term = subj.isVar && w.equals(subj.var) ? v("u")
+                            : (obj.isVar && w.equals(obj.var) ? v("v") : null);
                 if (term != null) proj.add(new String[]{w, term});
             }
             StringBuilder rk = new StringBuilder("CONCAT(\"A\""), idk = new StringBuilder("CONCAT(\"A\"");
             StringBuilder ctor = new StringBuilder(), binds = new StringBuilder();
+            String ans = v("ans"), anskey = v("anskey"), rg = v("rg");
             for (String[] p : proj) {
                 rk.append(", \"|").append(p[0]).append("=\", STR(").append(p[1]).append(")");
                 idk.append(", ").append(termHash(p[0], p[1]));
-                ctor.append("  ?ans c:binding ?b_").append(p[0]).append(" . ?b_").append(p[0])
+                String b = v("b_" + p[0]);
+                ctor.append("  ").append(ans).append(" c:binding ").append(b).append(" . ").append(b)
                     .append(" c:var \"").append(p[0]).append("\" ; c:val ").append(p[1]).append(" .\n");
-                binds.append("  BIND(IRI(CONCAT(STR(?ans), \"#").append(p[0]).append("\")) AS ?b_").append(p[0]).append(")\n");
+                binds.append("  BIND(IRI(CONCAT(STR(").append(ans).append("), \"#").append(p[0])
+                    .append("\")) AS ").append(b).append(")\n");
             }
             rk.append(")"); idk.append(")");
-            String q = PRE + "CONSTRUCT {\n  ?rg c:feeds ?ans .\n  ?ans a c:Plus ; c:answer ?anskey .\n" + ctor + "}\nWHERE {\n"
-                     + "  ?rg a c:Plus ; c:rlvl \"" + lastLevel + "\"" + rpathGuard() + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n"
-                     + "  BIND(" + rk + " AS ?anskey)\n"
-                     + "  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(" + idk + "))) AS ?ans)\n" + binds + "}\n";
+            String q = PRE + "CONSTRUCT {\n  " + rg + " c:feeds " + ans + " .\n  " + ans
+                     + " a c:Plus ; c:answer " + anskey + " .\n" + ctor + "}\nWHERE {\n"
+                     + "  " + rg + " a c:Plus ; c:rlvl \"" + lastLevel + "\"" + rpathGuard()
+                     + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n"
+                     + "  BIND(" + rk + " AS " + anskey + ")\n"
+                     + "  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(" + idk + "))) AS " + ans + ")\n" + binds + "}\n";
             return java.util.Collections.singletonList(q);
         }
     }

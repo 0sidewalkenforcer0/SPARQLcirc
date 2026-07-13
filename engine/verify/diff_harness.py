@@ -20,7 +20,7 @@ def decode_orig(out):
     if not m: return None
     return bytes([int(x)&0xff for x in m.group(1).split(',') if x.strip()]).decode("utf-8","replace")
 
-_GENSYM = re.compile(r'\?(?:fprov\d+|fjoin\d+|funion\d+|rightunion\d+|rightoptional\d+|foptional\d+|fbind\d+|fgroup(?:concat)?\d+|finalprovennacevariable|f)\b')
+_GENSYM = re.compile(r'\?(?:__npcs\d+_)?(?:fprov\d+|fjoin\d+|funion\d+|fdl\d+|fdr\d+|fdiff\d+|rightunion\d+|rightoptional\d+|foptional\d+|fbind\d+|fgroup(?:concat)?\d+|finalprovennacevariable|f)\b')
 _COMM = re.compile(r'CONCAT\("\((⊗|⊕)",(.*?),"\)"\)')
 
 def norm(s):
