@@ -1,9 +1,10 @@
 """Canonical wall-clock limits for citable performance measurements.
 
-The two limits apply to one timed cell, not to an entire multi-run driver:
-
-* QUERY_TIMEOUT_S caps one SELECT or circuit CONSTRUCT execution, including the
-  final response read.
+* QUERY_TIMEOUT_S is the query-side hard budget. Single-shot/legacy harnesses
+  apply it to one SELECT or circuit-CONSTRUCT execution, including final drain.
+  R9.2 deliberately applies the same value once to a complete method cell
+  (rewrite + warm-ups + measured runs, and every step of a C plan); it must not
+  reset between requests.
 * COMPILE_TIMEOUT_S caps one OBDD or d4/d-DNNF compilation attempt.
 
 Short correctness probes may use a smaller network timeout, and dataset loading
