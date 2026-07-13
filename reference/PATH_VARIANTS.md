@@ -52,3 +52,27 @@ but reinterpreted as this ablation).
   wrong anyway). The **shared** and **isolated** timings are this session's measured 5-run numbers.
 - Orthogonal path dimensions not varied here (single-source vs all-pairs, `p+`/`p*`/`p?`, `P279+`/`P131+`)
   are a *coverage* axis (which paths the method supports), separate from this *design/keying* ablation.
+
+## Coverage axis — which path fragment the method handles (current `PathIsoSeq` jar)
+
+Complementary to the keying ablation above: run different path *operators / predicates / bindings* and
+check the circuit builds with correct WMC. All on the current jar; `WMC==PWE` sampled on cones ≤ 18 tokens.
+
+| path query | dataset | operator | answers | gates+edges | compile | WMC==PWE | notes |
+|---|---|---|--:|--:|--:|:--:|---|
+| `wdt:P279+` (subclass, single-src) | Wikidata **2.13 B** | `p+` | 16 | 1466 | 1 ms | **15/15** | G6; the headline |
+| `wdt:P131+` (admin containment, single-src) | Wikidata **2.13 B** | `p+` | 2 | 29 | 0 ms | **2/2** | **2nd predicate** — extends the check |
+| `friendOf*` (single-src) | WatDiv 32.7 M | `p*` | 1 (self) | 164 | 2 ms | — | zero-or-more returns the zero-length self correctly |
+
+### Honest limits found in the sweep
+
+- **Compound `alt`/inverse closure** — the engine **fail-fasts** (rc=1, the `90c3c3c` path-modifier guard)
+  rather than silently mis-computing an unsupported compound path. Correct behaviour, but a coverage
+  boundary: bounded single-predicate `p+`/`p*`/`p?` are supported; arbitrary compound-subpath closures not.
+- **Dense cyclic `friendOf+`** from a highly-connected WatDiv user (225 direct edges) **did not complete
+  the build** (rc=1) in this run — the dense cyclic component is a current scale limit of the iterative
+  path build; `friendOf+` from a sparse node is empty. So the *validated* `p+` coverage is the two Wikidata
+  predicates (small DAG-shaped hierarchies); dense cyclic graphs are future work.
+
+**Summary:** validated on **`p+` (two predicates) and `p*` at 2.13 B scale with WMC == PWE**; fail-fasts
+(not mis-computes) on unsupported compound modifiers; dense cyclic closures are a scale limit.
