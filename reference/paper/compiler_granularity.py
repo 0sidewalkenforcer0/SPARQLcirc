@@ -1940,9 +1940,16 @@ def write_completion(output: Path, rows: Sequence[Mapping[str, Any]],
             raise ValueError("completion no-clobber publication was path-replaced")
         temporary_path.unlink()
         _fsync_directory(path.parent)
-        _validate_opened_single_link(path, descriptor, "compiler completion sidecar")
+        # Reopen the published name before the final validation.  In
+        # particular, NFS clients may retain the pre-unlink link count on the
+        # temporary file descriptor even after the published name already has
+        # the durable single-link state.
         os.close(descriptor)
         descriptor = -1
+        if _read_small_single_link(
+            path, "compiler completion sidecar"
+        ) != payload:
+            raise ValueError("published completion sidecar changed during publication")
     finally:
         if descriptor >= 0:
             os.close(descriptor)
