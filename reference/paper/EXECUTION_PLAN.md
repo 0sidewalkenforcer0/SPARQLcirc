@@ -138,8 +138,8 @@ unsupported engines/scales are recorded rather than silently removed.
   baseline and official NPCS only if the required artifacts/stores can be
   pinned; otherwise publish explicit `N/A` and retain the correctly labelled
   clean-room NPCS implementation.  Do not fabricate cross-domain ProvSQL bars.
-- Run d4-v2 with
-  `-i {cnf} -m ddnnf-compiler --dump-ddnnf {out}` and pin the binary SHA-256.
+- Run the patched static d4-v2 compiler with
+  `-i {cnf} --dump-file {out}` and pin the binary SHA-256.
 
 Acceptance: every claimed baseline has an identifiable artifact/version and
 comparable workload; absent official assets are reported as limitations.
