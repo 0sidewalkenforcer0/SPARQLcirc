@@ -431,7 +431,8 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
     if backend == "cudd":
         manager_type, backend_version = _load_cudd()
 
-    started = time.perf_counter()
+    source_started = time.perf_counter()
+    prepare_started = source_started
     support_order = deterministic_order(circ, roots)
     support = set(support_order)
     if order is None:
@@ -449,6 +450,14 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
 
     source_gates, source_edges = _source_stats(circ, roots.values())
     root_keys = sorted(roots, key=_stable_text)
+    local_orders: Dict[Any, Tuple[str, ...]] = {}
+    if mode == "per-root":
+        for key in root_keys:
+            local_support = set(deterministic_order(circ, {key: roots[key]}))
+            local_orders[key] = tuple(
+                variable for variable in global_order if variable in local_support
+            )
+    prepare_ms = (time.perf_counter() - prepare_started) * 1000.0
     groups: List[_ManagerGroup] = []
 
     def new_manager(local_order: Tuple[str, ...]) -> Any:
@@ -460,6 +469,7 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
             return manager
         return compile_bdd.ROBDD(local_order)
 
+    backend_started = time.perf_counter()
     if not roots:
         pass
     elif mode == "shared":
@@ -471,12 +481,13 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
     else:
         for key in root_keys:
             root = roots[key]
-            local_support = set(deterministic_order(circ, {key: root}))
-            local_order = tuple(variable for variable in global_order if variable in local_support)
+            local_order = local_orders[key]
             manager = new_manager(local_order)
             compiled = _compile_roots(circ, (root,), manager, backend)[root]
             groups.append(_ManagerGroup(manager, {key: compiled}, local_order))
+    backend_compile_ms = (time.perf_counter() - backend_started) * 1000.0
 
+    inspect_started = time.perf_counter()
     compiled_unique = 0
     root_node_sum = 0
     root_sizes: Dict[Any, int] = {}
@@ -491,6 +502,9 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
         root_sizes.update(sizes)
         root_node_sum += sum(sizes.values())
 
+    manager_metrics = _manager_metrics(backend, groups)
+    inspect_ms = (time.perf_counter() - inspect_started) * 1000.0
+    source_to_result_ms = (time.perf_counter() - source_started) * 1000.0
     metrics: Dict[str, Any] = {
         "backend": backend,
         "backend_version": backend_version,
@@ -507,9 +521,16 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
         "compiled_nodes_sum_roots": root_node_sum,
         "sharing_savings_nodes": root_node_sum - compiled_unique,
         "sharing_ratio": (root_node_sum / compiled_unique if compiled_unique else 1.0),
-        "compile_ms": (time.perf_counter() - started) * 1000.0,
+        # `compile_ms` remains as a backwards-compatible alias for the full
+        # source-to-result boundary.  Publication harnesses use the explicit
+        # phase fields below and do not compare this alias across backends.
+        "compile_ms": source_to_result_ms,
+        "prepare_ms": prepare_ms,
+        "backend_compile_ms": backend_compile_ms,
+        "inspect_ms": inspect_ms,
+        "source_to_result_ms": source_to_result_ms,
         "wmc_ms": None,
         "wmc_visited_nodes": None,
     }
-    metrics.update(_manager_metrics(backend, groups))
+    metrics.update(manager_metrics)
     return CompiledBatch(backend, mode, groups, root_sizes, metrics)
