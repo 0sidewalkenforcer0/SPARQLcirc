@@ -7,8 +7,10 @@ token per edge) so CircuitRun/CircuitRewriter can build a circuit directly:
     java -cp ../engine/target/npcs-rewrite.jar npcs.circuit.CircuitRun \\
          Standard families/layered.ttl families/layered.rq
 
-`meta` records the THEORETICAL treewidth of the answer's provenance formula, which
-governs compiled size: d-DNNF is O(n·2^{O(tw)}) (linear in n), OBDD is n^{O(tw)}.
+The legacy ``meta["tw"]`` field is a generator width parameter, not an
+independently measured formula-treewidth value. Publication experiments derive
+the actual Tseitin-CNF primal graph and attach replayable lower/upper
+certificates via ``paper/treewidth_evidence.py``.
 
 Families
     chain(n)            path of n edges              tw=1     (read-once sanity)

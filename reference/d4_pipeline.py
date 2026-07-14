@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Linux/x86 step: compile each exported CNF with d4 to a d-DNNF, record its size,
+"""Exploratory Linux/x86 helper: compile exported CNFs with an environment-selected d4.
+
+This script is deliberately **not** a formal/publication harness: its compiler
+path and argv template are ambient environment inputs, it has no frozen-input
+identity, and ``results.csv`` is classified accordingly. Formal treewidth
+measurements use ``paper/controlled_mechanisms.py`` and its pinned argv/hash.
+
+Compile each exported CNF with d4 to a d-DNNF, record its size,
 weighted-model-count that dumped d-DNNF locally, and check against cnf/manifest.json (produced
 on any machine by export_cnf.py). This is the compiler-scaling data point that
 cannot be produced on Apple Silicon (d4's bundled PATOH partitioner is x86_64-only).
@@ -20,12 +27,16 @@ from experiment_timeouts import COMPILE_TIMEOUT_S
 
 D4 = os.environ.get("D4", "d4")
 V2 = os.environ.get("D4V2")
+EVIDENCE_CLASSIFICATION = "exploratory-unfrozen-environment-command-template"
 
 def ddnnf_cmd(cnf, out, d4bin=None):
     """Version-aware compilation command, with a template override for a pinned server build."""
     binary = d4bin or D4
     if V2:  # current d4v2 / ProvSQL registry syntax, forced CNF input
-        template = os.environ.get("D4V2_DDNNF_CMD", "{d4} -i {cnf} --dump-file {out}")
+        template = os.environ.get(
+            "D4V2_DDNNF_CMD",
+            "{d4} -i {cnf} -m ddnnf-compiler --dump-ddnnf {out}",
+        )
     else:
         template = os.environ.get("D4_DDNNF_CMD", "{d4} {cnf} -dDNNF -out={out}")
     return shlex.split(template.format(d4=binary, cnf=cnf, out=out))
@@ -44,6 +55,8 @@ def nnf_size(path):
     return nodes, edges
 
 def main():
+    print("WARNING: d4_pipeline.py emits exploratory, non-publication evidence",
+          file=sys.stderr)
     man = json.load(open("cnf/manifest.json"))
     rows = []
     for e in man:
@@ -56,7 +69,14 @@ def main():
         except Exception as ex:
             print(f"[{e['instance']}] d4 failed: {ex}"); nodes = edges = d4wmc = None
         ok = d4wmc is not None and abs(d4wmc - e["expected_wmc"]) < 1e-6
-        rows.append({**e, "ddnnf_nodes": nodes, "ddnnf_edges": edges, "d4_wmc": d4wmc, "match": ok})
+        rows.append({
+            **e,
+            "evidence_classification": EVIDENCE_CLASSIFICATION,
+            "ddnnf_nodes": nodes,
+            "ddnnf_edges": edges,
+            "d4_wmc": d4wmc,
+            "match": ok,
+        })
         print(f"[{e['instance']}] d-DNNF nodes={nodes} edges={edges}  NNF-WMC={d4wmc} "
               f"expected={e['expected_wmc']} OBDD={e['obdd_size']}  {'OK' if ok else 'CHECK'}")
     with open("results.csv", "w", newline="") as f:

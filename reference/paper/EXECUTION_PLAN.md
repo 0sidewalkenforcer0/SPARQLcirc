@@ -91,7 +91,7 @@ Run before the large stores so regressions are cheap to diagnose:
 | construction | factored/flat × star/layered/chain/cycle × size | passes, gates, edges, bytes, build time, peak RSS, probability parity |
 | compilation granularity | shared/per-root × answer count × sharing depth | compile/WMC time, unique/summed nodes, memory, sharing savings |
 | ordering | fixed deterministic vs CUDD reordering on the same circuits | compile time, nodes, peak memory; select and freeze the production default |
-| treewidth | bounded-width and growing-width families | CUDD and d4 time/size, explicit 120 s walls |
+| treewidth | bounded/growing generator families with replayable Tseitin-CNF primal lower/upper certificates | CUDD and d4 time/size, certified intervals, explicit 120 s walls |
 | numerical stability | uniform/non-uniform/extreme weights × circuit depth | absolute/relative error versus high-precision/enumerable oracle |
 
 Use at least five timed repetitions for tractable cells, retain all timeouts,
