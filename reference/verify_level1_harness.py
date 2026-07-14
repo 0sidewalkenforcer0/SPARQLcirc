@@ -15,7 +15,8 @@ def check_one_compiler_invocation():
         script = f'''#!/usr/bin/env python3
 import sys
 args = sys.argv[1:]
-out = args[args.index("--dump-file") + 1]
+assert args[args.index("-m") + 1] == "ddnnf-compiler", args
+out = args[args.index("--dump-ddnnf") + 1]
 open(out, "w").write("o 1 0\\nt 2 0\\n1 2 1 0\\n")
 open({count!r}, "a").write("1\\n")
 '''

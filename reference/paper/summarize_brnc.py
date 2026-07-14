@@ -13,7 +13,10 @@ harness.  N/C has no lossy CSV fallback and remains ``unverified``.
 """
 
 import argparse
+import collections
+import contextlib
 import csv
+import io
 import os
 import statistics
 import sys
@@ -21,13 +24,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import paper_construction_matrix as pcm
+import verify_brnc_parity as parity_gate
 
 DEFAULT_SRC = os.path.join(HERE, "construction_brnc.csv")
 DEFAULT_PARITY = os.path.join(HERE, "brnc_parity.csv")
 DEFAULT_OUT = os.path.join(HERE, "brnc_decomposition.csv")
-FORMAL_WARMUPS = (1, 2)
-FORMAL_RUNS = 5
-FORMAL_TIMEOUT = float(pcm.TIMEOUT)
+FORMAL_WARMUPS = pcm.FORMAL_WARMUPS
+FORMAL_RUNS = pcm.FORMAL_RUNS
+FORMAL_TIMEOUT = pcm.FORMAL_TIMEOUT
 
 
 def num(value):
@@ -55,9 +59,13 @@ def _read_csv(path):
         return list(csv.DictReader(fh))
 
 
-def _timing_cells(path):
+def _timing_cells(path, current_batch_id=None, rows=None):
+    try:
+        current_batch_id = pcm.require_batch_id(current_batch_id)
+    except ValueError:
+        return {}
     latest = {}
-    for row in pcm._checkpoint_rows(path) or ():
+    for row in (pcm._checkpoint_rows(path) if rows is None else rows) or ():
         required = ("engine", "scale", "class", "template", "instance", "method")
         if not all(row.get(name) for name in required):
             continue
@@ -70,11 +78,16 @@ def _timing_cells(path):
         # Formal R9 tables use the frozen protocol, not whatever repetition
         # counts a row happens to claim. Short exploratory runs remain valid
         # checkpoints for their collector, but cannot enter the paper summary.
-        if (warmups not in FORMAL_WARMUPS or runs != FORMAL_RUNS
+        if (warmups != FORMAL_WARMUPS or runs != FORMAL_RUNS
                 or abs(timeout - FORMAL_TIMEOUT) > 1e-9):
             continue
         if not pcm.checkpoint_complete(
-            row, warmups=warmups, runs=FORMAL_RUNS, timeout=FORMAL_TIMEOUT
+            row,
+            warmups=warmups,
+            runs=FORMAL_RUNS,
+            timeout=FORMAL_TIMEOUT,
+            current_commit=pcm.COMMIT,
+            current_batch_id=current_batch_id,
         ):
             continue
         key = tuple(row[name] for name in required[:-1])
@@ -82,9 +95,13 @@ def _timing_cells(path):
     return latest
 
 
-def _parity_maps(path):
+def _parity_maps(path, rows=None, current_commit=None, current_batch_id=None):
     exact, legacy = {}, {}
-    for row in _read_csv(path):
+    for row in (_read_csv(path) if rows is None else rows):
+        if current_commit is not None and row.get("commit") != current_commit:
+            continue
+        if current_batch_id is not None and row.get("batch_id") != current_batch_id:
+            continue
         base = (row.get("scale"), row.get("class"), row.get("template"))
         if all(base):
             legacy[base] = row
@@ -98,6 +115,130 @@ def _parity_maps(path):
         if all(exact_key):
             exact[exact_key] = row
     return exact, legacy
+
+
+def _validate_completion_pair(src, parity_path):
+    """Return exact audited rows after checking both completion proofs."""
+    timing_payload, timing_rows = pcm._strict_timing_snapshot(src)
+    timing = pcm.verify_completion_sidecar(
+        src,
+        expected_schema="r9-timing-completion-v1",
+        label="R9 timing completion sidecar",
+        csv_payload=timing_payload,
+        csv_rows=len(timing_rows),
+    )
+    parity_payload, parity_rows = parity_gate._parity_snapshot(parity_path)
+    parity = pcm.verify_completion_sidecar(
+        parity_path,
+        expected_schema="r9-parity-completion-v1",
+        label="R9 parity completion sidecar",
+        csv_payload=parity_payload,
+        csv_rows=len(parity_rows),
+    )
+    if (
+        timing["commit"] != pcm.COMMIT
+        or parity["commit"] != pcm.COMMIT
+        or timing["batch_id"] != parity["batch_id"]
+        or timing["commit"] != parity["commit"]
+    ):
+        raise ValueError("timing/parity completion identities do not match current Git")
+    timing_profile = timing["profile"]
+    parity_profile = parity["profile"]
+    if (
+        timing_profile.get("warmups") != pcm.FORMAL_WARMUPS
+        or timing_profile.get("runs") != pcm.FORMAL_RUNS
+        or float(timing_profile.get("timeout_s", -1)) != pcm.FORMAL_TIMEOUT
+        or timing_profile.get("update_chunk_triples")
+        != pcm.FORMAL_UPDATE_CHUNK_TRIPLES
+        or float(timing_profile.get("orphan_cleanup_timeout_s", -1))
+        != pcm.FORMAL_ORPHAN_CLEANUP_TIMEOUT
+        or tuple(timing_profile.get("classes", ())) != pcm.FORMAL_CLASSES
+        or set(timing_profile.get("methods", ())) != set(pcm.FORMAL_METHODS)
+        or timing_profile.get("require_circuit_cache") is not True
+        or parity_profile.get("cap") != parity_gate.FORMAL_CAP
+        or float(parity_profile.get("timeout_s", -1))
+        != parity_gate.FORMAL_TIMEOUT
+        or parity_profile.get("update_chunk_triples")
+        != pcm.FORMAL_UPDATE_CHUNK_TRIPLES
+        or float(parity_profile.get("orphan_cleanup_timeout_s", -1))
+        != pcm.FORMAL_ORPHAN_CLEANUP_TIMEOUT
+        or tuple(parity_profile.get("classes", ())) != pcm.FORMAL_CLASSES
+        or set(timing_profile.get("engines", ()))
+        != set(parity_profile.get("engines", ()))
+        or set(timing_profile.get("scales", ()))
+        != set(parity_profile.get("scales", ()))
+    ):
+        raise ValueError("timing/parity completion profiles are not the formal R9 profile")
+
+    timing_latest = {}
+    timing_expected = pcm.completion_expected_identities(timing)
+    pcm.validate_checkpoint_prefix(
+        timing_rows, timing_expected, require_full=True
+    )
+    for row in timing_rows:
+        key = pcm._row_key(row)
+        metadata = pcm.unpack_note(row)
+        if (
+            key is None
+            or row.get("commit") != timing["commit"]
+            or row.get("protocol") != pcm.PROTOCOL
+            or row.get("batch_id") != timing["batch_id"]
+            or metadata.get("protocol") != pcm.PROTOCOL
+            or metadata.get("batch_id") != timing["batch_id"]
+        ):
+            raise ValueError("timing CSV contains an invalid completion identity")
+        timing_latest[key] = row
+    if len(timing_latest) != timing["expected_cells"] or any(
+        not pcm.checkpoint_complete(
+            row,
+            warmups=pcm.FORMAL_WARMUPS,
+            runs=pcm.FORMAL_RUNS,
+            timeout=pcm.FORMAL_TIMEOUT,
+            require_circuit_cache=True,
+            expected_identity=timing_expected[pcm._row_key(row)],
+            current_commit=timing["commit"],
+            current_batch_id=timing["batch_id"],
+        )
+        for row in timing_latest.values()
+    ):
+        raise ValueError("timing completion rows no longer pass the formal checkpoint gate")
+    status_counts = dict(
+        sorted(
+            collections.Counter(
+                row["status"] for row in timing_latest.values()
+            ).items()
+        )
+    )
+    if status_counts != timing.get("terminal_status_counts"):
+        raise ValueError("timing completion status coverage mismatch")
+    canonical = pcm.canonical_circuit_gate(
+        timing_rows, commit=timing["commit"], batch_id=timing["batch_id"]
+    )
+    if canonical != timing.get("canonical_circuits"):
+        raise ValueError("timing completion canonical-circuit proof mismatch")
+
+    parity_expected = pcm.completion_expected_identities(parity)
+    parity_gate.validate_formal_parity_rows(
+        parity_rows,
+        parity_expected,
+        commit=parity["commit"],
+        batch_id=parity["batch_id"],
+    )
+    parity_cells = list(parity_expected)
+    timing_cells = {key[:-1] for key in timing_latest}
+    if timing_cells != set(parity_cells) or timing["expected_cells"] != (
+        len(pcm.FORMAL_METHODS) * parity["expected_cells"]
+    ):
+        raise ValueError("timing/parity completion cell coverage does not correspond")
+    timing_cell_identities = {}
+    for key, identity in timing_expected.items():
+        cell = key[:-1]
+        previous = timing_cell_identities.setdefault(cell, identity)
+        if previous != identity:
+            raise ValueError("timing methods disagree on frozen cell identity")
+    if timing_cell_identities != parity_expected:
+        raise ValueError("timing/parity frozen endpoint/data/tool identities differ")
+    return timing, timing_rows, parity_rows
 
 
 def _formal_parity(key, exact, legacy, field, expected_kind):
@@ -149,11 +290,36 @@ def parity_states(key, methods, exact, legacy):
     return render(br), render(nc), source
 
 
-def summarize(src, parity, out, stream=None):
+def summarize(src, parity, out, stream=None, require_completion=True):
     if stream is None:
         stream = sys.stdout
-    cells = _timing_cells(src)
-    exact, legacy = _parity_maps(parity)
+    completion_error = None
+    if require_completion:
+        try:
+            with contextlib.ExitStack() as locks:
+                for locked_path in sorted(
+                    {os.path.abspath(src), os.path.abspath(parity)}
+                ):
+                    locks.enter_context(pcm.invocation_file_lock(locked_path))
+                timing_proof, timing_rows, parity_rows = _validate_completion_pair(
+                    src, parity
+                )
+            current_batch_id = timing_proof["batch_id"]
+            cells = _timing_cells(
+                src, current_batch_id=current_batch_id, rows=timing_rows
+            )
+            exact, legacy = _parity_maps(
+                parity,
+                rows=parity_rows,
+                current_commit=timing_proof["commit"],
+                current_batch_id=current_batch_id,
+            )
+        except (OSError, TypeError, ValueError, RuntimeError) as ex:
+            completion_error = str(ex)
+            cells, exact, legacy = {}, {}, {}
+    else:
+        cells = _timing_cells(src)
+        exact, legacy = _parity_maps(parity)
     output, failures, unverified = [], [], []
     print(
         f"{'engine':8} {'scale':5} {'cls':3} {'tmpl':5} {'ans(B/R,N/C)':16} "
@@ -250,10 +416,17 @@ def summarize(src, parity, out, stream=None):
         "c_ans", "status_B", "status_R", "status_N", "status_C", "br_parity",
         "nc_parity", "parity_source",
     ]
-    with open(out, "w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(output)
+    out = pcm._prepare_artifact_path(out, exploratory=not require_completion)
+    rendered = io.StringIO(newline="")
+    writer = csv.DictWriter(rendered, fieldnames=columns)
+    writer.writeheader()
+    writer.writerows(output)
+    with pcm.invocation_file_lock(out):
+        pcm._atomic_publish_bytes(
+            out,
+            rendered.getvalue().encode("utf-8"),
+            "R9 decomposition summary",
+        )
     print(f"\nwrote {out} ({len(output)} cells)", file=stream)
     if failures:
         print(f"\n!!! {len(failures)} ANSWER-PARITY MISMATCHES:", file=stream)
@@ -271,6 +444,9 @@ def summarize(src, parity, out, stream=None):
             "timing-unverified: no current-protocol rows with required evidence",
             file=stream,
         )
+    if completion_error:
+        print(f"completion-unverified: {completion_error}", file=stream)
+        unverified.append(("completion", completion_error))
     return output, failures, unverified
 
 
@@ -278,7 +454,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--src", default=DEFAULT_SRC)
     parser.add_argument("--parity", default=DEFAULT_PARITY)
-    parser.add_argument("--out", default=DEFAULT_OUT)
+    parser.add_argument("--out")
     parser.add_argument(
         "--allow-mismatch",
         action="store_true",
@@ -290,7 +466,19 @@ def main(argv=None):
         help="allow unverified/missing timing or parity evidence",
     )
     args = parser.parse_args(argv)
-    output, failures, unverified = summarize(args.src, args.parity, args.out)
+    args.out = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(args.src)), "brnc_decomposition.csv"
+    )
+    try:
+        output, failures, unverified = summarize(
+            args.src,
+            args.parity,
+            args.out,
+            require_completion=not args.allow_unverified,
+        )
+    except (OSError, ValueError, RuntimeError) as ex:
+        print(f"summary failed: {ex}", file=sys.stderr)
+        return 1
     mismatch_failed = bool(failures) and not args.allow_mismatch
     unverified_failed = (not output or bool(unverified)) and not args.allow_unverified
     return 1 if mismatch_failed or unverified_failed else 0
