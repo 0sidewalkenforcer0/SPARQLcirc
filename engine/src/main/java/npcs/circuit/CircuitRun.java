@@ -77,7 +77,11 @@ public final class CircuitRun {
         File dataFile = new File(positional.get(1));
         String query = new String(Files.readAllBytes(Paths.get(positional.get(2))), StandardCharsets.UTF_8);
         String endpoint = positional.size() == 4 ? positional.get(3) : null;
-        RDFFormat fmt = positional.get(1).endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
+        String dataPath = positional.get(1);
+        RDFFormat fmt = dataPath.endsWith(".ttls") ? RDFFormat.TURTLESTAR
+                      : dataPath.endsWith(".nq")   ? RDFFormat.NQUADS      // named-graph reification (quads)
+                      : dataPath.endsWith(".trig") ? RDFFormat.TRIG
+                      : RDFFormat.TURTLE;
         // Per-engine configuration via environment (script-friendly; GraphDB defaults unchanged when unset).
         // Profiles for Fuseki/Oxigraph/QLever/MillenniumDB/Virtuoso/Stardog live in reference/engines/.
         String updateEndpointEnv = System.getenv("CIRCUIT_UPDATE_ENDPOINT");   // override; else <endpoint>/statements

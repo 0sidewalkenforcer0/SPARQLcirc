@@ -76,6 +76,24 @@ public enum Reification {
             return "\t" + s + " " + p + " " + o + " . \n"
                  + "\tBIND(" + s + " AS ?" + provVar + ") \n";
         }
+    },
+
+    /**
+     * Named-graph reification (NPCS's "namedgraph"): each base triple lives in its OWN named graph,
+     * and the graph name IS the provenance token, so {@code GRAPH ?prov { s p o }} binds {@code ?prov}
+     * to that token. Uses only standard SPARQL 1.1 (a GRAPH block), so it is engine-agnostic on any
+     * store with named-graph support. The data must be loaded as QUADS (each triple in its own
+     * {@code urn:t:N} graph — see reference/watdiv/reify.py --namedgraph). Like the other non-standard
+     * schemes, this is a leaf-encoding change only; the upper-level ⊗/⊕/⊖ combination is unchanged.
+     */
+    NAMED_GRAPH {
+        @Override
+        public String reify(StatementPattern sp, String provVar) {
+            String s = Terms.render(sp.getSubjectVar());
+            String p = Terms.render(sp.getPredicateVar());
+            String o = Terms.render(sp.getObjectVar());
+            return "\tGRAPH ?" + provVar + " { " + s + " " + p + " " + o + " } \n";
+        }
     };
 
     static final String RDF_SUBJECT   = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
@@ -98,10 +116,12 @@ public enum Reification {
             case "SPARQL_Star": return SPARQL_STAR;
             case "Wikidata":    return WIKIDATA;
             case "naryrel":     return NARYREL;
+            case "NamedGraph":
+            case "namedgraph":  return NAMED_GRAPH;
             default:
                 throw new IllegalArgumentException(
                     "Unsupported reification scheme: " + name
-                    + " (supported: Standard, SPARQL_Star, Wikidata, naryrel)");
+                    + " (supported: Standard, SPARQL_Star, Wikidata, naryrel, NamedGraph)");
         }
     }
 }
