@@ -8,10 +8,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -82,6 +84,19 @@ public final class CircuitRun {
         boolean skipLoad = "1".equals(System.getenv("CIRCUIT_SKIP_LOAD"));     // data pre-loaded via bulk import
         boolean readOnly = "1".equals(System.getenv("CIRCUIT_READONLY"));      // engine exposes query only, no UPDATE
         if (readOnly) skipLoad = true;                                         // read-only implies data pre-loaded
+        // Optional: persist the finished circuit into a per-run NAMED GRAPH (content-addressed by the query
+        // text) instead of leaving it only client-side. Keeps the circuit isolated from the base data
+        // (data stays in the default graph) and makes cleanup a SAFE per-run CLEAR GRAPH -- never the blanket
+        // con.remove() that could delete a content-addressed gate shared with another circuit. Opt-in:
+        // default behavior (no env) is byte-for-byte unchanged.
+        String circuitGraphEnv = System.getenv("CIRCUIT_GRAPH");               // explicit IRI override, else auto
+        boolean persistGraph = "1".equals(System.getenv("CIRCUIT_PERSIST"))
+                || (circuitGraphEnv != null && !circuitGraphEnv.isEmpty());
+        IRI runGraph = persistGraph
+                ? SimpleValueFactory.getInstance().createIRI(
+                    (circuitGraphEnv != null && !circuitGraphEnv.isEmpty())
+                        ? circuitGraphEnv : "urn:circuit:run:" + sha256hex(query))
+                : null;
 
         CircuitRewriter rw = new CircuitRewriter(scheme, constructionMode, UUID.randomUUID().toString());
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
@@ -149,6 +164,11 @@ public final class CircuitRun {
             }
             Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
             System.err.println("# circuit triples: " + circuit.size());
+            if (persistGraph && endpoint != null && runGraph != null) {
+                con.add(circuit, runGraph);        // materialize the circuit as its own named graph
+                System.err.println("# persisted " + circuit.size()
+                        + " circuit triples into named graph <" + runGraph + ">");
+            }
             // Opt-in hygiene for a SCRATCH endpoint used as a one-run workspace: remove THIS run's gates.
             // Best-effort; the loaded data (urn:base:) is untouched (circuit holds only urn:g:*/urn:circuit:*).
             // ⚠ NOT safe when the endpoint is a SHARED / long-lived circuit store: gate IRIs are
@@ -158,14 +178,32 @@ public final class CircuitRun {
             // and do not enable it alongside concurrent runs that still need this run's reach state.
             if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
                 try {
-                    con.remove(circuit);
-                    System.err.println("# CIRCUIT_CLEANUP: removed " + circuit.size() + " gate triples from the endpoint");
+                    if (runGraph != null) {
+                        con.clear(runGraph);       // SAFE: drop only THIS run's named graph, never shared gates
+                        System.err.println("# CIRCUIT_CLEANUP: dropped named graph <" + runGraph + ">");
+                    } else {
+                        con.remove(circuit);       // legacy default-graph cleanup (see the warning above)
+                        System.err.println("# CIRCUIT_CLEANUP: removed " + circuit.size() + " gate triples from the endpoint");
+                    }
                 } catch (RuntimeException e) {
                     System.err.println("# CIRCUIT_CLEANUP failed (non-fatal, circuit already emitted): " + e.getMessage());
                 }
             }
         }
         repo.shutDown();
+    }
+
+    /** Deterministic hex SHA-256, used to name the per-run circuit graph {@code urn:circuit:run:<hash>}. */
+    private static String sha256hex(String s) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                       .digest(s.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : d) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
