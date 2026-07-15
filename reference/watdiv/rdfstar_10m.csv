@@ -1,0 +1,9 @@
+shape,scheme,engine,construction_effective,build_ms,times,plus,minus,gates,answers,circuit_triples,circuit_sha256
+S-star,Standard,graphdb,flat,544,54,2,0,56,2,280,824c46ed0195e2427e9b721bf75e837461bcb6866083f96887dbaade9e0d341d
+S-star,SPARQL_Star,graphdb,flat,695,54,2,0,56,2,280,824c46ed0195e2427e9b721bf75e837461bcb6866083f96887dbaade9e0d341d
+L-path,Standard,graphdb,flat,589,45,45,0,90,45,585,ce5759cced60a8983aaf8dbaff8796df415a5c541e1a2a7f2a6a77b8607094c9
+L-path,SPARQL_Star,graphdb,flat,537,45,45,0,90,45,585,ce5759cced60a8983aaf8dbaff8796df415a5c541e1a2a7f2a6a77b8607094c9
+F-snow,Standard,graphdb,flat,508,6,1,0,7,1,41,c712723924a3096d674deb992e68076ee74bc2836d073368f93973c92c7ff1d5
+F-snow,SPARQL_Star,graphdb,flat,467,6,1,0,7,1,41,c712723924a3096d674deb992e68076ee74bc2836d073368f93973c92c7ff1d5
+M-minus,Standard,graphdb,flat,1293,2,6,2,10,2,28,1bdbcfd8ac155c0b584d14426cf349e46a8c8c42cfe71c304bded0b94cb7ac48
+M-minus,SPARQL_Star,graphdb,flat,506,2,6,2,10,2,28,1bdbcfd8ac155c0b584d14426cf349e46a8c8c42cfe71c304bded0b94cb7ac48
