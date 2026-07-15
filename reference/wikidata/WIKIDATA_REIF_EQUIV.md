@@ -26,6 +26,17 @@ provenance token IRIs differ by scheme (`urn:t:N` vs the statement node `urn:wds
 names, not the gate DAG or the probabilities. (On WatDiv the tokens were aligned, so Standard↔RDF-star came
 out byte-identical; see `RDFSTAR_RESULTS.md`.)
 
+## Deployed-engine construction time (GraphDB)
+Same bound 2-hop query, `--construction flat`, warm (3 runs), on the loaded repos:
+| scheme | repo | build_ms (3 runs) | answers | circuit |
+|---|---|--:|--:|--:|
+| Standard | `wdpaths` (60.5 M, urn:st: reified) | 516 / 477 / 481 | 2 | 2⊗ · 2⊕ · 24 tri |
+| Wikidata | `wdstatements` (40.3 M, p:/ps:) | 484 / 477 / 492 | 2 | 2⊗ · 2⊕ · 24 tri |
+
+Warm, the two schemes construct in ~equal time (~480 ms); same answers, isomorphic circuit (different token
+IRIs → different sha). Cold first-touch: Standard 2128 ms (the larger 60 M repo activates slower) vs
+Wikidata 488 ms.
+
 ## Scope notes
 - `CircuitRun`'s property-path route is Standard-reification-only, so the WIKIDATA scheme is exercised on a
   **BGP** (a 2-pattern subclass chain), not a `P279+` path.
