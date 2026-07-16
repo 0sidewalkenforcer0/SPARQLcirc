@@ -2,8 +2,8 @@
 
 *What factoring is, exactly which SPARQL fragment it applies to and why, what it fundamentally *cannot* do,
 how the current algorithm handles the hard cases, and a prioritized plan for finishing it. Grounded in
-`reference/factor.py`, `reference/factor_native.py`, `reference/gates.py`, and
-`engine/src/main/java/npcs/circuit/CircuitRewriter.java`.*
+`engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java` (engine-native factored BGP),
+`CircuitRewriter.java`, `reference/factor.py`, `reference/factor_native.py`, and `reference/gates.py`.*
 
 ## 0. TL;DR
 
@@ -17,8 +17,12 @@ how the current algorithm handles the hard cases, and a prioritized plan for fin
   **Property paths** use a different (recursive, content-addressed) sharing mechanism.
 - **Not universal:** polynomial factoring exists **iff the lineage has bounded treewidth** (≈ the query is
   *safe*, Dalvi–Suciu). High-treewidth provenance has **no** small circuit — a #P wall (E4).
-- **Status:** flat is the **Java engine default for every operator**; factored is a **Python-only reference**
-  (`factor.py` + `factor_native.py`), **BGP-only**.
+- **Status (verified):** factored BGP is now the **Java engine default** (`ConstructionMode.FACTORED`,
+  `FactoredBgpRewriter` — one CONSTRUCT per elimination step, the same algorithm as `factor.py`). **Flat** is
+  kept for **ablations and read-only endpoints**. UNION/MINUS/OPTIONAL still use the flat operator plan; paths
+  use the recursive reach protocol. Confirmed on the drug BGP: factored and flat emit **byte-identical answer
+  gates** and **equal WMC** (`0.774297708` for the reconvergent answer). `factor.py`/`factor_native.py` are now
+  the reference/oracle for the same algorithm.
 
 ---
 
@@ -81,7 +85,7 @@ still factor each `⊖`-operand (a monotone BGP/UNION) and apply `⊖` on top.
 
 | SPARQL operator | Circuit op | Factors? | Note |
 |---|---|:--:|---|
-| **BGP** (conjunction) | ⊗ | ✅ full variable elimination | the only place with the `|data|^{#patterns}` blow-up |
+| **BGP** (conjunction) | ⊗ | ✅ full variable elimination | the `|data|^{#patterns}` blow-up — **engine-native & the default** (`FactoredBgpRewriter`) |
 | **Projection / DISTINCT** | ⊕ | ✅ built in | it *is* `marginalize` |
 | **UNION** | ⊕ | ✅ in principle | a union of BGPs = ⊕ of the branches' factored circuits |
 | **MINUS / OPTIONAL** | ⊖ (`a∧¬b`) | ⚠️ operands only | non-monotone: factor each operand, apply `⊖` at the top — cannot eliminate across `⊖` |
@@ -134,17 +138,31 @@ Query: `SELECT ?x WHERE { ?x :hobby ?s . ?x :skill ?k }` (project `?x`; `?s,?k` 
 
 ## 6. Current implementation status
 
-| | flat | factored |
-|---|---|---|
-| code | `CircuitRewriter.bgp()` (BGP), `productPlus()`/`minusRoot()` (MINUS/OPTIONAL), the reach loop (paths) — **all Java, engine-native** | `factor.py` (in-memory) + `factor_native.py` (multi-pass SPARQL-`INSERT` prototype) |
-| passes | one CONSTRUCT (BGP); small fixed plan (MINUS/paths) | one join+group-by **pass per eliminated variable** |
-| operators | **all** | **BGP only** (`factor_native.py`: *"MINUS/OPTIONAL keep the flat engine-native plan"*) |
-| shipped in the Java engine? | **yes** | **no** — reference/prototype |
+Factored BGP is **implemented in the Java engine and is the default** (`ConstructionMode.FACTORED`, `49d3120`);
+flat is retained for **ablations and read-only endpoints**.
 
-So the compactness results (E2 up to 201×, E5) come from the **Python factored** construction; the deployed
-Java engine builds **flat** for every operator. `factor_native.py` shows factored *can* run on an unmodified
-engine (pure SPARQL `INSERT` passes, `SHA256`-addressed row/gate IRIs), but it is not wired into
-`CircuitRewriter`.
+| | factored (default) | flat (ablation / read-only) |
+|---|---|---|
+| operators | **pure BGP** (`constructionPlan()` → `FactoredBgpRewriter` when `isPureBgp`); UNION/MINUS/OPTIONAL/paths fall back to flat/reach | **all** (BGP / UNION / MINUS / OPTIONAL; paths via the reach loop) |
+| code | `FactoredBgpRewriter` (engine-native), dispatched by `CircuitRewriter.constructionPlan()` | `CircuitRewriter.bgp()` / `branchPlan()` / `productPlus()`+`minusRoot()` / reach loop |
+| passes | **one CONSTRUCT per elimination step** (base → join → marginalize → answers), run as a `CircuitConstructionPlan` of `Step`s | one CONSTRUCT (BGP); small fixed plan (MINUS/paths) |
+| engine requirement | **writable endpoint** — each step INSERTs a private `urn:sc:` message relation fed back by `CircuitRun` before the next (`requiresFeedback()`); read-only ⇒ `--construction=flat` | any SPARQL 1.1 endpoint, incl. read-only (QLever/MillenniumDB) |
+| reference / oracle | `reference/factor.py` (in-memory, same min-scope elimination) + `factor_native.py` (SPARQL-`INSERT` prototype) | `reference/gamma.py` |
+
+Properties of the engine-native factored plan (verified on the drug BGP):
+- **Same algorithm as `factor.py`** — min-scope variable elimination (⊗ the relations mentioning the chosen
+  variable, ⊕-marginalize it), then join the residual relations and emit answers.
+- **Content-addressed and byte-compatible with flat** — products `urn:g:t:`, marginalization sums `urn:g:s:`,
+  answers `urn:g:a:`; `FactoredBgpRewriter.termHash` is byte-for-byte identical to `CircuitRewriter`'s answer
+  identity, so factored and flat emit the **same answer-gate IRIs** and the **same WMC** (drug BGP: both give
+  `0.774297708` for the reconvergent answer). Factoring changes the representation, never the value.
+- **Concurrency-isolated** — message relations are namespaced by a per-invocation `workspaceId` hash so
+  parallel factored plans can't consume each other's rows; **gate IRIs do not depend on it**, so the emitted
+  circuit is workspace-independent (byte-identical across runs and engines).
+
+So E2/E5 compactness is now reproducible by the **Java engine itself** on a writable endpoint, not only the
+Python reference; `factor_native.py` remains the standalone proof that the construction runs as pure SPARQL
+`INSERT` passes. (On shallow/low-sharing shapes factored can be *larger* than flat — see rec. 7.)
 
 ---
 
@@ -154,8 +172,9 @@ engine (pure SPARQL `INSERT` passes, `SHA256`-addressed row/gate IRIs), but it i
 
 No trick beats #P; the algorithm caps and records rather than fake a result:
 
-- **Construction** (flat, ∝ #derivations): if the collected circuit exceeds `MAXTRIP` (4 M triples) it is
-  recorded **`too-large`** (E8 has 9 such single queries), not crashed.
+- **Construction**: if the collected circuit exceeds `MAXTRIP` (4 M triples) it is recorded **`too-large`**
+  (E8 has 9 such single queries), not crashed. Factored keeps BGP construction `∝ |data|^{tw+1}`, but at high
+  treewidth that is large too; the cap is on the materialized circuit either way (factored or flat).
 - **Compilation** (fixed-order OBDD): over `E4_TIMEOUT` (120 s) or the memory cap → recorded
   **`obdd-timeout` / OOM** — *"the ceiling IS the data point"* (E4).
 - **d4 (d-DNNF)** is order-robust and pushes the frontier further than OBDD (compiles instances OBDD times
@@ -186,21 +205,26 @@ minusRoot       → ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?
 
 ## 8. Implementation recommendations (prioritized)
 
-1. **Decide the positioning first (paper-level).** Core system contribution or reference optimization? If
-   core, it must be in the Java engine; if not, label E2/E5 as a *reference-implementation optimization* and
-   keep the Java engine flat. The rest assumes "core."
-2. **Port factored BGP into `CircuitRewriter` as a multi-pass plan.** Generalize the single-pass `bgp()` to
-   one CONSTRUCT/`INSERT` per eliminated variable — `factor_native.py` already prototypes the SPARQL (message
-   relations as RDF, joined by later passes, `SHA256`-addressed row/gate IRIs). Needs a **writable endpoint**.
+1. **Positioning is settled — it is a core system contribution.** Factored BGP is the shipped engine default
+   (`ConstructionMode.FACTORED`), not a reference-only optimization; E2/E5 compactness is a property of the
+   Java engine, reproducible on any writable endpoint.
+2. **~~Port factored BGP into the Java engine.~~ Done** (`49d3120`; hardened by `dc13dd2`/`a2b9c7c`).
+   `FactoredBgpRewriter` emits one CONSTRUCT per eliminated variable (base → join → marginalize → answers) as a
+   `CircuitConstructionPlan`, dispatched from `CircuitRewriter.constructionPlan()` for pure BGPs. Needs a
+   **writable endpoint** — each step INSERTs a private `urn:sc:` message relation fed back by `CircuitRun`
+   (`requiresFeedback()`); read-only engines fall back to `--construction=flat`.
 3. **Factor MINUS/OPTIONAL operands.** Replace flat `productPlus(P1)`/`productPlus(P2)` with the factored
    sub-plan per operand, keeping the top-level `⊖` unchanged. Correctness unaffected (operands are monotone).
 4. **UNION as ⊕ of factored branches** (content-addressed, so shared branches dedup).
-5. **Pick the elimination order deliberately** (min-fill / tree-decomposition); the realized width sets the
-   `|data|^{w+1}` bound. Expose it and benchmark order sensitivity.
+5. **Elimination order — improve beyond min-scope.** Min-scope is implemented (eliminate the variable whose
+   relation-scope union is smallest); for skewed data compute/approximate a real tree decomposition and
+   eliminate in that order — the realized width sets the `|data|^{w+1}` bound. Benchmark order sensitivity.
 6. **Keep property paths on their own protocol** (level-indexed content-addressed reach); do not force
    variable elimination onto the recursive closure.
-7. **Measure the pass/round-trip trade-off.** Factored is `k` passes (≈ `k` round-trips remotely) vs flat's
-   single CONSTRUCT; on shallow/low-sharing queries flat can win end-to-end. Report the crossover.
+7. **Measure the pass/round-trip trade-off** (now directly measurable in-engine — R9 construction evidence).
+   Factored is `k` feedback passes (≈ `k` round-trips remotely) vs flat's single CONSTRUCT, so on shallow/
+   low-sharing shapes flat can win end-to-end (e.g. the linear 3-hop drug BGP: factored 72 triples vs flat 25,
+   no early marginalization possible). Report the crossover — factored's win is on star/high-fan-out shapes.
 8. **Lock the invariant in CI.** `WMC(flat) == WMC(factored) == PWE` on every shape (extends E5 + gallery),
    so a factoring bug shows up as a probability mismatch, not a silent wrong answer.
 
@@ -227,7 +251,9 @@ the cheap linear-exact evaluation. Factoring is only ever a *representation* cha
 | content-addressed DAG (`leaf/times/plus/minus`, `_put` dedup) | `reference/gates.py` |
 | factored algorithm (base_relations / join / marginalize / factored_bgp) | `reference/factor.py` |
 | engine-native factored prototype (SPARQL-`INSERT` passes) | `reference/factor_native.py` |
-| flat BGP (shipped Java default) | `engine/.../CircuitRewriter.java` — `bgp()` |
+| **engine-native factored BGP** (multi-pass variable elimination, **default**) | `engine/.../FactoredBgpRewriter.java`, dispatched by `CircuitRewriter.constructionPlan()` |
+| construction mode + plan types + inter-pass feedback | `engine/.../ConstructionMode.java`, `CircuitConstructionPlan.java`, `CircuitRun.java` |
+| flat BGP (ablation / read-only route) | `engine/.../CircuitRewriter.java` — `bgp()` / `branchPlan()` |
 | flat MINUS/OPTIONAL (`productPlus`/`subFeeds`/`minusRoot`) + paths (reach loop) + fail-fast (`normalize`/`assertPureBgp`) | same file |
 | flat-vs-factored comparison + WMC cross-check (E5) | `reference/watdiv_factor.py`, `reference/factor_demo.py` |
 | high-tw caps / timeouts (`too-large`, `E4_TIMEOUT`) | `reference/e8_wikidata.py`, `reference/e6_minus.py`, `reference/e4_sweep.py` |
