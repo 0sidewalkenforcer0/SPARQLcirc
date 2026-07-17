@@ -311,6 +311,22 @@ public class CircuitRewriterTest {
         assertRejected(() -> new CircuitRewriter(Reification.STANDARD).pathQuery(pathFrom), "FROM");
     }
 
+    @Test
+    public void npcsRewriterRejectsSilentlyMiscompiledPatterns() {
+        // B1 guard: these used to slip past isPureBgp and get flattened into a plain BGP by
+        // StatementPatternCollector — silently producing a WRONG circuit (property paths collapsed to a
+        // single hop, LIMIT/OFFSET dropped, a nested subquery losing its own scope). They must now be
+        // rejected loudly instead of miscompiled.
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { <urn:s> <urn:p>+ ?o }"), "Unsupported pattern");        // p+ path
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { <urn:s> <urn:p>* ?o }"), "Unsupported pattern");        // p* path
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { <urn:s> <urn:p> ?o } LIMIT 5"), "Unsupported pattern"); // LIMIT/OFFSET
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { { SELECT ?o WHERE { <urn:s> <urn:p> ?o } } }"), "Unsupported pattern"); // subquery
+    }
+
     private static Model executePlan(RepositoryConnection con, String query) {
         return executePlan(con, query, ConstructionMode.FACTORED);
     }

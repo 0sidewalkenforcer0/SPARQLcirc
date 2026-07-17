@@ -6,12 +6,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -71,6 +75,16 @@ public class NpcsRewriter {
         Projection proj = outerProjection(te);
         if (proj == null) {
             throw new IllegalArgumentException("Only SELECT queries are supported.");
+        }
+        // B1 guard: solution modifiers stack ABOVE the projection, so β (which runs below it) never
+        // sees them. A Slice would otherwise be silently dropped — the provenance would be built for
+        // the FULL result set, not the LIMIT/OFFSET window. Reject it loudly at the entry.
+        for (TupleExpr cur = te; cur != proj && cur instanceof UnaryTupleOperator;
+                cur = ((UnaryTupleOperator) cur).getArg()) {
+            if (cur instanceof Slice) {
+                throw new UnsupportedOperationException(
+                    "Unsupported pattern (LIMIT/OFFSET changes the answer set but not the provenance): Slice");
+            }
         }
         List<String> projVars = new ArrayList<>();
         for (ProjectionElem pe : proj.getProjectionElemList().getElements()) {
@@ -295,6 +309,13 @@ public class NpcsRewriter {
             @Override public void meet(Difference n) { impure[0] = true; }
             @Override public void meet(Filter n)     { impure[0] = true; }
             @Override public void meet(Extension n)  { impure[0] = true; }
+            // B1 guard: these would otherwise be silently flattened by StatementPatternCollector
+            // into a plain BGP — property paths (p+/p*/p?) collapse to a single hop, LIMIT/OFFSET is
+            // dropped, and a nested subquery loses its own scope. Reject loudly instead.
+            @Override public void meet(ArbitraryLengthPath n) { impure[0] = true; }  // p+ / p*
+            @Override public void meet(ZeroLengthPath n)      { impure[0] = true; }  // p? / zero-length
+            @Override public void meet(Slice n)               { impure[0] = true; }  // LIMIT / OFFSET
+            @Override public void meet(Projection n)          { impure[0] = true; }  // nested subquery
         });
         return !impure[0];
     }
