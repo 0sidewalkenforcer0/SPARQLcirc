@@ -1,42 +1,49 @@
 # Final paper figures
 
-Every figure here is rendered through the shared `figstyle` grammar — the same visual
-grammar as the `../drafts/` layout drafts (`make_round9_drafts.py`): one 7.15-inch text
-width, the SPARQLprov B/R/N/C palette, light-grid frames, bold panel letters, gray footer
-captions, and vector PDF + 300-dpi PNG with embedded fonts. Two sets live here:
+Every figure here is rendered through the shared `figstyle` grammar — the same visual grammar
+as the `../drafts/` layout drafts (`make_round9_drafts.py`): one 7.15-inch text width, the
+SPARQLprov B/R/N/C palette, light-grid frames, bold panel letters, gray footer captions, and
+vector PDF + 300-dpi PNG with embedded fonts. Three generators write here:
 
-- **`result_r9_*`** — the ROUND-9 **drafts structure** (per-experiment, full-result layouts
-  in the SPARQLprov/NPCS idiom), filled from committed `reference/` CSVs. Sub-panels whose
-  data awaits the ROUND-9 server run keep the layout and show `DATA PENDING`. Generator:
-  `../../make_result_figures.py`.
-- **`paper_fig*` / `paper_table1`** — the compact composite layout (2×2 / 1×3), kept as
-  space-efficient alternatives for the paper body. Generator: `../../make_figures.py`.
+- **`result_r9_2/3/2c_<engine>`** — full-dimension **per-engine** figures (2 scales × 30
+  templates × B/R/N/C) from the committed construction matrix. Generator:
+  `../../make_matrix_figures.py` reading `reference/paper/construction_matrix_{10m,100m}.csv`.
+- **`result_r9_*` (engine-independent)** — drafts-structure figures from controlled/cross-system
+  CSVs. Generator: `../../make_result_figures.py`.
+- **`paper_fig*` / `paper_table1`** — compact composite layouts, kept as space-efficient
+  alternatives for the paper body. Generator: `../../make_figures.py`.
 
-Regenerate: `cd presentation && python3 make_result_figures.py && python3 make_figures.py`
+Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_figures.py`
+
+## Real construction matrix (GraphDB) — the flagship
+
+`result_r9_2_construction_graphdb` is **real data**: the flat B/R/N/C construction-time matrix
+built by `reference/paper/paper_construction_matrix.py` (`PCM_FORCE_FLAT=1`, warmup + 5 runs,
+**300 s** cap). Coverage **10M 114/120, 100M 110/120** (C column 27/30, 24/30). The ~10 ▼ are
+genuinely too-large even at 300 s — chiefly C3 (4.24M answers at 100M). `result_r9_3_storage_graphdb`
+and `result_r9_2c_data_scale_graphdb` derive from the same matrix. The other three engines
+(`_oxigraph/_qlever/_millenniumdb`) show `DATA PENDING` — see below.
 
 ## Manifest
 
-| figure | set | structure | source CSV(s) | data status |
-|---|---|---|---|---|
-| `result_r9_4_compilation_scale`    | drafts | 2×3 latency/size/RSS × fixed/growing tw | `watdiv/e4_results.csv` | size + OBDD latency real; **RSS pending** |
-| `result_r9_3b_sharing_crossover`   | drafts | 1×2 representation crossover + shared compile | `bench.csv`, `e11_scale.csv` | **real** |
-| `result_r9_7_provsql_tpch`         | drafts | 1×2 matched cells + scale trend | `g4_instances.csv` | matched Q3 segments real; **scale sweep pending** |
-| `result_r9_4b_compilation_patterns`| drafts | 1×2 latency + size over real classes | `g3_pqe.csv` | d-DNNF real; **per-class OBDD pending** |
-| `result_r9_3_storage_ratio`        | drafts | grouped ratio bars (low-sharing counterexamples) | `g2b_npcs_vs_ours.csv` | **real** |
-| `result_r9_2c_data_scale`          | drafts | 1×3 time/size/RSS vs WatDiv scale | `watdiv/e3_10M.csv`, `e3_100M.csv` | time + size real (10M/100M); **RSS + 1B pending** |
-| `result_r9_6_paths`                | drafts | 1×3 construct/circuit/RSS (path operators) | `watdiv/e_paths.csv` | construct + size real; **RSS + reach sweep pending** |
-| `paper_fig1_compilation`           | composite | 1×2 fixed/growing tw | `watdiv/e4_results.csv` | real |
-| `paper_fig2_sharing`               | composite | 2×2 reconvergence/compile/NPCS | `bench.csv`, `e11_scale.csv`, `g2b_npcs_vs_ours.csv` | real |
-| `paper_fig3_construction`          | composite | 1×3 10M/100M/Wikidata | `watdiv/e3_*.csv`, `e6_minus_*.csv`, `e8_wikidata.csv` | real |
-| `paper_fig4_pqe`                   | composite | 1×2 ProvSQL + stage decomposition | `g4_instances.csv`, `g4_rigor.csv` | real |
-| `paper_table1_validation`          | composite | table | `g6_d4.csv` | real |
+| figure | generator | structure | data status |
+|---|---|---|---|
+| `result_r9_2_construction_graphdb` | matrix | 2×30×B/R/N/C, 2 scales | **real** (10M 114/120, 100M 110/120) |
+| `result_r9_3_storage_graphdb` | matrix | NPCS/circuit size ratio/template, 2 scales | **real** (mostly <1 = selective counterexamples) |
+| `result_r9_2c_data_scale_graphdb` | matrix | time/size/RSS vs scale per class | **real** time+size; **RSS pending** |
+| `result_r9_{2,3,2c}_{oxigraph,qlever,millenniumdb}` | matrix | same | **DATA PENDING** (engines not loaded) |
+| `result_r9_4_compilation_scale` | result | 2×3 latency/size/RSS × fixed/growing tw | size+OBDD latency real; **RSS pending** |
+| `result_r9_3b_sharing_crossover` | result | crossover + shared compile | **real** |
+| `result_r9_7_provsql_tpch` | result | matched cells + scale trend | Q3 segments real; **scale sweep pending** |
+| `result_r9_4b_compilation_patterns` | result | latency + size over real classes | d-DNNF real; **OBDD pending** |
+| `result_r9_6_paths` | result | construct/circuit/RSS (path operators) | construct+size real; **RSS+sweep pending** |
+| `paper_fig1..4`, `paper_table1` | composite | compact 2×2 / 1×3 / table | real |
 
-## Flagships still in `../drafts/` (pending the server matrix)
+## Pending (need infrastructure not available this session)
 
-The per-template × per-engine × B/R/N/C figures cannot be filled from committed CSVs — they
-need the ROUND-9 server run. They stay as data-free drafts until then; their `make_result_figures.py`
-slots are ready to fill (preserve panel geometry, swap the pending mark for the aggregation):
-
-- `draft_r9_2_construction_<engine>` (25-template B/R/N/C construction, 10M/100M)
-- `draft_r9_5_e2e_<engine>` (per-template end-to-end PQE stages)
-- `draft_r9_2b_multisource_<engine>` (100M × 2 sources stress)
+- **Other engines** (`_oxigraph/_qlever/_millenniumdb`): each needs base+reified WatDiv loaded
+  at 10M+100M (~60 G/engine). Oxigraph's in-SPARQL SHA256 makes the C method impractically slow
+  (E10: S-star 365 s), so it would give B/R/N only. Cross-engine byte-identity is already proven
+  in E10. Run recipe + fix are in the `r9-construction-matrix` memory.
+- **`draft_r9_5_e2e_<engine>`** (per-template end-to-end PQE stages) and
+  **`draft_r9_2b_multisource_<engine>`** (100M × 2 sources): not yet run; remain in `../drafts/`.
