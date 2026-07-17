@@ -164,6 +164,16 @@ So E2/E5 compactness is now reproducible by the **Java engine itself** on a writ
 Python reference; `factor_native.py` remains the standalone proof that the construction runs as pure SPARQL
 `INSERT` passes. (On shallow/low-sharing shapes factored can be *larger* than flat — see rec. 7.)
 
+**Update (2026-07-17) — source-restriction pushdown for selective BGPs.** A bound/selective query originally
+made factored over-build catastrophically, not just by a constant: only the pattern carrying the constant was
+restricted, so an interior chain edge materialized its **entire unrestricted** relation (WatDiv L-path 10M:
+**299 762 gates / 186 s**, touching 299 647 base tokens for 45 answers; 100M chains were `too-large`).
+`FactoredBgpRewriter` now **semi-joins each base relation to the rest of a selective BGP** (reify the other
+patterns as context) so only full-match rows materialize; unbound BGPs keep plain base scans, so the design
+regime is untouched. L-path 10M dropped to **143 gates / 513 ms** (49 base tokens == flat), WMC unchanged.
+Full regime map + numbers: `reference/FACTORED_REGIMES.md`, `reference/watdiv/rdfstar_factored_vs_flat.csv`,
+`reference/watdiv/unbound_factored_vs_flat.csv`.
+
 ---
 
 ## 7. How the algorithm handles the hard cases
@@ -225,7 +235,13 @@ minusRoot       → ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?
    Factored is `k` feedback passes (≈ `k` round-trips remotely) vs flat's single CONSTRUCT, so on shallow/
    low-sharing shapes flat can win end-to-end (e.g. the linear 3-hop drug BGP: factored 72 triples vs flat 25,
    no early marginalization possible). Report the crossover — factored's win is on star/high-fan-out shapes.
-8. **Lock the invariant in CI.** `WMC(flat) == WMC(factored) == PWE` on every shape (extends E5 + gallery),
+   **Measured (`reference/FACTORED_REGIMES.md`):** with source-restriction pushdown (§6 update), bound
+   selective shapes are now S-star **9.5×** (874→92 gates @100M), L-path/F-snow a **tie** (158/26 vs 249/35),
+   MINUS identical. The decisive win is the **unbound reconvergent** regime the bound cells never exercised —
+   `unbound_factored_vs_flat.py`: flat exponential vs factored polynomial, **26.4× by k=7** (65 552 vs 2 480).
+8. **~~Source-restriction pushdown~~ Done** (`6505ab8`) — see §6 update; verified `WMC(flat)==WMC(factored)`
+   (max 6e-17) and unbound gate counts byte-identical before/after (scoped strictly to selective queries).
+9. **Lock the invariant in CI.** `WMC(flat) == WMC(factored) == PWE` on every shape (extends E5 + gallery),
    so a factoring bug shows up as a probability mismatch, not a silent wrong answer.
 
 ---
