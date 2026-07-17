@@ -31,7 +31,8 @@ and `result_r9_2c_data_scale_graphdb` derive from the same matrix. The other thr
 | `result_r9_2_construction_graphdb` | matrix | 2×30×B/R/N/C, 2 scales | **real** (10M 114/120, 100M 110/120) |
 | `result_r9_3_storage_graphdb` | matrix | NPCS/circuit size ratio/template, 2 scales | **real** (mostly <1 = selective counterexamples) |
 | `result_r9_2c_data_scale_graphdb` | matrix | time/size/RSS vs scale per class | **real** time+size; **RSS pending** |
-| `result_r9_{2,3,2c}_{oxigraph,qlever,millenniumdb}` | matrix | same | **DATA PENDING** (engines not loaded) |
+| `result_r9_2_construction_qlever` | matrix | 2×30×B/R/N/C | **real 10M** (112/120, byte-identical to GraphDB; 100M pending) |
+| `result_r9_{2,3,2c}_{oxigraph,millenniumdb}` | matrix | same | **DATA PENDING** (see below) |
 | `result_r9_4_compilation_scale` | result | 2×3 latency/size/RSS × fixed/growing tw | size+OBDD latency real; **RSS pending** |
 | `result_r9_3b_sharing_crossover` | result | crossover + shared compile | **real** |
 | `result_r9_7_provsql_tpch` | result | matched cells + scale trend | Q3 segments real; **scale sweep pending** |
@@ -39,11 +40,15 @@ and `result_r9_2c_data_scale_graphdb` derive from the same matrix. The other thr
 | `result_r9_6_paths` | result | construct/circuit/RSS (path operators) | construct+size real; **RSS+sweep pending** |
 | `paper_fig1..4`, `paper_table1` | composite | compact 2×2 / 1×3 / table | real |
 
-## Pending (need infrastructure not available this session)
+## Two real engines; the rest pending
 
-- **Other engines** (`_oxigraph/_qlever/_millenniumdb`): each needs base+reified WatDiv loaded
-  at 10M+100M (~60 G/engine). Oxigraph's in-SPARQL SHA256 makes the C method impractically slow
-  (E10: S-star 365 s), so it would give B/R/N only. Cross-engine byte-identity is already proven
-  in E10. Run recipe + fix are in the `r9-construction-matrix` memory.
+`result_r9_2_construction_{graphdb,qlever}` are real (GraphDB both scales; QLever 10M, fast +
+byte-identical). Remaining:
+
+- **QLever 100M**: needs the 100M index built (hours); only the 10M index exists.
+- **Oxigraph** (`oxi-watdiv*` data dirs ready): its in-SPARQL SHA256 makes the C method
+  impractically slow (E10: S-star 365 s) → B/R/N only. Writable, so needs `PCM_FORCE_FLAT`.
+- **MillenniumDB**: needs a fresh import. Cross-engine byte-identity is already proven in E10.
+  Run recipes + the flat-C fix are in the `r9-construction-matrix` memory.
 - **`draft_r9_5_e2e_<engine>`** (per-template end-to-end PQE stages) and
   **`draft_r9_2b_multisource_<engine>`** (100M × 2 sources): not yet run; remain in `../drafts/`.
