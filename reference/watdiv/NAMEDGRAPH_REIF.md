@@ -26,7 +26,10 @@ to Standard — the strongest form of reification-independence:
 | tiny chain (A-p-B, B-q-C), `?x :p ?y . ?y :q ?z` | `e0002463…` | `e0002463…` | **byte-identical** |
 | real Wikidata P279 slice (20k edges), bound 2-hop | `32d7f288…` | `32d7f288…` | **byte-identical** |
 
-Regression: `verify_g7_circuit_equiv.py` still `ALL OK` (default Standard/RDF-star paths unaffected).
+Regression: `verify_g7_circuit_equiv.py` now runs NamedGraph as a first-class scheme in the battery —
+Standard == NamedGraph is asserted **byte-identical + structurally identical across all four operator classes**
+(AND / UNION / OPTIONAL / MINUS), alongside Standard == RDF-star, using `example.namedgraph.nq` (tokens aligned
+to `ex:u_i`). This closes the earlier gap where NamedGraph had only the two hand-written inputs below.
 
 ## Scope
 Like the WIKIDATA/RDF-star schemes, the property-path route stays Standard-only, so NamedGraph is exercised
