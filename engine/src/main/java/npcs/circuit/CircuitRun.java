@@ -146,6 +146,7 @@ public final class CircuitRun {
                 throw e;
             }
             Model circuit = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+            long constructionStartNanos = System.nanoTime();   // on-engine plan execution only (excludes JVM start + data load)
             if (pathq != null && readOnly) {
                 System.err.println("# ERROR: property-path queries need a WRITABLE endpoint -- the iterative protocol "
                     + "INSERTs each round's reach gates back so the next CONSTRUCT can match them. This engine is "
@@ -166,6 +167,11 @@ public final class CircuitRun {
                 }
                 executeConstructionPlan(con, constructionPlan, circuit, true);
             }
+            // Uniform construction-time basis for flat vs factored: wall time of the on-engine plan
+            // execution only (JVM startup and any data load happen outside this window). Parsed by the
+            // D2 flat-vs-factored deployment-time harness (reference/rdfstar_factored.py).
+            long constructionMs = (System.nanoTime() - constructionStartNanos) / 1_000_000L;
+            System.err.println("# construction_ms: " + constructionMs);
             Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
             System.err.println("# circuit triples: " + circuit.size());
             if (persistGraph && endpoint != null && runGraph != null) {
@@ -250,18 +256,37 @@ public final class CircuitRun {
                     // response; recording afterwards would leak that session's
                     // rows when con.add() reports the transport failure.
                     workspace.addAll(messages);
-                    con.add(messages);
+                    addBatched(con, messages);   // batch the UPDATE: a single huge INSERT broken-pipes on GraphDB
                 }
             }
         } finally {
             if (!workspace.isEmpty()) {
                 try {
-                    con.remove(workspace);
+                    removeBatched(con, workspace);
                 } catch (RuntimeException cleanupFailure) {
                     System.err.println("# WARNING: could not remove the private factored workspace ("
                             + workspace.size() + " triples): " + cleanupFailure.getMessage());
                 }
             }
+        }
+    }
+
+    /** Batch size for feedback INSERT/DELETE: a single SPARQL UPDATE carrying the whole factored message
+     *  relation (which can reach hundreds of thousands of triples on high-fan-out sources) overflows the
+     *  remote's request buffer and broken-pipes. Chunking keeps each UPDATE well within engine limits. */
+    private static final int FEEDBACK_BATCH = 5000;
+
+    private static void addBatched(RepositoryConnection con, Model m) {
+        java.util.List<Statement> all = new java.util.ArrayList<>(m);
+        for (int i = 0; i < all.size(); i += FEEDBACK_BATCH) {
+            con.add(all.subList(i, Math.min(i + FEEDBACK_BATCH, all.size())));
+        }
+    }
+
+    private static void removeBatched(RepositoryConnection con, Model m) {
+        java.util.List<Statement> all = new java.util.ArrayList<>(m);
+        for (int i = 0; i < all.size(); i += FEEDBACK_BATCH) {
+            con.remove(all.subList(i, Math.min(i + FEEDBACK_BATCH, all.size())));
         }
     }
 

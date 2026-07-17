@@ -71,8 +71,44 @@ The transient factored/path *feedback* rows are intentionally left in the defaul
 session-scoped by a per-run UUID and auto-removed, so they are not the cleanup hazard, and isolating them
 would force every generated CONSTRUCT to read via GRAPH/dataset — a portability cost with little benefit.
 
+## Flat vs factored construction — BOTH kept (D2)
+The construction tables above are **flat** (read-only, one product per derivation) — chosen so the numbers
+could be taken against the loaded production repos with zero writes. We KEEP those and add the **factored**
+(production, per-BGP variable-elimination) counterpart, measured on the SAME source-bound query per shape so
+the two are directly paired. Both modes run through `CircuitRun` on the deployed GraphDB with a new uniform
+`# construction_ms` basis (on-engine plan wall-time, excludes JVM + load); numbers → `rdfstar_factored_vs_flat.csv`.
+Harness: `reference/rdfstar_factored.py` (1 run/cell, `-Xmx10g`, 400 s cell cap).
+
+Isolation without a 37 G reload: run vs the loaded repos with `CIRCUIT_SKIP_LOAD=1`; flat is read-only,
+factored's feedback self-removes in a `finally`, and the harness asserts each repo's triple count is
+**byte-identical before/after** (every row **ISO-OK**). The factored feedback INSERT is now batched
+(a single 600 k-triple UPDATE broken-pipes GraphDB).
+
+| shape (type) | scale | flat gates / ms | factored gates / ms | verdict |
+|---|--:|--:|--:|:--|
+| S-star (reconvergent star) | 10M  | 254 / 121 | **33 / 440**  | factored **7.7× smaller** |
+| S-star                     | 100M | 874 / 389 | **92 / 496**  | factored **9.5× smaller** |
+| M-minus (non-monotone)     | 10M  | 10 / 127  | 10 / 127      | **identical** (operator plan, no BGP elimination) |
+| M-minus                    | 100M | 15 / 83   | 15 / 213      | **identical** |
+| L-path (shallow 3-chain)   | 10M  | **90 / 104** | 299 762 / 185 677 | flat wins — factored over-materialises |
+| L-path                     | 100M | **158 / 128** | too-large (>400 s / >10 G) | flat wins |
+| F-snow (shallow snowflake) | 10M  | **7 / 67**   | 309 825 / 205 644 | flat wins |
+| F-snow                     | 100M | **26 / 77**  | too-large | flat wins |
+
+**The tradeoff.** Factored variable-elimination wins big on **reconvergent** BGPs (S-star: eliminate the star
+arms into a handful of shared marginal ⊕ — 9.5× fewer gates at 100M). But on a **shallow, non-reconvergent**
+chain/snowflake, eliminating a fan-out variable creates one marginal ⊕ per surviving combination, so the
+intermediate blows up (L-path 10M: 299 704 ⊕-gates for 45 answers; F-snow: 309 814 for 1) while **flat** just
+lists the few derivations (90 / 7 gates). At 100M the factored intermediate exceeds the 10 G / 400 s cap. MINUS
+is identical either way (it uses the read-only operator plan, not BGP elimination). Rule of thumb: **flat for
+selective/shallow shapes, factored for reconvergent/high-sharing shapes.**
+
+Reification-independence holds **within each mode**: Standard and RDF-star produce the byte-identical circuit
+(same sha) for every scale/shape/mode — flat and factored alike. (Flat and factored are *different circuits*
+of the same query, so their shas differ from each other by construction.)
+
 ## Status
 Done: 10M **and 100M**, all four BGP+MINUS shapes, GraphDB (Standard vs RDF-star) + Oxigraph witness;
-opt-in per-run named-graph circuit persistence.
+opt-in per-run named-graph circuit persistence; **flat-vs-factored construction paired at both scales (D2)**.
 Pending: Wikidata-style on the real Wikidata graph. Named-graph *reification* (of the input data) needs
 engine support (`QueryGuard` currently rejects GRAPH/FROM NAMED) — deferred.
