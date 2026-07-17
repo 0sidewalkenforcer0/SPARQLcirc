@@ -12,7 +12,7 @@ Reuses the multi-CONSTRUCT plan/build/count/WMC machinery from e6_minus.
 """
 import os, re, sys, glob, csv, subprocess, tempfile, time
 import e3_run
-from e6_minus import build, parse_circuit, counts, wmc_pwe_check, JAR, EMPTY, post
+from e6_minus import build, parse_circuit, counts, wmc_pwe_check, t_string, JAR, EMPTY, post
 
 RUNS = int(os.environ.get("E8_RUNS", "3"))
 
@@ -20,7 +20,7 @@ def plan_wikidata(qtext):
     """Emit the CONSTRUCT plan for a query under the Wikidata scheme (in-memory on empty data).
     Returns (constructs, ok). ok=False if the rewriter rejects it (e.g. variable predicate)."""
     qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(qtext); qf.close()
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Wikidata", EMPTY.name, qf.name],
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat", "Wikidata", EMPTY.name, qf.name],
                        capture_output=True, text=True)
     if "Exception" in r.stderr or "Unsupported" in r.stderr:
         return [], False
@@ -53,7 +53,7 @@ def run_query(cat, name, qtext, do_wmc):
     diff = wmc_pwe_check(circ, ans) if do_wmc else None
     return dict(category=cat, query=name, status="ok", plan=len(constructs), build_ms=round(build_ms),
                 deriv=times, gates=gates, edges=edges, answers=answers,
-                share=round(times * 3 / (gates + edges), 3) if gates + edges else 0,
+                share=round(t_string(circ) / (gates + edges), 3) if gates + edges else 0,
                 wmc_pwe=(f"{diff:.1e}" if diff is not None else ""))
 
 def main():

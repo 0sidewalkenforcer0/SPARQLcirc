@@ -27,7 +27,7 @@ def plan_constructs(bound_query):
     """Emit the multi-CONSTRUCT plan by running CircuitRun in-memory on empty data (it prints each
     CONSTRUCT to stderr with '# --- step N ---' separators), and split it into individual queries."""
     qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(bound_query); qf.close()
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", EMPTY.name, qf.name],
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat", "Standard", EMPTY.name, qf.name],
                        capture_output=True, text=True)
     chunks = re.split(r"# --- step \d+ ---", r.stderr)
     out = []
@@ -71,6 +71,15 @@ def counts(circ, ans, typ):
     minus = sum(1 for t in typ.values() if t.endswith("Minus"))
     edges = sum(len(pl) if op in ("times", "plus") else 2 for op, pl in circ.values() if op != "leaf")
     return times, plus, minus, edges, len(ans)
+
+def t_string(circ):
+    """NPCS per-answer string size, in token occurrences = Σ over derivation (⊗) gates of their ACTUAL
+    LEAF inputs (base tokens) — a 2-pattern product contributes 2, a 3-pattern S-star product 3;
+    intermediate-gate inputs are NOT tokens. Replaces the old fixed `times*3` proxy that assumed every
+    derivation was a 3-way reified triple. This is byte-for-byte G2b's canonical definition
+    (g2b_npcs_vs_ours.py), so e6/e8/e9 now share ONE compactness metric with G2b/E11/bench."""
+    return sum(1 for op, pl in circ.values() if op == "times"
+               for c in pl if circ.get(c, ("",))[0] == "leaf")
 
 def wmc_pwe_check(circ, ans):
     """Assign random probs to the leaf tokens, WMC each answer via compile_bdd, and compare to a
@@ -134,7 +143,7 @@ def run(name):
     except Exception:
         plain_ms = float("nan")
     gates = times + plus + minus
-    T_str, T_circ = times * 3, gates + edges
+    T_str, T_circ = t_string(circ), gates + edges
     diff = wmc_pwe_check(circ, ans)
     print(f"  [{name}/{mode}] plan={len(constructs)} build={build_ms:.0f}ms deriv(⊗)={times} "
           f"minus(⊖)={minus} gates={gates} ans={answers} "
