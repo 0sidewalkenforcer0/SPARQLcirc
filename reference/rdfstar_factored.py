@@ -20,7 +20,7 @@ CircuitRun re-reifies internally per --scheme). Env: RSF_RUNS (default 3), RSF_S
 RSF_OUT (default watdiv/rdfstar_factored_vs_flat.csv), GDB (default http://localhost:7200).
 """
 import os, sys, csv, time, hashlib, subprocess, tempfile
-import urllib.request as U
+import urllib.request as U, urllib.parse as UP
 import e3_run, circuit_io
 
 JAR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "engine", "target", "npcs-rewrite.jar"))
@@ -54,6 +54,21 @@ def ep(repo):
 
 def repo_size(repo):
     return int(U.urlopen(ep(repo) + "/size", timeout=60).read().decode().strip())
+
+
+def cleanup_workspace(repo):
+    """Self-heal after a factored timeout/OOM: a SIGKILL bypasses CircuitRun's finally, so the run can
+    leave its urn:sc:* feedback workspace behind. Delete exactly those triples (urn:sc: is the factored
+    message namespace, never base data) to restore isolation. Best-effort."""
+    try:
+        req = U.Request(ep(repo) + "/statements",
+                        data=UP.urlencode({"update": 'DELETE { ?s ?p ?o } WHERE { ?s ?p ?o '
+                                           'FILTER(STRSTARTS(STR(?p),"urn:sc:")) }'}).encode(),
+                        method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        U.urlopen(req, timeout=300).read()
+    except Exception as e:
+        print(f"    (workspace cleanup on {repo} failed: {e})", flush=True)
 
 
 def bind_on_standard(scale, qtext):
@@ -130,6 +145,7 @@ def main():
                     except (MemoryError, subprocess.TimeoutExpired, RuntimeError) as e:
                         note = "too-large:OOM" if isinstance(e, MemoryError) else \
                                "too-large:timeout" if isinstance(e, subprocess.TimeoutExpired) else "error"
+                        cleanup_workspace(repo)   # a SIGKILL'd factored run may have leaked its urn:sc:* workspace
                         after = repo_size(repo)
                         row = dict(scale=scale, scheme=scheme, shape=shape, mode=mode, source=src,
                                    build_ms="", times="", plus="", minus="", gates="", answers="",
