@@ -320,11 +320,13 @@ def fig_paths():
 
 
 if __name__ == "__main__":
-    fig_compilation_scale()
-    fig_sharing_crossover()
-    fig_provsql_tpch()
-    fig_compilation_patterns()
-    fig_storage_ratio()
-    fig_data_scale()
-    fig_paths()
+    # Engine-independent / cross-system figures live here.
+    fig_compilation_scale()      # r9_4  (treewidth families, client-side)
+    fig_sharing_crossover()      # r9_3b (controlled sharing families)
+    fig_provsql_tpch()           # r9_7  (TPC-H vs ProvSQL)
+    fig_compilation_patterns()   # r9_4b (compile over real query classes)
+    fig_paths()                  # r9_6  (property-path operators; until a full-dim path run)
+    # NOTE: storage (r9_3) and data-scale (r9_2c) are now full-dimension per-engine and
+    # generated from the B/R/N/C matrix in make_matrix_figures.py (superseding the earlier
+    # collapsed 3-query / 3-shape versions here).
     print(f"\nResult figures (drafts structure, real data) written to {os.path.relpath(OUT, HERE)}/.")

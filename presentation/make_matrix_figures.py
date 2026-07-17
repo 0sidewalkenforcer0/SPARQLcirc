@@ -38,14 +38,20 @@ METHODS = [("B", SP_BASE, "B: base query"),
 CREATOR = "sparqlcirc/presentation/make_matrix_figures.py"
 
 
-MANIFEST = os.path.join(ROOT, "reference", "paper", "workload_manifest.csv")
+REF_PAPER = os.path.join(ROOT, "reference", "paper")
+MANIFEST = os.path.join(REF_PAPER, "workload_manifest.csv")
 
 
-def find_csv():
+def find_csvs():
+    """List of matrix CSVs to merge. Prefer committed reference/paper/construction_matrix_*.csv
+    (reproducible, per-scale), else PCM_MATRIX_CSV (os.pathsep list), else newest artifact."""
+    committed = sorted(glob.glob(os.path.join(REF_PAPER, "construction_matrix_*.csv")))
+    if committed:
+        return committed
     if os.environ.get("PCM_MATRIX_CSV"):
-        return os.environ["PCM_MATRIX_CSV"]
+        return os.environ["PCM_MATRIX_CSV"].split(os.pathsep)
     cands = glob.glob(os.path.join(ROOT, "artifacts", "r9", "*", "construction_brnc.csv"))
-    return max(cands, key=os.path.getmtime) if cands else None
+    return [max(cands, key=os.path.getmtime)] if cands else []
 
 
 def full_templates():
@@ -72,26 +78,27 @@ def _f(v):
         return None
 
 
-def load(path):
-    """-> {engine: {scale: {(class,template): {method: {...}}}}} and timeout_s.
+def load(paths):
+    """-> {engine: {scale: {(class,template): {method: {...}}}}} and timeout_s, merging CSVs.
 
     Each method dict carries median_ms, status, gates, edges, npcs_tokens, answers so the
     same matrix feeds the construction (time), storage (size ratio), and data-scale figures.
     """
     data, timeout_s = {}, 300.0
-    if not path or not os.path.exists(path):
-        return data, timeout_s
-    with open(path, encoding="utf-8", newline="") as fh:
-        for r in csv.DictReader(fh):
-            eng, sc = r["engine"], r["scale"]
-            key = (r["class"], r["template"])
-            cell = data.setdefault(eng, {}).setdefault(sc, {}).setdefault(key, {})
-            cell[r["method"]] = {
-                "median": _f(r.get("median_ms")), "status": r.get("status", ""),
-                "gates": _f(r.get("gates")), "edges": _f(r.get("edges")),
-                "npcs_tokens": _f(r.get("npcs_token_occurrences")), "answers": _f(r.get("answers")),
-            }
-            timeout_s = max(timeout_s, _f(r.get("timeout_s")) or 0) or timeout_s
+    for path in (paths or []):
+        if not path or not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8", newline="") as fh:
+            for r in csv.DictReader(fh):
+                eng, sc = r["engine"], r["scale"]
+                key = (r["class"], r["template"])
+                cell = data.setdefault(eng, {}).setdefault(sc, {}).setdefault(key, {})
+                cell[r["method"]] = {
+                    "median": _f(r.get("median_ms")), "status": r.get("status", ""),
+                    "gates": _f(r.get("gates")), "edges": _f(r.get("edges")),
+                    "npcs_tokens": _f(r.get("npcs_token_occurrences")), "answers": _f(r.get("answers")),
+                }
+                timeout_s = max(timeout_s, _f(r.get("timeout_s")) or 0) or timeout_s
     return data, timeout_s
 
 
@@ -230,11 +237,11 @@ def fig_datascale_engine(engine, data):
 
 
 def main():
-    path = find_csv()
-    data, timeout_s = load(path)
+    paths = find_csvs()
+    data, timeout_s = load(paths)
     timeout_ms = timeout_s * 1000.0
     templates = full_templates()
-    print(f"matrix CSV: {path or '(none yet)'}  ({len(templates)} templates on x-axis)")
+    print(f"matrix CSVs: {[os.path.basename(p) for p in paths] or '(none yet)'}  ({len(templates)} templates)")
     for engine in ALL_ENGINES:
         cells = sum(len(v) for v in data.get(engine, {}).values())
         fig_construction_engine(engine, data, timeout_ms, templates)
