@@ -1,4 +1,11 @@
-"""Publication-style figures for the SPARQL_circ evaluation (E2/E3/E4/E7), in the idiom of
+"""DEPRECATED — superseded by ``presentation/make_figures.py`` + ``presentation/figstyle.py``.
+
+This script produced the older single-panel, verbose-title figures (with clipped y-labels and
+titles overlapping the plot) that the paper no longer uses. The manuscript figures are now
+rendered through the shared ``figstyle`` grammar (the same grammar as ``figures/drafts/``) into
+``presentation/figures/final/``. Kept only for reference/history; do not use for the paper.
+
+Publication-style figures for the SPARQL_circ evaluation (E2/E3/E4/E7), in the idiom of
 the provenance-DB papers (SPARQLprov, NPCS, ProvSQL): grouped bars + log-scale scaling curves.
 
 Reads the CSVs written by the overnight run and writes PNG (view) + PDF (paper) into

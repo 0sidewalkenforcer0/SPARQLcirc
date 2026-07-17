@@ -40,7 +40,7 @@ Four claims the evaluation defends:
 
 ---
 
-## Paper figures (PDF + 300-dpi PNG in `figures/`)
+## Paper figures (PDF + 300-dpi PNG in `figures/final/`)
 
 1. **`paper_fig1_compilation`** — two-panel E4 figure: fixed-treewidth timeout behavior and growing-treewidth
    behavior use the same axes and compiler encoding.
@@ -53,8 +53,15 @@ Four claims the evaluation defends:
 5. **`paper_table1_validation`** — OBDD/PWE/d4 maximum-error table for the 26 sampled answer circuits.
 
 Full design rationale, source-paper comparison, and manuscript-ready captions are in
-[`PAPER_FIGURES.md`](PAPER_FIGURES.md). The older `fig1_...fig7_...` PNGs are retained as slide artifacts;
-the `paper_...` PDF files are the manuscript figures.
+[`PAPER_FIGURES.md`](PAPER_FIGURES.md). The manuscript figures now live in `figures/final/`, rendered
+through the shared `figstyle` grammar (identical to the `figures/drafts/` layout drafts). The old
+top-level `fig1_...fig7_...` and `paper_...` PNGs have been retired in favor of that folder.
+
+Two sets live in `figures/final/` (see [`figures/final/README.md`](figures/final/README.md)): the compact
+composite `paper_fig*` above, and the **drafts-structure** `result_r9_*` figures — the full-result
+SPARQLprov/NPCS-style layouts (`make_result_figures.py`) that carry the complete experiment matrix,
+with `DATA PENDING` on sub-panels awaiting the ROUND-9 server run. The per-template/per-engine flagships
+(construction, e2e, multisource) stay in `figures/drafts/` until that run lands.
 
 ---
 

@@ -2302,7 +2302,10 @@ def _time_method_impl(
         elif method == "N":
             bodies = [q_npcs(qtext, timeout=_remaining(deadline))]
         elif method == "C":
-            construction = "flat" if read_only else "factored"
+            # PCM_FORCE_FLAT opt-in: measure the read-only single-CONSTRUCT (flat)
+            # construction even on a writable engine — the NPCS-comparable construction
+            # time for the R9.2 timing matrix (no feedback / workspace / orphan sweep).
+            construction = "flat" if (read_only or os.environ.get("PCM_FORCE_FLAT")) else "factored"
             try:
                 raw_plan = c_construct_plan(
                     qtext,
@@ -2561,7 +2564,8 @@ def _time_method_locked(
         raise ValueError("cache_dir and cache_metadata must be provided together")
     cache_capture_path = None
     outside_cleanup = {}
-    hygiene_enabled = method == "C" and bool(update_ep) and not read_only
+    hygiene_enabled = (method == "C" and bool(update_ep) and not read_only
+                       and not os.environ.get("PCM_FORCE_FLAT"))
     if hygiene_enabled:
         # This is deliberately outside ``started`` and therefore outside both
         # cell_wall_ms and the measured C samples. It is endpoint hygiene, not
