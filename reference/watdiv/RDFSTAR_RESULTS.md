@@ -86,22 +86,29 @@ factored's feedback self-removes in a `finally`, and the harness asserts each re
 
 | shape (type) | scale | flat gates / ms | factored gates / ms | verdict |
 |---|--:|--:|--:|:--|
-| S-star (reconvergent star) | 10M  | 254 / 121 | **33 / 440**  | factored **7.7× smaller** |
-| S-star                     | 100M | 874 / 389 | **92 / 496**  | factored **9.5× smaller** |
-| M-minus (non-monotone)     | 10M  | 10 / 127  | 10 / 127      | **identical** (operator plan, no BGP elimination) |
-| M-minus                    | 100M | 15 / 83   | 15 / 213      | **identical** |
-| L-path (shallow 3-chain)   | 10M  | **90 / 104** | 299 762 / 185 677 | flat wins — factored over-materialises |
-| L-path                     | 100M | **158 / 128** | too-large (>400 s / >10 G) | flat wins |
-| F-snow (shallow snowflake) | 10M  | **7 / 67**   | 309 825 / 205 644 | flat wins |
-| F-snow                     | 100M | **26 / 77**  | too-large | flat wins |
+| S-star (reconvergent star) | 10M  | 254 / 134 | **33 / 473**  | factored **7.7× smaller** |
+| S-star                     | 100M | 874 / 440 | **92 / 575**  | factored **9.5× smaller** |
+| M-minus (non-monotone)     | 10M  | 10 / 233  | 10 / 130      | **identical** (operator plan, no BGP elimination) |
+| M-minus                    | 100M | 15 / 482  | 15 / 212      | **identical** |
+| L-path (3-chain)           | 10M  | 90 / 103  | 143 / 493     | tie (factored a few extra ⊕) |
+| L-path                     | 100M | 158 / 133 | 249 / 584     | tie |
+| F-snow (snowflake)         | 10M  | 7 / 67    | 16 / ~500     | tie |
+| F-snow                     | 100M | 26 / 79   | 35 / 660      | tie |
 
-**The tradeoff.** Factored variable-elimination wins big on **reconvergent** BGPs (S-star: eliminate the star
-arms into a handful of shared marginal ⊕ — 9.5× fewer gates at 100M). But on a **shallow, non-reconvergent**
-chain/snowflake, eliminating a fan-out variable creates one marginal ⊕ per surviving combination, so the
-intermediate blows up (L-path 10M: 299 704 ⊕-gates for 45 answers; F-snow: 309 814 for 1) while **flat** just
-lists the few derivations (90 / 7 gates). At 100M the factored intermediate exceeds the 10 G / 400 s cap. MINUS
-is identical either way (it uses the read-only operator plan, not BGP elimination). Rule of thumb: **flat for
-selective/shallow shapes, factored for reconvergent/high-sharing shapes.**
+**The tradeoff (with source-restriction pushdown, below).** Factored variable-elimination wins big on
+**reconvergent** BGPs (S-star: fold the star arms into a handful of shared marginal ⊕ — 9.5× fewer gates at
+100M). On a selective **chain/snowflake** there is no cross-product to fold, so flat is already minimal and
+factored **ties** it (a few extra ⊕ from the marginal structure). MINUS is identical either way (read-only
+operator plan, not BGP elimination). All cells ISO-OK; answers + WMC identical between modes; Standard ≡
+RDF-star circuit within each mode. Where factored *really* wins is the **unbound reconvergent** regime that
+these source-bound cells don't exercise — see `../FACTORED_REGIMES.md` (flat exponential, factored polynomial,
+26× by k=7).
+
+> **Note (history):** before source-restriction pushdown, bound chains blew up (L-path 10M was 299 762 gates /
+> 186 s; 100M was too-large) because factored's interior-variable elimination message spanned the full
+> unrestricted relation. `FactoredBgpRewriter` now semi-joins each base relation to the rest of a selective
+> BGP, so bound chains stay source-local (L-path 10M: 299 762 → 143 gates, touching 49 base tokens == flat).
+> The unbound regime is untouched.
 
 Reification-independence holds **within each mode**: Standard and RDF-star produce the byte-identical circuit
 (same sha) for every scale/shape/mode — flat and factored alike. (Flat and factored are *different circuits*

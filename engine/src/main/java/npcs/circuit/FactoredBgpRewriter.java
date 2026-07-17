@@ -79,12 +79,23 @@ final class FactoredBgpRewriter {
     }
 
     private CircuitConstructionPlan plan(List<PatternEntry> patterns, List<String> outputVariables) {
+        // Source-restriction pushdown: if any pattern carries a constant subject/object the query is
+        // SELECTIVE, so each base relation is semi-joined to the rest of the BGP (only full-match rows
+        // materialise). Without it an interior pattern with no constant (e.g. a chain edge) would build its
+        // ENTIRE unrestricted relation and factored over-builds on bound queries. Unbound BGPs (all
+        // endpoints variable) keep plain base scans -- factored's design regime is unchanged.
+        boolean selective = false;
+        for (PatternEntry entry : patterns) {
+            if (entry.pattern.getSubjectVar().getValue() != null
+                    || entry.pattern.getObjectVar().getValue() != null) { selective = true; break; }
+        }
         List<Relation> relations = new ArrayList<>();
         for (int i = 0; i < patterns.size(); i++) {
             PatternEntry entry = patterns.get(i);
             Relation relation = relation("base-" + i, patternVariables(entry.pattern));
             steps.add(new CircuitConstructionPlan.Step(
-                    baseQuery(entry.pattern, relation, "BASE@" + queryFingerprint + "@" + i),
+                    baseQuery(entry.pattern, relation, "BASE@" + queryFingerprint + "@" + i,
+                              selective ? patterns : null, i),
                     true, "base[" + i + "]"));
             relations.add(relation);
         }
@@ -142,7 +153,8 @@ final class FactoredBgpRewriter {
         return new Relation(semanticId, messageIri, variables);
     }
 
-    private String baseQuery(StatementPattern pattern, Relation output, String gateTag) {
+    private String baseQuery(StatementPattern pattern, Relation output, String gateTag,
+                             List<PatternEntry> semijoinContext, int selfIndex) {
         String token = qv("f_token");
         String gate = qv("f_gate");
         String row = qv("f_row");
@@ -153,8 +165,18 @@ final class FactoredBgpRewriter {
              .append("  ").append(token).append(" c:feeds ").append(gate).append(" .\n")
              .append(rowTemplate(row, output, gate))
              .append("}\nWHERE {\n")
-             .append(scheme.reify(pattern, tokenName))
-             .append(bindIri(gate, "urn:g:s:", bindingKey(gateTag, output.variables)))
+             .append(scheme.reify(pattern, tokenName));
+        // Semi-join context (selective queries only): reify the OTHER BGP patterns so this base relation is
+        // restricted to rows that participate in a full match. Context patterns share this pattern's join
+        // variables (so they filter it) and contribute NO gate -- their tokens are throwaway existentials.
+        if (semijoinContext != null) {
+            int ctx = 0;
+            for (int j = 0; j < semijoinContext.size(); j++) {
+                if (j == selfIndex) continue;
+                query.append(scheme.reify(semijoinContext.get(j).pattern, qv("f_ctx" + (ctx++)).substring(1)));
+            }
+        }
+        query.append(bindIri(gate, "urn:g:s:", bindingKey(gateTag, output.variables)))
              .append(bindIri(row, META_NS + "row:", bindingKey(output.messageIri, output.variables)))
              .append("}\n");
         return query.toString();

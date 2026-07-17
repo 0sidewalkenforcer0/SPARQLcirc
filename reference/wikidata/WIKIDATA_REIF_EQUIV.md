@@ -45,18 +45,19 @@ numbers → `wikidata_factored_vs_flat.csv`.
 
 | scheme | repo | flat | factored |
 |---|---|--:|--:|
-| Standard | `wdpaths` | 2 gates / 58 ms | **too-large** (>120 s cap) |
-| Wikidata | `wdstatements` | 2 gates / 56 ms | **too-large** |
+| Standard | `wdpaths` | 2 gates / 58 ms | 5 gates / 308 ms |
+| Wikidata | `wdstatements` | 2 gates / 56 ms | 5 gates / 303 ms |
 
-Same story as WatDiv L-path: factored over-materialises the chain's interior variable — its elimination
-message spans the *full unrestricted* P279 relation (5.2 M edges), not `Q8`'s neighbourhood — while flat keeps
-the whole product anchored at the bound source (2 gates). So for shallow chains **flat is the right mode**,
-on real Wikidata as on WatDiv (cf. `../watdiv/RDFSTAR_RESULTS.md`).
+With source-restriction pushdown (see `../FACTORED_REGIMES.md`), factored on this selective 2-hop chain stays
+source-local and **ties** flat (5 vs 2 gates — a couple extra ⊕ from the marginal structure), on real
+Wikidata as on WatDiv L-path. Same answer, ISO-OK, base data untouched.
 
-Isolation note (E2): a factored cell that hits the cap is SIGKILLed, which bypasses `CircuitRun`'s `finally`
-and can leave its `urn:sc:*` feedback workspace in the repo. The harness now self-heals (deletes `urn:sc:*`
-after a timed-out cell); the deployed repos return to their base size. This is the concrete motivation for
-routing factored feedback into a named graph (the deliberately-unfinished half of CIRCUIT_PERSIST).
+> **Note (history):** before pushdown this cell was **too-large** — factored's interior-variable elimination
+> message spanned the full unrestricted P279 relation (5.2 M edges) instead of `Q8`'s neighbourhood.
+> `FactoredBgpRewriter` now semi-joins each base relation to the rest of a selective BGP. And because a
+> SIGKILL'd (timed-out) factored cell used to bypass `CircuitRun`'s `finally` and leak its `urn:sc:*`
+> workspace, both harnesses now self-heal (delete `urn:sc:*` after a timed-out cell) — belt-and-suspenders now
+> that pushdown keeps these cells small.
 
 ## Scope notes
 - `CircuitRun`'s property-path route is Standard-reification-only, so the WIKIDATA scheme is exercised on a

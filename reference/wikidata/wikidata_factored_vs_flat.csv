@@ -1,5 +1,5 @@
 scheme,repo,mode,source,build_ms,times,plus,minus,gates,answers,circuit_triples,circuit_sha256,repo_isolated
-Standard,wdpaths,flat,Q8,61,1,1,0,2,1,9,db1c2a8ce6fdbc186c9f1e0e838fa6ddb794559928b179fea3aa4e7881670bb0,True
-Standard,wdpaths,factored,Q8,,,,,,,,too-large:timeout,True
-Wikidata,wdstatements,flat,Q8,57,1,1,0,2,1,9,8745fd74c66bfd4c0273acefc84d3c22a04ea50903e58bceaa20e2b5948fc69f,True
-Wikidata,wdstatements,factored,Q8,,,,,,,,too-large:timeout,True
+Standard,wdpaths,flat,Q8,58,1,1,0,2,1,9,db1c2a8ce6fdbc186c9f1e0e838fa6ddb794559928b179fea3aa4e7881670bb0,True
+Standard,wdpaths,factored,Q8,308,1,4,0,5,1,15,b46e1bc867cb9cda485460826c7f188ba2c4ed953736e926e2a3e084b1431eb1,True
+Wikidata,wdstatements,flat,Q8,56,1,1,0,2,1,9,8745fd74c66bfd4c0273acefc84d3c22a04ea50903e58bceaa20e2b5948fc69f,True
+Wikidata,wdstatements,factored,Q8,303,1,4,0,5,1,15,7767f9e178e9af38e7d07f0d76e60cb367f712d429a74f14e73c4a289ad2f26c,True
