@@ -65,8 +65,19 @@ def full_templates():
     return sorted(set(keys), key=sort_key)
 
 
+def _f(v):
+    try:
+        return float(v) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
 def load(path):
-    """-> {engine: {scale: {(class,template): {method: (median_ms, status)}}}} and timeout_s."""
+    """-> {engine: {scale: {(class,template): {method: {...}}}}} and timeout_s.
+
+    Each method dict carries median_ms, status, gates, edges, npcs_tokens, answers so the
+    same matrix feeds the construction (time), storage (size ratio), and data-scale figures.
+    """
     data, timeout_s = {}, 300.0
     if not path or not os.path.exists(path):
         return data, timeout_s
@@ -75,15 +86,12 @@ def load(path):
             eng, sc = r["engine"], r["scale"]
             key = (r["class"], r["template"])
             cell = data.setdefault(eng, {}).setdefault(sc, {}).setdefault(key, {})
-            try:
-                median = float(r["median_ms"]) if r["median_ms"] else None
-            except ValueError:
-                median = None
-            cell[r["method"]] = (median, r.get("status", ""))
-            try:
-                timeout_s = max(timeout_s, float(r.get("timeout_s") or 0)) or timeout_s
-            except ValueError:
-                pass
+            cell[r["method"]] = {
+                "median": _f(r.get("median_ms")), "status": r.get("status", ""),
+                "gates": _f(r.get("gates")), "edges": _f(r.get("edges")),
+                "npcs_tokens": _f(r.get("npcs_token_occurrences")), "answers": _f(r.get("answers")),
+            }
+            timeout_s = max(timeout_s, _f(r.get("timeout_s")) or 0) or timeout_s
     return data, timeout_s
 
 
@@ -97,7 +105,7 @@ def draw_scale_panel(ax, templates, cells, timeout_ms):
             val = cells.get(key, {}).get(method)
             if not val:
                 continue
-            median, status = val
+            median, status = val["median"], val["status"]
             if median is not None and status == "ok":
                 heights.append(median); xs.append(i + off)
             elif status and status != "ok":
@@ -141,6 +149,86 @@ def fig_construction_engine(engine, data, timeout_ms, templates):
     fs.save(fig, f"result_r9_2_construction_{engine}", OUT, creator=CREATOR)
 
 
+def fig_storage_engine(engine, data, templates):
+    """Full-dimension storage/sharing: NPCS tokens / SPARQLcirc (gates+edges) per template.
+
+    ratio > 1 -> the shared circuit is smaller (sharing win); < 1 -> larger (selective
+    counterexample). Per engine, both scales, all templates (the drafts r9_3 structure).
+    """
+    scale_map = data.get(engine, {})
+    fig, axes = plt.subplots(2, 1, figsize=(fs.FIG_WIDTH, 3.7), sharex=True)
+    for ax, scale in zip(axes, SCALES):
+        cells = scale_map.get(scale, {})
+        xs, ys = [], []
+        for i, key in enumerate(templates):
+            n = cells.get(key, {}).get("N")
+            c = cells.get(key, {}).get("C")
+            if n and c and n["status"] == "ok" and c["status"] == "ok" and n["npcs_tokens"] and c["gates"]:
+                denom = (c["gates"] or 0) + (c["edges"] or 0)
+                if denom > 0:
+                    xs.append(i); ys.append(n["npcs_tokens"] / denom)
+        if xs:
+            ax.bar(xs, ys, 0.6, color=SP_CIRCUIT, edgecolor="white", linewidth=0.25, zorder=3)
+            ax.axhline(1.0, color="#555555", linestyle=fs.TIMEOUT_LS, linewidth=0.8)
+            ax.set_yscale("log"); ax.set_ylim(0.3, max(30, max(ys) * 1.5))
+        else:
+            ax.set_yscale("log"); ax.set_ylim(0.3, 30)
+            fs.pending(ax, f"{scale} — DATA PENDING", y=0.5)
+        ax.set_xlim(-0.7, len(templates) - 0.3)
+        ax.set_xticks(range(len(templates)), [t for _c, t in templates])
+        ax.set_ylabel("NPCS / circuit size")
+        ax.set_title(f"WatDiv {scale}", fontsize=7.2, pad=2.5)
+        fs.frame(ax)
+    axes[0].tick_params(axis="x", labelbottom=False)
+    axes[1].set_xlabel("Query template")
+    fs.suptitle(fig, f"{ENGINE_TITLE.get(engine, engine)} — representation size (NPCS vs shared circuit)", y=0.985, fontsize=9.0)
+    fs.footer(fig, "Structural token ratio per template; > 1 means the shared circuit is smaller (sharing win), < 1 a selective counterexample.")
+    fig.subplots_adjust(left=0.09, right=0.995, bottom=0.135, top=0.86, hspace=0.24)
+    fs.save(fig, f"result_r9_3_storage_{engine}", OUT, creator=CREATOR)
+
+
+def fig_datascale_engine(engine, data):
+    """Full-dimension data-scale: construct time + circuit size vs WatDiv scale, per class.
+
+    Aggregates the C (SPARQLcirc) cells per query class at each scale. Lines appear once
+    both scales are present; RSS stays pending (not in the construction matrix).
+    """
+    scale_map = data.get(engine, {})
+    scales_present = [s for s in SCALES if scale_map.get(s)]
+    xvals = {"10M": 10.0, "100M": 100.0}
+    fig, axes = plt.subplots(1, 3, figsize=(fs.FIG_WIDTH, 2.55))
+    for ci, cls in enumerate(CLASS_ORDER):
+        color, marker = fs.SERIES[ci], fs.SERIES_MARKERS[ci]
+        xs, t_ys, s_ys = [], [], []
+        for sc in scales_present:
+            cvals = [v["C"] for k, v in scale_map[sc].items() if k[0] == cls and v.get("C") and v["C"]["status"] == "ok"]
+            if not cvals:
+                continue
+            times = [c["median"] for c in cvals if c["median"] is not None]
+            sizes = [(c["gates"] or 0) + (c["edges"] or 0) for c in cvals if c["gates"]]
+            if times:
+                xs.append(xvals[sc]); t_ys.append(sum(times) / len(times)); s_ys.append(sum(sizes) / max(len(sizes), 1))
+        if xs:
+            axes[0].plot(xs, t_ys, color=color, marker=marker, label=cls)
+            axes[1].plot(xs, s_ys, color=color, marker=marker, label=cls)
+    fs.light_log_axis(axes[0], "WatDiv triples (millions)", "Construct time (ms, mean/class)", "Construction")
+    fs.light_log_axis(axes[1], "WatDiv triples (millions)", "Gates + edges (mean/class)", "Circuit growth")
+    fs.light_log_axis(axes[2], "WatDiv triples (millions)", "Builder peak RSS (MiB)", "Client memory")
+    fs.pending(axes[2], "RSS\nDATA PENDING", y=0.6)
+    for i, ax in enumerate(axes):
+        ax.set_xticks([xvals[s] for s in SCALES], SCALES)
+        fs.panel_label(ax, i, x=-0.22)
+        if len(scales_present) < 2 and i < 2:
+            fs.pending(ax, "2nd scale\nPENDING", y=0.3)
+    fs.suptitle(fig, f"{ENGINE_TITLE.get(engine, engine)} — data-scale construction (C, per class)", y=0.99, fontsize=9.0)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fs.top_legend(fig, handles, labels, ncol=6, y=0.91, columnspacing=1.2)
+    fs.footer(fig, "Mean SPARQLcirc construct time / circuit size per query class vs WatDiv scale; lines close when 100M lands.")
+    fig.subplots_adjust(left=0.085, right=0.995, bottom=0.20, top=0.75, wspace=0.34)
+    fs.save(fig, f"result_r9_2c_data_scale_{engine}", OUT, creator=CREATOR)
+
+
 def main():
     path = find_csv()
     data, timeout_s = load(path)
@@ -150,6 +238,8 @@ def main():
     for engine in ALL_ENGINES:
         cells = sum(len(v) for v in data.get(engine, {}).values())
         fig_construction_engine(engine, data, timeout_ms, templates)
+        fig_storage_engine(engine, data, templates)
+        fig_datascale_engine(engine, data)
         print(f"  {engine}: {cells} template-cells filled")
 
 
