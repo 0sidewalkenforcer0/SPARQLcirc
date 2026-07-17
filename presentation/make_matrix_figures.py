@@ -175,11 +175,12 @@ def fig_storage_engine(engine, data, templates):
                 if denom > 0:
                     xs.append(i); ys.append(n["npcs_tokens"] / denom)
         if xs:
-            ax.bar(xs, ys, 0.6, color=SP_CIRCUIT, edgecolor="white", linewidth=0.25, zorder=3)
+            ax.scatter(xs, ys, s=16, color=SP_CIRCUIT, edgecolors="white", linewidths=0.3, zorder=3)
             ax.axhline(1.0, color="#555555", linestyle=fs.TIMEOUT_LS, linewidth=0.8)
-            ax.set_yscale("log"); ax.set_ylim(0.3, max(30, max(ys) * 1.5))
+            ax.set_yscale("log")
+            ax.set_ylim(min(0.5, min(ys) * 0.6), max(2.0, max(ys) * 1.5))  # keep break-even (1.0) in view
         else:
-            ax.set_yscale("log"); ax.set_ylim(0.3, 30)
+            ax.set_yscale("log"); ax.set_ylim(0.1, 10)
             fs.pending(ax, f"{scale} — DATA PENDING", y=0.5)
         ax.set_xlim(-0.7, len(templates) - 0.3)
         ax.set_xticks(range(len(templates)), [t for _c, t in templates])
