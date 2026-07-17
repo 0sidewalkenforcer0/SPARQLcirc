@@ -1,0 +1,259 @@
+# Factored circuit construction — theory, limits, and implementation plan
+
+*What factoring is, exactly which SPARQL fragment it applies to and why, what it fundamentally *cannot* do,
+how the current algorithm handles the hard cases, and a prioritized plan for finishing it. Grounded in
+`engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java` (engine-native factored BGP),
+`CircuitRewriter.java`, `reference/factor.py`, `reference/factor_native.py`, and `reference/gates.py`.*
+
+## 0. TL;DR
+
+- **Flat** construction builds **one ⊗ per derivation**, so the circuit is `∝ #derivations = |data|^{#patterns}`.
+- **Factored** construction is **variable elimination (sum-product)**: eliminate each non-output join
+  variable once (⊗ the relations that mention it, then ⊕-marginalize it). The circuit becomes
+  `∝ |data|^{tw+1}` (**polynomial for bounded treewidth**) and denotes the **same provenance polynomial** —
+  so the probability is unchanged (E5: `WMC(flat) == WMC(factored) == PWE`).
+- It applies to the **monotone conjunctive fragment (BGP)**; extends to **projection** (marginalize) and
+  **UNION** (⊕). For **MINUS/OPTIONAL** you factor the *operands* and keep the non-monotone **⊖ at the top**.
+  **Property paths** use a different (recursive, content-addressed) sharing mechanism.
+- **Not universal:** polynomial factoring exists **iff the lineage has bounded treewidth** (≈ the query is
+  *safe*, Dalvi–Suciu). High-treewidth provenance has **no** small circuit — a #P wall (E4).
+- **Status (verified):** factored BGP is now the **Java engine default** (`ConstructionMode.FACTORED`,
+  `FactoredBgpRewriter` — one CONSTRUCT per elimination step, the same algorithm as `factor.py`). **Flat** is
+  kept for **ablations and read-only endpoints**. UNION/MINUS/OPTIONAL still use the flat operator plan; paths
+  use the recursive reach protocol. Confirmed on the drug BGP: factored and flat emit **byte-identical answer
+  gates** and **equal WMC** (`0.774297708` for the reconvergent answer). `factor.py`/`factor_native.py` are now
+  the reference/oracle for the same algorithm.
+
+---
+
+## 1. Background: two independent cost knobs, and the semiring
+
+PQE has two costs that move independently:
+
+1. **Construction** (the engine builds the circuit) `∝ #derivations D`; for depth `d`, branching `b`,
+   `D ~ b^d`. This is what factoring attacks.
+2. **Compilation + WMC** `∝ 2^{Θ(tw)}` in the *treewidth* of the lineage (E4) — a separate axis, **not**
+   fixed by factoring.
+
+The circuit is Boolean: `⊗ = ∧`, `⊕ = ∨`, `⊖(a,b) = a ∧ ¬b`. The **monotone fragment** (everything but `⊖`)
+lives in the positive/absorptive semiring `(∧, ∨)` (PosBool), which satisfies **distributivity**
+`a ⊗ (b ⊕ c) = (a ⊗ b) ⊕ (a ⊗ c)`. Factoring is an identity in that semiring; `⊖` is the one operator that
+leaves it.
+
+---
+
+## 2. Theory: factoring = variable elimination
+
+### 2.1 The identity (`reference/factor.py`)
+
+To eliminate a non-output variable `x`: **join** (⊗) all relations mentioning `x`, then **marginalize**
+(⊕ over `x`'s values) — i.e. pull a shared factor out of a sum, the reverse of distributivity.
+
+```
+base_relations   : each triple pattern → { binding-tuple : ⊕(matching tokens) }
+join(A, B)       : ⊗ on the shared vars, ⊕-accumulate on key collision
+marginalize(R, x): group by the remaining vars, ⊕ the gates in each group
+factored_bgp     : while elim: pick x (min-fill-ish), join relations with x, marginalize x; then join the rest
+```
+
+### 2.2 Why it is correct
+
+`∧` distributes over `∨` and both are commutative/associative, so the factored expression and the flat
+sum-of-products denote the **same Boolean function** (same polynomial in `N[X]`; `gates.py.plus` keeps
+duplicates — no idempotence — so counting semirings are preserved too). Value unchanged; only the
+representation differs. `watdiv_factor.py` (E5) asserts `WMC(flat) == WMC(factored) == PWE`.
+
+### 2.3 Why it is small
+
+1. **Early marginalization** turns `∏deg` into `∑deg` (marginalize an existential *before* the next join).
+2. **Content-addressed sharing** (`gates.py._put`, key `sha("TIMES|"+sorted(children))`): structurally equal
+   intermediate gates collapse to one id, so a partial product shared by many derivations is stored once.
+   Flat never *forms* those partial products, so it cannot share them.
+
+With a min-fill order realizing tree-width `w`, every intermediate relation has `≤ w+1` variables →
+`O(|data|^{w+1})`, polynomial for bounded `w`, vs flat `|data|^{#patterns}`.
+
+### 2.4 The algebraic boundary
+
+Variable elimination is valid **only in the commutative semiring** `(⊗, ⊕)`. Once `⊖` (monus, `∧¬`) enters,
+distributivity in the required direction fails → you cannot eliminate a variable *across* a `⊖`. You can
+still factor each `⊖`-operand (a monotone BGP/UNION) and apply `⊖` on top.
+
+---
+
+## 3. Scope: what factors, what does not (operator by operator)
+
+| SPARQL operator | Circuit op | Factors? | Note |
+|---|---|:--:|---|
+| **BGP** (conjunction) | ⊗ | ✅ full variable elimination | the `|data|^{#patterns}` blow-up — **engine-native & the default** (`FactoredBgpRewriter`) |
+| **Projection / DISTINCT** | ⊕ | ✅ built in | it *is* `marginalize` |
+| **UNION** | ⊕ | ✅ in principle | a union of BGPs = ⊕ of the branches' factored circuits |
+| **MINUS / OPTIONAL** | ⊖ (`a∧¬b`) | ⚠️ operands only | non-monotone: factor each operand, apply `⊖` at the top — cannot eliminate across `⊖` |
+| **Property paths** (`+`/`*`) | recursive | ❌ different mechanism | a level-indexed fixpoint (G1); sharing = content-addressed reach/base gates across levels, not variable elimination |
+| **FILTER / BIND / aggregation** | — | — | out of scope for the whole system |
+
+---
+
+## 4. Limits — not all how-provenance factors (a #P wall)
+
+Factoring is **not universal**. Three strictly nested levels:
+
+| level | condition | meaning |
+|---|---|---|
+| ① *some* circuit exists | always | the flat sum-of-products is one (possibly exponential) |
+| ② **polynomial** circuit | ⟺ **bounded treewidth** of the lineage | variable elimination → `|data|^{tw+1}`; growing tw → exponential |
+| ③ **read-once** | co-occurrence graph is P₄-free | each token appears once → linear, exact by independence; a strict subset |
+
+`read-once ⊊ bounded-treewidth (poly-factorable) ⊊ all provenance`.
+
+- **The #P wall.** When treewidth grows (grid / clique / dense many-to-many joins), the provenance
+  polynomial has **no** polynomial-size circuit — a poly circuit would give poly-time WMC, contradicting
+  #P-hardness (unless FP = #P). So high-treewidth how-provenance is inherently exponential **in any
+  representation**; E4's growing-tw family shows **both** OBDD and d-DNNF blow up — the wall is the *result*,
+  not a compiler weakness.
+- **Safe/unsafe dichotomy (Dalvi–Suciu).** For UCQ on tuple-independent DBs, PQE is either PTIME (**safe** →
+  a poly factoring exists) or #P-hard (**unsafe** → no poly factoring unless FP = #P). "Which how-provenance
+  factors small" ≈ "which queries are safe."
+- **Non-monotone boundary (orthogonal to treewidth).** Everything above is the monotone semiring; with `⊖`
+  you cannot eliminate *across* the difference regardless of treewidth — a limit of *algebraic structure*.
+
+So factoring is "turn exponential-in-#patterns into polynomial-in-treewidth **when treewidth is bounded**",
+**not** "eliminate #P-hardness."
+
+---
+
+## 5. Worked example (the `∏ → ∑` win)
+
+Data: `x1` has 2 hobbies (`t1,t2`) and 3 skills (`t3,t4,t5`), each token `p = 0.5`.
+Query: `SELECT ?x WHERE { ?x :hobby ?s . ?x :skill ?k }` (project `?x`; `?s,?k` existential).
+
+- **Flat**: engine join → 2×3 = **6 rows** → `⊕( ⊗(t1,t3),⊗(t1,t4),⊗(t1,t5),⊗(t2,t3),⊗(t2,t4),⊗(t2,t5) )`
+  — 6 ⊗, 12 gates / 18 edges. (Not read-once: `t1` appears 3×.)
+- **Factored**: marginalize `?s` → `H = ⊕(t1,t2)`; marginalize `?k` → `S = ⊕(t3,t4,t5)`; join → `⊗(H,S)`
+  — 1 ⊗ + 2 ⊕, 8 gates / 7 edges. (Read-once: each token once.)
+- Same probability `P(H)·P(S) = 0.75 × 0.875 = 0.65625`. Gap scales as `∏deg = dᵏ` vs `∑deg = k·d`:
+  2×3 → 6 vs 5; 3 branches deg 10 → 1000 vs 30; layered depth-12 (E2 `deep-12×2`) → 49 152 vs 244 (**201×**).
+
+---
+
+## 6. Current implementation status
+
+Factored BGP is **implemented in the Java engine and is the default** (`ConstructionMode.FACTORED`, `49d3120`);
+flat is retained for **ablations and read-only endpoints**.
+
+| | factored (default) | flat (ablation / read-only) |
+|---|---|---|
+| operators | **pure BGP** (`constructionPlan()` → `FactoredBgpRewriter` when `isPureBgp`); UNION/MINUS/OPTIONAL/paths fall back to flat/reach | **all** (BGP / UNION / MINUS / OPTIONAL; paths via the reach loop) |
+| code | `FactoredBgpRewriter` (engine-native), dispatched by `CircuitRewriter.constructionPlan()` | `CircuitRewriter.bgp()` / `branchPlan()` / `productPlus()`+`minusRoot()` / reach loop |
+| passes | **one CONSTRUCT per elimination step** (base → join → marginalize → answers), run as a `CircuitConstructionPlan` of `Step`s | one CONSTRUCT (BGP); small fixed plan (MINUS/paths) |
+| engine requirement | **writable endpoint** — each step INSERTs a private `urn:sc:` message relation fed back by `CircuitRun` before the next (`requiresFeedback()`); read-only ⇒ `--construction=flat` | any SPARQL 1.1 endpoint, incl. read-only (QLever/MillenniumDB) |
+| reference / oracle | `reference/factor.py` (in-memory, same min-scope elimination) + `factor_native.py` (SPARQL-`INSERT` prototype) | `reference/gamma.py` |
+
+Properties of the engine-native factored plan (verified on the drug BGP):
+- **Same algorithm as `factor.py`** — min-scope variable elimination (⊗ the relations mentioning the chosen
+  variable, ⊕-marginalize it), then join the residual relations and emit answers.
+- **Content-addressed and byte-compatible with flat** — products `urn:g:t:`, marginalization sums `urn:g:s:`,
+  answers `urn:g:a:`; `FactoredBgpRewriter.termHash` is byte-for-byte identical to `CircuitRewriter`'s answer
+  identity, so factored and flat emit the **same answer-gate IRIs** and the **same WMC** (drug BGP: both give
+  `0.774297708` for the reconvergent answer). Factoring changes the representation, never the value.
+- **Concurrency-isolated** — message relations are namespaced by a per-invocation `workspaceId` hash so
+  parallel factored plans can't consume each other's rows; **gate IRIs do not depend on it**, so the emitted
+  circuit is workspace-independent (byte-identical across runs and engines).
+
+So E2/E5 compactness is now reproducible by the **Java engine itself** on a writable endpoint, not only the
+Python reference; `factor_native.py` remains the standalone proof that the construction runs as pure SPARQL
+`INSERT` passes. (On shallow/low-sharing shapes factored can be *larger* than flat — see rec. 7.)
+
+---
+
+## 7. How the algorithm handles the hard cases
+
+### 7.1 Non-bounded treewidth — degrade honestly, stay exact
+
+No trick beats #P; the algorithm caps and records rather than fake a result:
+
+- **Construction**: if the collected circuit exceeds `MAXTRIP` (4 M triples) it is recorded **`too-large`**
+  (E8 has 9 such single queries), not crashed. Factored keeps BGP construction `∝ |data|^{tw+1}`, but at high
+  treewidth that is large too; the cap is on the materialized circuit either way (factored or flat).
+- **Compilation** (fixed-order OBDD): over `E4_TIMEOUT` (120 s) or the memory cap → recorded
+  **`obdd-timeout` / OOM** — *"the ceiling IS the data point"* (E4).
+- **d4 (d-DNNF)** is order-robust and pushes the frontier further than OBDD (compiles instances OBDD times
+  out on), but does **not** remove the wall.
+- **Exact-only, no approximation fallback.** The portfolio is read-once → PWE → CNF→d4 → OBDD, all *exact*;
+  there is **no** Monte-Carlo / sampling path (ProvSQL has one; we deliberately do not). So a hard instance
+  is *exact or a recorded cap*, never a wrong probability. Whatever compiles satisfies `WMC == PWE` (G6).
+
+### 7.2 With `⊖` (MINUS/OPTIONAL) — operands built separately, one `⊖` on top, unhandled shapes fail-fast
+
+`CircuitRewriter` builds (matching the §2.4 boundary exactly):
+```
+productPlus(P1) → ⊕_{P1}      productPlus(P2) → ⊕_{P2}      subFeeds → ⊕_{sub}
+minusRoot       → ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?ans     # ONE top-level ⊖
+```
+
+- Each operand is a (currently **flat**) `⊕-of-⊗`; they combine via a **single top-level `⊖ = a∧¬b`** — i.e.
+  "build operands, keep `⊖` at the top."
+- `normalize()` first reduces composite shapes (UNION-as-operand, chained MINUS, OPTIONAL-as-operand);
+  W3C MINUS (guarded DIFF) and OPTIONAL (`(A∧B) ∪ (A DIFF B)`, unguarded) are distinguished.
+- **Residuals that can't be reduced fail-fast** (`UnsupportedOperationException`): right-nested
+  `A MINUS (P MINUS Q)`, pathological OPTIONAL-as-operand, cross-product OPTIONAL — never silently wrong.
+- `⊖` is a plain Boolean function → OBDD/d-DNNF/PWE compute it exactly → `WMC == PWE` (`verify_nonmono`, G6).
+- Factoring is **not** applied across `⊖` (cannot be); the operands are flat today and could later be
+  factored **without affecting correctness** (the `⊖` stays at the root — see §8).
+
+---
+
+## 8. Implementation recommendations (prioritized)
+
+1. **Positioning is settled — it is a core system contribution.** Factored BGP is the shipped engine default
+   (`ConstructionMode.FACTORED`), not a reference-only optimization; E2/E5 compactness is a property of the
+   Java engine, reproducible on any writable endpoint.
+2. **~~Port factored BGP into the Java engine.~~ Done** (`49d3120`; hardened by `dc13dd2`/`a2b9c7c`).
+   `FactoredBgpRewriter` emits one CONSTRUCT per eliminated variable (base → join → marginalize → answers) as a
+   `CircuitConstructionPlan`, dispatched from `CircuitRewriter.constructionPlan()` for pure BGPs. Needs a
+   **writable endpoint** — each step INSERTs a private `urn:sc:` message relation fed back by `CircuitRun`
+   (`requiresFeedback()`); read-only engines fall back to `--construction=flat`.
+3. **Factor MINUS/OPTIONAL operands.** Replace flat `productPlus(P1)`/`productPlus(P2)` with the factored
+   sub-plan per operand, keeping the top-level `⊖` unchanged. Correctness unaffected (operands are monotone).
+4. **UNION as ⊕ of factored branches** (content-addressed, so shared branches dedup).
+5. **Elimination order — improve beyond min-scope.** Min-scope is implemented (eliminate the variable whose
+   relation-scope union is smallest); for skewed data compute/approximate a real tree decomposition and
+   eliminate in that order — the realized width sets the `|data|^{w+1}` bound. Benchmark order sensitivity.
+6. **Keep property paths on their own protocol** (level-indexed content-addressed reach); do not force
+   variable elimination onto the recursive closure.
+7. **Measure the pass/round-trip trade-off** (now directly measurable in-engine — R9 construction evidence).
+   Factored is `k` feedback passes (≈ `k` round-trips remotely) vs flat's single CONSTRUCT, so on shallow/
+   low-sharing shapes flat can win end-to-end (e.g. the linear 3-hop drug BGP: factored 72 triples vs flat 25,
+   no early marginalization possible). Report the crossover — factored's win is on star/high-fan-out shapes.
+8. **Lock the invariant in CI.** `WMC(flat) == WMC(factored) == PWE` on every shape (extends E5 + gallery),
+   so a factoring bug shows up as a probability mismatch, not a silent wrong answer.
+
+---
+
+## 9. Correctness & the probability invariant
+
+For every tested instance, build **both** circuits and assert `WMC(flat) == WMC(factored) == PWE`
+(`watdiv_factor.py`; extend to MINUS operands and UNION as they are factored).
+
+**Factoring never changes the probability.** Flat and factored denote the same function, and WMC is
+function-determined → the value is identical. The one requirement — for **both** — is a *correlation-aware*
+WMC (OBDD / d-DNNF / PWE), **not** naive gate arithmetic: shared tokens make circuits non-read-once, and a
+naive per-answer product-sum is wrong (R8.3: it exceeds 1 on the reconvergent query). If anything, factoring
+*helps* — it can make a circuit read-once (§5: `⊗(⊕,⊕)` is read-once; flat's `⊕(⊗…)` is not), which permits
+the cheap linear-exact evaluation. Factoring is only ever a *representation* change; a value change is a bug.
+
+---
+
+## 10. Code map
+
+| concern | file |
+|---|---|
+| content-addressed DAG (`leaf/times/plus/minus`, `_put` dedup) | `reference/gates.py` |
+| factored algorithm (base_relations / join / marginalize / factored_bgp) | `reference/factor.py` |
+| engine-native factored prototype (SPARQL-`INSERT` passes) | `reference/factor_native.py` |
+| **engine-native factored BGP** (multi-pass variable elimination, **default**) | `engine/.../FactoredBgpRewriter.java`, dispatched by `CircuitRewriter.constructionPlan()` |
+| construction mode + plan types + inter-pass feedback | `engine/.../ConstructionMode.java`, `CircuitConstructionPlan.java`, `CircuitRun.java` |
+| flat BGP (ablation / read-only route) | `engine/.../CircuitRewriter.java` — `bgp()` / `branchPlan()` |
+| flat MINUS/OPTIONAL (`productPlus`/`subFeeds`/`minusRoot`) + paths (reach loop) + fail-fast (`normalize`/`assertPureBgp`) | same file |
+| flat-vs-factored comparison + WMC cross-check (E5) | `reference/watdiv_factor.py`, `reference/factor_demo.py` |
+| high-tw caps / timeouts (`too-large`, `E4_TIMEOUT`) | `reference/e8_wikidata.py`, `reference/e6_minus.py`, `reference/e4_sweep.py` |
