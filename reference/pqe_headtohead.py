@@ -72,14 +72,45 @@ def pqe_stages(circuit_nt, cap_s=120.0):
             "perans_status": perans_status, "status": "ok"}
 
 
-def build_circuit(scheme, data_file, query_file, endpoint, timeout_s=300):
-    """Run CircuitRun (flat) to materialise the shared circuit N-Triples for one bound query."""
-    cmd = ["java", "-cp", JAR, "npcs.circuit.CircuitRun", scheme, data_file, query_file, endpoint]
+def build_circuit(scheme, data_file, query_file, endpoint, timeout_s=180):
+    """Run CircuitRun --construction flat to materialise the shared circuit N-Triples (urn:circuit: format)."""
+    cmd = ["java", "-cp", JAR, "npcs.circuit.CircuitRun", scheme, data_file, query_file, endpoint,
+           "--construction", "flat"]
     env = {**os.environ, "CIRCUIT_SKIP_LOAD": "1"}
     r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout_s)
     if r.returncode:
-        raise RuntimeError(f"CircuitRun rc={r.returncode}: {r.stderr[-300:]}")
+        raise RuntimeError(f"CircuitRun rc={r.returncode}: {r.stderr[-200:]}")
     return "\n".join(l for l in r.stdout.splitlines() if l.strip().endswith(" ."))
+
+
+def run_all(scale, endpoint, cap_s=120, build_timeout=180):
+    """Per template (pre-bound in the manifest): build the shared circuit on `endpoint`, then compute
+    shared vs per-answer PQE. Writes reference/paper/pqe_stages_<scale>.csv."""
+    import circuit_io as _cio  # noqa
+    man = [r for r in csv.DictReader(open(os.path.join(HERE, "paper", "workload_manifest.csv")))
+           if r["scale"] == scale]
+    stub = os.path.join(HERE, "data", "drug.reified.ttl")
+    out = os.path.join(HERE, "paper", f"pqe_stages_{scale.lower()}.csv")
+    cols = ["class", "template", "scale", "answers", "shared_pqe_ms", "shared_size",
+            "perans_pqe_ms", "perans_status", "status"]
+    fh = open(out, "w", newline=""); w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval="")
+    w.writeheader(); fh.flush()
+    for r in man:
+        qf = os.path.join(HERE, r["query_file"])
+        rec = {"class": r["class"], "template": r["template"], "scale": scale}
+        try:
+            nt = build_circuit("Standard", stub, qf, endpoint, timeout_s=build_timeout)
+            rec.update(pqe_stages(nt, cap_s=cap_s))
+        except subprocess.TimeoutExpired:
+            rec["status"] = "construct-too-large"
+        except Exception as ex:
+            rec["status"] = "err:" + type(ex).__name__
+        w.writerow(rec); fh.flush()
+        print(f"  {r['class']}{r['template']:<3} ans={rec.get('answers','?'):>7} "
+              f"shared={rec.get('shared_pqe_ms')} perans={rec.get('perans_pqe_ms')} "
+              f"({rec.get('perans_status') or rec.get('status')})", flush=True)
+    fh.close()
+    print(f"wrote {out}")
 
 
 def selftest():
@@ -112,8 +143,13 @@ def selftest():
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--scale", default=None)
+    ap.add_argument("--endpoint", default="http://localhost:7200/repositories/watdiv")
+    ap.add_argument("--cap", type=float, default=120.0)
     args, _ = ap.parse_known_args()
     if args.selftest:
         selftest()
+    elif args.scale:
+        run_all(args.scale, args.endpoint, cap_s=args.cap)
     else:
-        print("full run wired to CircuitRun + workload_manifest; see --selftest for the client-side core")
+        print("use --selftest or --scale 10M --endpoint <url>")
