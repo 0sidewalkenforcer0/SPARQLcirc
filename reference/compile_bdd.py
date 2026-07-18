@@ -120,13 +120,13 @@ class ROBDD:
 # ------------------------- compile a circuit into a BDD ----------------------
 def leaf_order(circ, root):
     """Variable order = leaf tokens in DFS first-appearance order from root."""
-    order, seen = [], set()
+    order, seen, inord = [], set(), set()
     def dfs(n):
         if n in seen: return
         seen.add(n)
         op, pl = circ[n]
         if op == "leaf":
-            if pl not in order: order.append(pl)
+            if pl not in inord: inord.add(pl); order.append(pl)   # set membership: O(N), identical order
         elif op in ("times", "plus"):
             for c in pl: dfs(c)
         elif op == "minus":

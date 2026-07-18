@@ -80,12 +80,12 @@ def shared_prefix(d, N):
 def global_order(circ, roots):
     """One variable order (leaf tokens, DFS first-appearance across ALL answer roots) -- used for BOTH
     shared and per-answer compilation so the size difference is purely node sharing, not order choice."""
-    order, seen = [], set()
+    order, seen, inord = [], set(), set()
     def dfs(n):
         if n in seen: return
         seen.add(n); op, pl = circ[n]
         if op == "leaf":
-            if pl not in order: order.append(pl)
+            if pl not in inord: inord.add(pl); order.append(pl)   # set membership: O(N), identical order
         elif op in ("times", "plus"):
             for c in pl: dfs(c)
         elif op == "minus":
