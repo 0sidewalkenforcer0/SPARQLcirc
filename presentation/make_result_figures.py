@@ -41,8 +41,8 @@ def _num(x):
 def fig_compilation_scale():
     """Drafts r9_4 structure (2x3: latency / size / memory x fixed / growing tw), real E4.
 
-    OBDD vs d-DNNF(d4) compiled SIZE is fully real; OBDD compile LATENCY (secs, 120 s cap)
-    is real; compiler peak RSS is not in e4_results.csv -> those two panels stay PENDING.
+    OBDD vs d-DNNF(d4) compiled SIZE + compile LATENCY (secs, 120 s cap) + compiler peak RSS
+    (rss_mib = OBDD builder process; rss_d4_mib = d4 child) are all real from e4_results.csv.
     """
     rows = rd("watdiv/e4_results.csv")
     fixed = sorted((r for r in rows if r["family"] == "bounded_tw2"), key=lambda r: int(r["n_tokens"]))
@@ -70,18 +70,24 @@ def fig_compilation_scale():
         ax.plot([p[0] for p in dd], [p[1] for p in dd], color=SP_NPCS, marker="o", label="d-DNNF (d4)")
         fs.light_log_axis(ax, xlabel, "Compiled nodes", title, logx=logx)
 
-    def memory_pending(ax, xlabel, title, logx):
+    def memory_panel(ax, data, xs, xlabel, title, logx):
+        obdd = [(x, int(r["rss_mib"])) for x, r in zip(xs, data) if r.get("rss_mib")]
+        dd = [(x, int(r["rss_d4_mib"])) for x, r in zip(xs, data) if r.get("rss_d4_mib")]
+        if obdd:
+            ax.plot([p[0] for p in obdd], [p[1] for p in obdd], color=SP_CIRCUIT, marker="s",
+                    linestyle="--", label="fixed-order OBDD")
+        if dd:
+            ax.plot([p[0] for p in dd], [p[1] for p in dd], color=SP_NPCS, marker="o", label="d-DNNF (d4)")
         fs.light_log_axis(ax, xlabel, "Compiler peak RSS (MiB)", title, logx=logx)
-        fs.pending(ax, "RSS\nDATA PENDING", y=0.6)
 
     fx = [int(r["n_tokens"]) for r in fixed]
     gx = [int(r["tw"]) for r in growing]
     latency_panel(axes[0, 0], fixed, fx, "Input circuit size (tokens)", "Fixed treewidth: latency", True)
     size_panel(axes[0, 1], fixed, fx, "Input circuit size (tokens)", "Fixed treewidth: size", True)
-    memory_pending(axes[0, 2], "Input circuit size (tokens)", "Fixed treewidth: memory", True)
+    memory_panel(axes[0, 2], fixed, fx, "Input circuit size (tokens)", "Fixed treewidth: memory", True)
     latency_panel(axes[1, 0], growing, gx, "Treewidth", "Growing treewidth: latency", False)
     size_panel(axes[1, 1], growing, gx, "Treewidth", "Growing treewidth: size", False)
-    memory_pending(axes[1, 2], "Treewidth", "Growing treewidth: memory", False)
+    memory_panel(axes[1, 2], growing, gx, "Treewidth", "Growing treewidth: memory", False)
     for ax in (axes[1, 0], axes[1, 1], axes[1, 2]):
         ax.set_xticks(gx)
 
@@ -91,8 +97,8 @@ def fig_compilation_scale():
     handles.append(fs.timeout_handle("120 s timeout"))
     labels.append("120 s timeout")
     fs.top_legend(fig, handles, labels, ncol=3, y=1.005)
-    fs.footer(fig, "d-DNNF stays polynomial at fixed treewidth (OBDD walls at 120 s); both blow up as treewidth grows. "
-                   "Compiler RSS awaits the memory-only runs.")
+    fs.footer(fig, "d-DNNF stays polynomial at fixed treewidth (OBDD walls at 120 s in time, size and RSS); both blow "
+                   "up as treewidth grows. Tractability is governed by the lineage's treewidth (E4).")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.14, top=0.91, hspace=0.47, wspace=0.36)
     fs.save(fig, "result_r9_4_compilation_scale", OUT, creator=CREATOR)
 
@@ -173,13 +179,21 @@ def fig_provsql_tpch():
     fs.panel_label(ax, 0, x=-0.18)
 
     ax = axes[1]
-    fs.light_log_axis(ax, "TPC-H scale factor", "End-to-end PQE (ms)", "Matched scale trend")
-    ax.set_xlim(0.008, 1.2)
-    ax.set_ylim(100, 2e4)
-    fs.pending(ax, "SCALE SWEEP\nDATA PENDING", y=0.6)
+    sweep = sorted(rd("g2a_provsql_vs_ours.csv"), key=lambda r: float(r["scale"]))
+    def pts(col):
+        return ([float(r["scale"]) for r in sweep if r.get(col)],
+                [float(r[col]) for r in sweep if r.get(col)])
+    px, py = pts("provsql_pqe_ms"); ox, oy = pts("ours_pqe_ms")
+    ax.plot(px, py, color=SP_NPCS, marker="o", label="ProvSQL (modified PG)")
+    ax.plot(ox, oy, color=SP_CIRCUIT, marker="s", linestyle="--", label="ours (stock engine)")
+    fs.light_log_axis(ax, "TPC-H scale factor", "End-to-end PQE (ms)", "PQE scale trend (Q3 SPJ)")
+    ax.set_xlim(0.008, 0.45)
+    ax.legend(frameon=False, loc="upper left")
     fs.panel_label(ax, 1, x=-0.18)
 
-    fs.footer(fig, "Probability parity (ours == ProvSQL, exact) is a LaTeX table; sf 0.01 is matched full-PQE, full sweep pending.")
+    fs.footer(fig, "Q3 SPJ PQE, per-token p=0.5. Probability parity is EXACT (both compute 0.5³=0.125 per answer). "
+                   "ProvSQL = honest per-answer probability_evaluate (materialized, not the count(*) pruning artifact); "
+                   "ours (stock engine + client compiler) tracks it ~2× faster with no engine fork.")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.21, top=0.86, wspace=0.29)
     fs.save(fig, "result_r9_7_provsql_tpch", OUT, creator=CREATOR)
 
@@ -289,33 +303,37 @@ def fig_data_scale():
 
 # ------------------------------------------------------- R9.6 property paths
 def fig_paths():
-    """Drafts r9_6 structure (1x3: construct / circuit / RSS), real E-paths.
-
-    Four path operators at reach 80 (categorical, not a reach sweep -> bars). Builder RSS
-    and the reach-scale sweep are not committed, so those stay PENDING.
-    """
-    rows = [r for r in rd("watdiv/e_paths.csv") if r["status"] == "ok"]
-    labels = [r["query"] for r in rows]
-    x = np.arange(len(rows))
-    build = [float(r["build_ms"]) for r in rows]
-    size = [int(r["gates"]) + int(r["edges"]) for r in rows]
+    """r9_6 REACHABILITY SWEEP (real E-paths sweep): construct time / circuit size / builder peak RSS
+    vs the reachable-set size, friendOf+ over layered DAGs. CircuitRun's iterative protocol runs
+    |V_s|-1 rounds, so construction is ~quadratic in reach and walls at ~300 s (▼) beyond a few hundred
+    reachable nodes -- the honest scaling ceiling of exact path-lineage construction."""
+    rows = rd("watdiv/e_paths_sweep.csv")
+    ok = sorted((r for r in rows if r["status"] == "ok"), key=lambda r: int(r["reach_nodes"]))
+    wall = [r for r in rows if r["status"] == "timeout"]
+    reach = [int(r["reach_nodes"]) for r in ok]
+    series = [([float(r["build_ms"]) for r in ok], "Construction time (ms)", "Iterative construction"),
+              ([int(r["gates"]) + int(r["edges"]) for r in ok], "Gates + edges", "Circuit size"),
+              ([int(r["rss_mib"]) for r in ok], "Builder peak RSS (MiB)", "Client memory")]
+    from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter
     fig, axes = plt.subplots(1, 3, figsize=(fs.FIG_WIDTH, 2.55))
-    fs.grouped_bars(axes[0], x, [build], [SP_CIRCUIT], ["SPARQLcirc"], log=True)
-    axes[0].set_ylabel("Construction time (ms)")
-    axes[0].set_title("Iterative construction", pad=4)
-    fs.grouped_bars(axes[1], x, [size], [SP_CIRCUIT], ["SPARQLcirc"], log=True)
-    axes[1].set_ylabel("Gates + edges")
-    axes[1].set_title("Circuit size", pad=4)
-    fs.light_log_axis(axes[2], "Reachable nodes", "Builder peak RSS (MiB)", "Client memory")
-    fs.pending(axes[2], "RSS + REACH SWEEP\nDATA PENDING", y=0.6)
-    for i, ax in enumerate(axes):
-        if i < 2:
-            ax.set_xticks(x, labels, rotation=25)
-            ax.set_xlabel("Path operator")
+    for i, (ax, (y, ylabel, title)) in enumerate(zip(axes, series)):
+        ax.plot(reach, y, color=SP_CIRCUIT, marker="s", linewidth=1.0, zorder=3)
+        fs.light_log_axis(ax, "Reachable nodes", ylabel, title)
+        ax.xaxis.set_major_locator(FixedLocator([10, 20, 50, 100, 200]))
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.xaxis.set_major_formatter(ScalarFormatter())
         fs.panel_label(ax, i, x=-0.22)
-    fs.suptitle(fig, "GraphDB — property-path circuits (reach 80)", y=0.99, fontsize=9.0)
-    fs.footer(fig, "Four single-predicate path operators at fixed reach; the reach-scale sweep and RSS join with the server run.")
-    fig.subplots_adjust(left=0.085, right=0.995, bottom=0.24, top=0.80, wspace=0.34)
+    if wall:                                   # the 300 s construction wall on the latency panel
+        wn = int(wall[0]["graph_nodes"])
+        axes[0].scatter([wn], [300_000], color=GRAY, marker="v", s=30, zorder=4)
+        axes[0].axhline(300_000, color="#555555", linestyle=fs.TIMEOUT_LS, linewidth=0.8)
+        axes[0].annotate("300 s wall", (wn, 300_000), xytext=(-2, -10), textcoords="offset points",
+                         ha="right", va="top", fontsize=5.8, color=GRAY)
+    fs.suptitle(fig, "GraphDB — property-path reachability scaling (friendOf+)", y=0.99, fontsize=9.0)
+    fs.footer(fig, "friendOf+ from a bound source over layered DAGs; the |V_s|-1-round iterative protocol makes "
+                   "construction ~quadratic in the reachable set (time, size and RSS all rise), walling at ~300 s "
+                   "beyond a few hundred reachable nodes. Exact path lineage is verified WMC==PWE (validation matrix).")
+    fig.subplots_adjust(left=0.085, right=0.995, bottom=0.16, top=0.82, wspace=0.34)
     fs.save(fig, "result_r9_6_paths", OUT, creator=CREATOR)
 
 

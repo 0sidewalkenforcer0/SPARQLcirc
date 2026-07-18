@@ -78,12 +78,14 @@ def _worker(ttl, q, meta, qout):
             ddnnf_nodes, d4wmc = ev.nodes, ev.probability
         except Exception:
             ddnnf_nodes, d4wmc = None, None
-        base.update({"ddnnf_nodes": ddnnf_nodes, "d4_wmc": round(d4wmc, 6) if d4wmc is not None else None})
+        base.update({"ddnnf_nodes": ddnnf_nodes, "d4_wmc": round(d4wmc, 6) if d4wmc is not None else None,
+                     "rss_d4_mib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss // 1024})  # d4 peak
         qout.put({**base, "status": "partial", "obdd_size": None})     # kept if OBDD later dies
         # (2) OBDD (pure Python; the part that blows up on high tw / large n)
         with compilation_timeout(TIMEOUT):
             prob, obdd_size = compile_bdd.probability(c.gates, root, P)[:2]
         qout.put({**base, "status": "ok", "obdd_size": obdd_size, "expected": round(prob, 6),
+                  "rss_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,  # our OBDD builder peak
                   "match": d4wmc is not None and abs(d4wmc - prob) < 1e-6})
     except CompilationTimeout:
         qout.put({"status": "obdd-timeout"})
@@ -135,7 +137,8 @@ else:
         ("growing_tw_grid",  [gen_families.grid(k) for k in (2, 3, 4, 5, 6)]),
     ]
 COLS = ["family", "name", "n_tokens", "tw", "deriv", "status", "secs",
-        "factored_gates", "obdd_size", "ddnnf_nodes", "cnf_vars", "d4_wmc", "expected", "match"]
+        "factored_gates", "obdd_size", "ddnnf_nodes", "cnf_vars", "d4_wmc", "expected", "match",
+        "rss_mib", "rss_d4_mib"]
 
 def main():
     instances = [(fam, ttl, q, meta) for fam, insts in SWEEPS for (ttl, q, meta) in insts]
