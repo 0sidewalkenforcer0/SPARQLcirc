@@ -1,3 +1,4 @@
 scale,answers,provsql_pqe_ms,ours_pqe_ms,provsql_p,ours_p,note
-0.01,14908,1091,1654,0.125,0.125,warm median G4 protocol; provsql=probability() full PQE; ours=construct1471+compile149+wmc35
-0.1,125154,9780,12643,0.125,0.125,warm; provsql=full PQE; ours=engine construct only (python compile client artifact; G6/d4 removes)
+0.01,14908,3556,1655,0.125,0.125,honest per-answer probability_evaluate (materialized 3-run median); ours=construct1471+compile149+wmc35
+0.1,125154,30254,12643,0.125,0.125,honest per-answer 3-run median; ours=engine construct (compile+WMC near-free)
+0.3,367475,87284,,0.125,0.125,honest per-answer 3-run median (~0.24ms/answer linear); ours pending e9 (flat naryrel >4M-triple circuit)

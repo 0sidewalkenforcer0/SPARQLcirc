@@ -43,11 +43,11 @@ pages too (below); MillenniumDB shows `DATA PENDING`.
 | `result_r9_2_construction_qlever` | matrix | 2×30×B/R/N/C, 2 scales | **real** (10M 112/120, 100M 109/120; byte-identical to GraphDB) |
 | `result_r9_2_construction_oxigraph` | matrix | 2×30×B/R/N/C | **real 10M** (102/120; B 30/30, C 20/30 — slow SHA256 ▼ the rest; 100M pending) |
 | `result_r9_{2,3,2c}_millenniumdb` | matrix | same | **DATA PENDING** (see below) |
-| `result_r9_4_compilation_scale` | result | 2×3 latency/size/RSS × fixed/growing tw | size+OBDD latency real; **RSS pending** |
+| `result_r9_4_compilation_scale` | result | 2×3 latency/size/RSS × fixed/growing tw | **real** (RSS now measured: OBDD explodes, d-DNNF flat) |
 | `result_r9_3b_sharing_crossover` | result | crossover + shared compile | **real** |
-| `result_r9_7_provsql_tpch` | result | matched cells + scale trend | Q3 segments real; **scale sweep pending** |
+| `result_r9_7_provsql_tpch` | result | matched cells + scale trend | **real** (Q3 5 segments + honest ProvSQL scale trend 0.01/0.1/0.3) |
 | `result_r9_4b_compilation_patterns` | result | latency + size over real classes | d-DNNF real; **OBDD pending** |
-| `result_r9_6_paths` | result | construct/circuit/RSS (path operators) | construct+size real; **RSS+sweep pending** |
+| `result_r9_6_paths` | result | construct/circuit/RSS vs reachable-set size (friendOf+) | **real** (reach sweep 13→249 + RSS + 300 s wall) |
 | `result_r9_5_pqe_headtohead` | pqe | E11 amortization + WatDiv per-template ratio + non-monotone ✗ | **real** (E11 8.2×@1000; WatDiv ≈1.3× median; 5 OPTIONAL ✗) |
 | `result_r9_2b_multisource` | multisource | cross-source dedup: overlap sweep + K-source sweep | **real** (2× at full overlap; 1.71× @6 sources; 2.9× PQE) |
 | `result_r9_5_e2e_{graphdb,qlever,oxigraph,millenniumdb}` | e2e | per-engine end-to-end PQE (construct + compile+WMC), 2 scales | **real** (construct dominates; NPCS lower on selective; OPTIONAL ✗) |
