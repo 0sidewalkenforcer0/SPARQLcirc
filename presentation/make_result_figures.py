@@ -192,8 +192,9 @@ def fig_provsql_tpch():
     fs.panel_label(ax, 1, x=-0.18)
 
     fs.footer(fig, "Q3 SPJ PQE, per-token p=0.5. Probability parity is EXACT (both compute 0.5³=0.125 per answer). "
-                   "ProvSQL = honest per-answer probability_evaluate (materialized, not the count(*) pruning artifact); "
-                   "ours (stock engine + client compiler) tracks it ~2× faster with no engine fork.")
+                   "ProvSQL = honest per-answer probability_evaluate (materialized, not the count(*) pruning artifact), "
+                   "~0.24 ms/answer; ours (stock engine + client compiler, no engine fork) is faster at every scale "
+                   "(2.4× at SF 0.1, 1.5× at SF 0.3).")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.21, top=0.86, wspace=0.29)
     fs.save(fig, "result_r9_7_provsql_tpch", OUT, creator=CREATOR)
 

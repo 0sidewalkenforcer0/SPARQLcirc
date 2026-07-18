@@ -19,20 +19,21 @@ probability is **0.5³ = 0.125** at every scale — ProvSQL and ours both return
 Parity is the robust, order-independent result (as in R8.3 / E7).
 
 ## Scale trend (`g2a_provsql_vs_ours.csv`)
-| SF | answers | ProvSQL PQE (modified PG) | ours (stock engine) | ProvSQL ms/answer |
-|--:|--:|--:|--:|--:|
-| 0.01 | 14 908 | 3 556 ms | 1 655 ms | 0.238 |
-| 0.1  | 125 154 | 30 254 ms | 12 643 ms | 0.242 |
-| 0.3  | 367 475 | 87 284 ms | _(e9 SF0.3 — see below)_ | 0.238 |
+| SF | answers | ProvSQL PQE (modified PG) | ours (stock engine) | ours speed-up | ProvSQL ms/answer |
+|--:|--:|--:|--:|--:|--:|
+| 0.01 | 14 908 | 3 556 ms | 1 655 ms | **2.15×** | 0.238 |
+| 0.1  | 125 154 | 30 254 ms | 12 643 ms | **2.39×** | 0.242 |
+| 0.3  | 367 475 | 87 284 ms | 56 897 ms | **1.53×** | 0.238 |
 
-**ProvSQL is strikingly linear in answer count: ~0.24 ms/answer at every scale.** At SF 0.01 and 0.1 ours
-(stock engine + client compiler, **no engine fork**) is **~2× faster** than ProvSQL's honest per-answer PQE.
+**ProvSQL is strikingly linear in answer count: ~0.24 ms/answer at every scale.** Ours (stock engine +
+client compiler, **no engine fork**) is **faster at every scale** — 2.4× at SF 0.1, still 1.5× at SF 0.3.
 
-## Honest caveat at SF 0.3
-Our **flat `naryrel`** Q3 circuit at SF 0.3 is ~5 M circuit triples (367 k answers × ~13), past e9's 4 M
-safety cap; the CONSTRUCT itself is at the edge of feasibility (the flat construct grows linearly with
-answers — our known construction cost). ProvSQL's integrated PQE has no separate circuit to materialise.
-See the r9.7 figure for exactly which points are measured vs walled.
+## SF 0.3 detail (ours)
+`e9_tpch.py` on `tpch03` (naryrel, 3-run avg): **construct 56 897 ms**, 367 475 answers, 734 950 gates,
+1 469 900 edges (~2.2 M circuit elements). The flat circuit grows linearly with answers (our known
+construction cost); it is past e9's default 4 M-triple *safety cap* (E6_MAXTRIP), not a hard limit — with
+the cap raised it completes and stays ahead of ProvSQL. `ours` here is the CONSTRUCT term; a shared-ROBDD
+compile + per-answer WMC adds a small client-side amount (compile+WMC ≤ ~10 %, see r9.5 findings).
 
 ## Figure
 `presentation/figures/final/result_r9_7_provsql_tpch.{pdf,png}`: (a) 5 matched Q3 market segments
