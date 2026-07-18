@@ -184,17 +184,18 @@ def fig_provsql_tpch():
         return ([float(r["scale"]) for r in sweep if r.get(col)],
                 [float(r[col]) for r in sweep if r.get(col)])
     px, py = pts("provsql_pqe_ms"); ox, oy = pts("ours_pqe_ms")
-    ax.plot(px, py, color=SP_NPCS, marker="o", label="ProvSQL (modified PG)")
-    ax.plot(ox, oy, color=SP_CIRCUIT, marker="s", linestyle="--", label="ours (stock engine)")
-    fs.light_log_axis(ax, "TPC-H scale factor", "End-to-end PQE (ms)", "PQE scale trend (Q3 SPJ)")
+    ax.plot(px, py, color=SP_NPCS, marker="o", label="ProvSQL full PQE (modified PG)")
+    ax.plot(ox, oy, color=SP_CIRCUIT, marker="s", linestyle="--", label="ours: engine construct")
+    fs.light_log_axis(ax, "TPC-H scale factor", "PQE / construct time (ms)", "Scale trend (Q3 SPJ)")
     ax.set_xlim(0.008, 0.45)
-    ax.legend(frameon=False, loc="upper left")
+    ax.legend(frameon=False, loc="upper left", fontsize=6.0)
     fs.panel_label(ax, 1, x=-0.18)
 
-    fs.footer(fig, "Q3 SPJ PQE, per-token p=0.5. Probability parity is EXACT (both compute 0.5³=0.125 per answer). "
-                   "ProvSQL = honest per-answer probability_evaluate (materialized, not the count(*) pruning artifact), "
-                   "~0.24 ms/answer; ours (stock engine + client compiler, no engine fork) is faster at every scale "
-                   "(2.4× at SF 0.1, 1.5× at SF 0.3).")
+    fs.footer(fig, "Q3 SPJ, p=0.5; probability parity EXACT (both 0.5³=0.125/answer). ProvSQL = honest per-answer "
+                   "probability_evaluate (protocol-sensitive: 3.5–7.5 s at SF0.01). Ours' engine-side construct scales "
+                   "~linearly and stays competitive; the full ours pipeline adds client compile+WMC — WMC tiny, but a "
+                   "naive global variable ordering costs 3.3 s at SF0.01 (pure-Python, removable). END-TO-END under one "
+                   "protocol (CANONICAL): ours 6.4 s ≈ ProvSQL 7.46 s at SF0.01 — comparable, no engine fork.")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.21, top=0.86, wspace=0.29)
     fs.save(fig, "result_r9_7_provsql_tpch", OUT, creator=CREATOR)
 

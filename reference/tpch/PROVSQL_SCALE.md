@@ -19,14 +19,28 @@ probability is **0.5³ = 0.125** at every scale — ProvSQL and ours both return
 Parity is the robust, order-independent result (as in R8.3 / E7).
 
 ## Scale trend (`g2a_provsql_vs_ours.csv`)
-| SF | answers | ProvSQL PQE (modified PG) | ours (stock engine) | ours speed-up | ProvSQL ms/answer |
-|--:|--:|--:|--:|--:|--:|
-| 0.01 | 14 908 | 3 556 ms | 1 655 ms | **2.15×** | 0.238 |
-| 0.1  | 125 154 | 30 254 ms | 12 643 ms | **2.39×** | 0.242 |
-| 0.3  | 367 475 | 87 284 ms | 56 897 ms | **1.53×** | 0.238 |
+| SF | answers | ProvSQL PQE (modified PG) | ours: engine construct | ProvSQL ms/answer |
+|--:|--:|--:|--:|--:|
+| 0.01 | 14 908 | 3 556 ms | 1 655 ms | 0.238 |
+| 0.1  | 125 154 | 30 254 ms | 12 643 ms | 0.242 |
+| 0.3  | 367 475 | 87 284 ms | 56 897 ms | 0.238 |
 
-**ProvSQL is strikingly linear in answer count: ~0.24 ms/answer at every scale.** Ours (stock engine +
-client compiler, **no engine fork**) is **faster at every scale** — 2.4× at SF 0.1, still 1.5× at SF 0.3.
+**ProvSQL is strikingly linear in answer count: ~0.24 ms/answer at every scale.** Ours' engine-side
+**construct** scales the same way and stays competitive at every SF.
+
+> ⚠️ **DO NOT read this as "ours 2× faster."** Two consistency caveats (both matter for the paper):
+> 1. **The `ours` column is engine CONSTRUCT only.** The full ours PQE pipeline adds client compile+WMC.
+>    WMC is tiny (≤36 ms), but the current **pure-Python global variable ordering** costs **~3.3 s at
+>    SF0.01** (and scales with #tokens) — an implementation artifact a native/linear-ordering compiler
+>    removes, but present in today's numbers. See `CANONICAL_TIMINGS.md`.
+> 2. **ProvSQL timing is protocol-sensitive**: `sum(probability_evaluate)` = 5.2 s, `CREATE TABLE … AS
+>    SELECT probability_evaluate` = 3.5 s, CANONICAL 5-run = 7.46 s (all SF0.01, warm) — a ~2× spread.
+>
+> **The honest, consistent-protocol result** (CANONICAL, end-to-end both sides at SF0.01): **ours 6.40 s
+> ≈ ProvSQL 7.46 s — comparable, ours marginally faster, no engine fork.** The defensible claims are
+> (a) exact probability **parity**, (b) **comparable** latency, (c) on a **stock** engine over a broader
+> fragment — NOT a speed win. Before submission, re-run the whole 0.01/0.1/0.3 sweep under ONE protocol
+> (ours incl. ordering or with a native ordering; ProvSQL fixed to `sum`).
 
 ## SF 0.3 detail (ours)
 `e9_tpch.py` on `tpch03` (naryrel, 3-run avg): **construct 56 897 ms**, 367 475 answers, 734 950 gates,
