@@ -20,7 +20,7 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
 | query | dataset | answers | construct | compile | WMC | **total (median [min–max])** |
 |---|---|--:|--:|--:|--:|--:|
 | watdiv-Sstar       | WatDiv 32.7 M reified         |     2 |   10 ms |    2 ms |  0 ms | **12 ms [11–12]** |
-| tpch-Q3 (naryrel)  | TPC-H SF 0.01 (1.26 M)        | 14 908 | 3080 ms | **3300 ms** | 36 ms | **6.40 s [6.40–6.44]** |
+| tpch-Q3 (naryrel)  | TPC-H SF 0.01 (1.26 M)        | 14 908 | 2380 ms | **239 ms** | (in compile) | **2.63 s [2.58–2.66]** |
 | wikidata-WDpath    | Wikidata 2.13 B (`P279+`, G1) |    16 | 2144 ms |    1 ms |  0 ms | **2.14 s [2.10–2.21]** |
 
 - **`PathIsoSeq` fixes the recursive-path compile blowup.** WD-path is now **2.14 s, compile ~1 ms** (was
@@ -28,26 +28,27 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
   across paths, so cones are **1–20 tokens** (not 19–233) and the fixed-order OBDD compiles trivially.
   16 answers, **OBDD==PWE 15/15** — correctness holds. The order-robust-d4 motivation *for paths* is
   largely removed (it now applies to Q3's ordering step, below — not to paths).
-- **TPC-H Q3 compile is now ordering-dominated — honest under the corrected boundaries.** compile = **3.3 s
-  of 6.4 s** is the pure-Python **variable ordering** over ~45 k tokens (counted in compile per `90c3c3c`),
-  *not* the ROBDD build and *not* the weighted count (WMC 36 ms). This is a pure-Python-implementation cost
-  (a native compiler / linear ordering heuristic removes it); it **supersedes** the earlier "compile+WMC
-  near-free" phrasing for Q3. WMC itself is tiny everywhere (≤ 36 ms) — the weighted count is never the cost.
+- **TPC-H Q3 compile+WMC is back to near-free — the earlier "3.3 s ordering" was an O(N²) bug (fixed
+  `1eb35bf`).** `leaf_order`/`global_order` used `if pl not in order` (linear list scan per leaf) = O(N²);
+  at ~45 k tokens that was 9.9 s in isolation. Replaced by set-backed membership → **O(N), 14 ms** for the
+  *identical* variable order (byte-for-byte the same DFS first-appearance list), so **WMC is unchanged**
+  (re-verified: tests.py 171/171, verify_differential 24 DAGs × 5 backends 1e-16). Q3 compile+WMC is now
+  **239 ms of 2.63 s** (5-run), construct-dominated again. WMC itself is tiny everywhere (≤ 36 ms).
 
 ## Strong baseline — ProvSQL (modified PostgreSQL), same TPC-H Q3
 
-| query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) |
-|---|---|--:|--:|--:|
-| tpch-Q3 | SF 0.01 | 14 908 | **7.46 s [7.28–7.53]** | 6.45 s |
+| query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) | ours speed-up |
+|---|---|--:|--:|--:|--:|
+| tpch-Q3 | SF 0.01 | 14 908 | **7.74 s [7.32–7.86]** | **2.63 s** | **2.9×** |
 
-**Comparable — ours slightly faster.** The previous 1.06 s row was a PostgreSQL **pruning artifact**: with
-`count(*)` alone the planner dropped the unused probability column and timed only the relational join.
-`g4_rigor.py` now forces evaluation via `sum(probability_evaluate(provenance()))`, giving the honest
-**7.46 s** (5-run, current HEAD; consumed-probability checksum `sum = 0.125·n` verified per run). So on Q3,
-ours (**6.45 s**, mostly the removable pure-Python variable ordering) and ProvSQL (7.46 s) are comparable;
-on the reconvergent **Qrecon (below) ours is faster at SF 0.01, ProvSQL at SF 0.1** (our Python ordering
-grows with the circuit). Framing (G2a): the *same* exact PQE (parity verified) at comparable latency on a
-**stock, unforked** engine over a **broader fragment** — the contribution, not a per-query speed race.
+**Ours ~3× faster — honestly, after the O(N²) ordering fix.** Both numbers are 5-run under one protocol
+(ProvSQL forced-eval `sum(probability_evaluate(provenance()))`, consumed-probability checksum `sum=0.125·n`
+verified per run; ours = construct + shared ROBDD compile + WMC with the O(N) ordering, `1eb35bf`). The
+previous "comparable (6.45 vs 7.46 s)" was inflated on our side by the removable O(N²) ordering scan — with
+that gone, ours is **2.63 s** and genuinely faster. Probability **parity is exact** (both 0.125·n). Framing
+(G2a): the *same* exact PQE on a **stock, unforked** engine over a **broader fragment**, now also faster
+per-query at this scale — but the contribution is the unforked/broader-fragment axis, not the speed race.
+(The ProvSQL count(*)=1.06 s row was a planner pruning artifact — do not cite it.)
 
 ## Instance breadth (R8.1 "≥3–5 instances/shape") — see `g4_instances.csv`
 
