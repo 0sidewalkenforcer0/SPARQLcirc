@@ -49,7 +49,16 @@ answer-scale* — not construction speed.
 
 ## Data (for later analysis)
 - `pqe_stages_flat_10m.csv` — 10M flat: per-template answers, shared vs per-answer PQE ms, per-answer status.
+  18 ratio (0.81–2.58×, median 1.28×), 5 non-monotone O, 6 construct-too-large.
+- `pqe_stages_flat_100m.csv` — 100M flat: 18 ratio (0.92–3.93×, median 1.35×), 2 non-monotone O
+  (O2/O4/O5 became construct-too-large at 100M), 10 construct-too-large. **Confirms the 10M picture.**
 - `pqe_stages_factored_10m.csv` — 10M factored (S built; C construct-too-large even factored).
-- `e11_scale.csv` — synthetic amortization curve (N vs shared_ms / perans_ms / time_win).
+- `e11_scale.csv` — synthetic amortization curve (N vs shared_ms / perans_ms / time_win): 8.2× @ 1000.
 - `construction_matrix_*.csv` — the 4-engine × 2-scale construct times to combine per engine.
-- (100M flat PQE: `pqe_stages_flat_100m.csv` when the run completes.)
+
+## Figure
+`presentation/figures/final/result_r9_5_pqe_headtohead.{pdf,png}` (generator
+`presentation/make_pqe_figure.py`): (a) E11 amortization curve — shared vs per-answer, 8.2× at 1000;
+(b) WatDiv per-template per-answer/shared ratio (10M + 100M, ≈1.3× median) with the OPTIONAL band
+marked ✗ (non-monotone, NPCS/SPARQLprov cannot represent). The two panels together are the honest
+story: dramatic amortization only where provenance genuinely shares, plus the clean capability win.

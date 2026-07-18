@@ -10,10 +10,13 @@ vector PDF + 300-dpi PNG with embedded fonts. Three generators write here:
   `../../make_matrix_figures.py` reading `reference/paper/construction_matrix_{10m,100m}.csv`.
 - **`result_r9_*` (engine-independent)** — drafts-structure figures from controlled/cross-system
   CSVs. Generator: `../../make_result_figures.py`.
+- **`result_r9_5_pqe_headtohead`** — completes NPCS/SPARQLprov into a full PQE pipeline (same
+  compiler both sides) and compares end-to-end. Generator: `../../make_pqe_figure.py` reading
+  `reference/e11_scale.csv` + `reference/paper/pqe_stages_flat_{10m,100m}.csv`.
 - **`paper_fig*` / `paper_table1`** — compact composite layouts, kept as space-efficient
   alternatives for the paper body. Generator: `../../make_figures.py`.
 
-Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_figures.py`
+Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_pqe_figure.py && python3 make_figures.py`
 
 ## Real construction matrix (GraphDB) — the flagship
 
@@ -39,6 +42,7 @@ pages too (below); MillenniumDB shows `DATA PENDING`.
 | `result_r9_7_provsql_tpch` | result | matched cells + scale trend | Q3 segments real; **scale sweep pending** |
 | `result_r9_4b_compilation_patterns` | result | latency + size over real classes | d-DNNF real; **OBDD pending** |
 | `result_r9_6_paths` | result | construct/circuit/RSS (path operators) | construct+size real; **RSS+sweep pending** |
+| `result_r9_5_pqe_headtohead` | pqe | E11 amortization + WatDiv per-template ratio + non-monotone ✗ | **real** (E11 8.2×@1000; WatDiv ≈1.3× median; 5 OPTIONAL ✗) |
 | `paper_fig1..4`, `paper_table1` | composite | compact 2×2 / 1×3 / table | real |
 
 ## Three real engines; the rest pending
@@ -51,5 +55,7 @@ scales** (10M + 100M); Oxigraph covers 10M. Remaining:
 - **MillenniumDB**: needs a fresh import (read-only, fast, SHA256 works per E10 → would give a
   full C column like QLever). Cross-engine byte-identity already proven in E10.
   Run recipes + the flat-C fix are in the `r9-construction-matrix` memory.
-- **`draft_r9_5_e2e_<engine>`** (per-template end-to-end PQE stages) and
-  **`draft_r9_2b_multisource_<engine>`** (100M × 2 sources): not yet run; remain in `../drafts/`.
+- **`result_r9_5_pqe_headtohead`** (engine-independent amortization + capability) is **real** —
+  see above. The per-engine **`draft_r9_5_e2e_<engine>`** (that engine's construct time from the
+  matrix + these PQE stages) and **`draft_r9_2b_multisource_<engine>`** (100M × 2 sources) are not
+  yet assembled; they remain in `../drafts/`.
