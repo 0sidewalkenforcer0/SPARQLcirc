@@ -15,10 +15,14 @@ vector PDF + 300-dpi PNG with embedded fonts. Three generators write here:
   `reference/e11_scale.csv` + `reference/paper/pqe_stages_flat_{10m,100m}.csv`.
 - **`result_r9_2b_multisource`** — content-addressed cross-source dedup (representation ~ ∪ vs flat
   ~ Σ). Generator: `../../make_multisource_figure.py` reading `reference/multisource_dedup.csv`.
+- **`result_r9_5_e2e_<engine>`** — assembled per-engine end-to-end PQE: real construct (that engine's
+  matrix, method C) + real compile+WMC (pqe_stages, engine-independent per E10), with NPCS end-to-end
+  overlaid and OPTIONAL ✗. Generator: `../../make_e2e_figure.py`. (The illustrative
+  `draft_r9_5_e2e_<engine>` in `../drafts/` is deliberately kept alongside it.)
 - **`paper_fig*` / `paper_table1`** — compact composite layouts, kept as space-efficient
   alternatives for the paper body. Generator: `../../make_figures.py`.
 
-Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_pqe_figure.py && python3 make_figures.py`
+Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_pqe_figure.py && python3 make_multisource_figure.py && python3 make_e2e_figure.py && python3 make_figures.py`
 
 ## Real construction matrix (GraphDB) — the flagship
 
@@ -46,6 +50,7 @@ pages too (below); MillenniumDB shows `DATA PENDING`.
 | `result_r9_6_paths` | result | construct/circuit/RSS (path operators) | construct+size real; **RSS+sweep pending** |
 | `result_r9_5_pqe_headtohead` | pqe | E11 amortization + WatDiv per-template ratio + non-monotone ✗ | **real** (E11 8.2×@1000; WatDiv ≈1.3× median; 5 OPTIONAL ✗) |
 | `result_r9_2b_multisource` | multisource | cross-source dedup: overlap sweep + K-source sweep | **real** (2× at full overlap; 1.71× @6 sources; 2.9× PQE) |
+| `result_r9_5_e2e_{graphdb,qlever,oxigraph,millenniumdb}` | e2e | per-engine end-to-end PQE (construct + compile+WMC), 2 scales | **real** (construct dominates; NPCS lower on selective; OPTIONAL ✗) |
 | `paper_fig1..4`, `paper_table1` | composite | compact 2×2 / 1×3 / table | real |
 
 ## Three real engines; the rest pending
@@ -58,10 +63,12 @@ scales** (10M + 100M); Oxigraph covers 10M. Remaining:
 - **MillenniumDB**: needs a fresh import (read-only, fast, SHA256 works per E10 → would give a
   full C column like QLever). Cross-engine byte-identity already proven in E10.
   Run recipes + the flat-C fix are in the `r9-construction-matrix` memory.
-- **`result_r9_5_pqe_headtohead`** (engine-independent amortization + capability) and
-  **`result_r9_2b_multisource`** (cross-source dedup) are **real** — see above and
-  `reference/paper/{PQE_HEADTOHEAD,MULTISOURCE}.md`. Both are reframed to content-addressing wins
-  (representation + PQE), *not* construction time. The per-engine **`draft_r9_5_e2e_<engine>`** (that
-  engine's construct time from the matrix + these PQE stages) is the only remaining draft; the literal
-  per-engine 100M × 2 construction bar (`draft_r9_2b_multisource_<engine>`) is intentionally superseded
-  by the engine-independent dedup result (see `MULTISOURCE.md` for the rationale + the engine recipe).
+- **`result_r9_5_pqe_headtohead`** (engine-independent amortization + capability),
+  **`result_r9_2b_multisource`** (cross-source dedup), and **`result_r9_5_e2e_<engine>`** (assembled
+  per-engine end-to-end PQE, all 4 engines) are **real** — see above and
+  `reference/paper/{PQE_HEADTOHEAD,MULTISOURCE}.md`. The head-to-head and multisource are reframed to
+  content-addressing wins (representation + PQE), *not* construction time.
+- **Both versions kept for r9.5 e2e**: the assembled `result_r9_5_e2e_<engine>` (real data) *and* the
+  illustrative `draft_r9_5_e2e_<engine>` (in `../drafts/`) — kept side by side by request.
+- The literal per-engine 100M × 2 construction bar (`draft_r9_2b_multisource_<engine>`) is intentionally
+  superseded by the engine-independent dedup result (see `MULTISOURCE.md` for the rationale + recipe).
