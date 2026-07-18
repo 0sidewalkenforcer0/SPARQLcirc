@@ -1,0 +1,11 @@
+class,template,scale,answers,shared_pqe_ms,shared_size,perans_pqe_ms,perans_status,status
+S,S1,10M,5,0.214,45,0.629,ok,ok
+S,S2,10M,255,4.509,1020,9.452,ok,ok
+S,S3,10M,128,3.464,681,10.241,ok,ok
+S,S4,10M,1,0.042,4,0.043,ok,ok
+S,S5,10M,26,0.437,104,1.04,ok,ok
+S,S6,10M,2,0.055,6,0.063,ok,ok
+S,S7,10M,1,0.038,3,0.035,ok,ok
+C,C1,10M,,,,,,construct-too-large
+C,C2,10M,0,,,,,no-answers
+C,C3,10M,,,,,,construct-too-large

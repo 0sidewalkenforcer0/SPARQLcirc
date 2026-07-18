@@ -72,10 +72,14 @@ def pqe_stages(circuit_nt, cap_s=120.0):
             "perans_status": perans_status, "status": "ok"}
 
 
-def build_circuit(scheme, data_file, query_file, endpoint, timeout_s=180):
-    """Run CircuitRun --construction flat to materialise the shared circuit N-Triples (urn:circuit: format)."""
+def build_circuit(scheme, data_file, query_file, endpoint, timeout_s=180, construction="flat"):
+    """Run CircuitRun to materialise the shared circuit N-Triples (urn:circuit: format).
+
+    construction='flat' = one CONSTRUCT per derivation (NPCS-comparable, read-only). 'factored' =
+    variable-elimination shared circuit (compact; needed to BUILD many-answer templates whose flat
+    construct is too large, so per-answer PQE can then be shown to explode against it)."""
     cmd = ["java", "-cp", JAR, "npcs.circuit.CircuitRun", scheme, data_file, query_file, endpoint,
-           "--construction", "flat"]
+           "--construction", construction]
     env = {**os.environ, "CIRCUIT_SKIP_LOAD": "1"}
     r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout_s)
     if r.returncode:
@@ -83,14 +87,15 @@ def build_circuit(scheme, data_file, query_file, endpoint, timeout_s=180):
     return "\n".join(l for l in r.stdout.splitlines() if l.strip().endswith(" ."))
 
 
-def run_all(scale, endpoint, cap_s=120, build_timeout=180):
+def run_all(scale, endpoint, cap_s=120, build_timeout=180, construction="flat", classes=None):
     """Per template (pre-bound in the manifest): build the shared circuit on `endpoint`, then compute
-    shared vs per-answer PQE. Writes reference/paper/pqe_stages_<scale>.csv."""
+    shared vs per-answer PQE. Writes reference/paper/pqe_stages_<construction>_<scale>.csv."""
     import circuit_io as _cio  # noqa
     man = [r for r in csv.DictReader(open(os.path.join(HERE, "paper", "workload_manifest.csv")))
-           if r["scale"] == scale]
+           if r["scale"] == scale and (classes is None or r["class"] in classes)]
     stub = os.path.join(HERE, "data", "drug.reified.ttl")
-    out = os.path.join(HERE, "paper", f"pqe_stages_{scale.lower()}.csv")
+    tag = "flat" if construction == "flat" else construction
+    out = os.path.join(HERE, "paper", f"pqe_stages_{tag}_{scale.lower()}.csv")
     cols = ["class", "template", "scale", "answers", "shared_pqe_ms", "shared_size",
             "perans_pqe_ms", "perans_status", "status"]
     fh = open(out, "w", newline=""); w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval="")
@@ -99,7 +104,7 @@ def run_all(scale, endpoint, cap_s=120, build_timeout=180):
         qf = os.path.join(HERE, r["query_file"])
         rec = {"class": r["class"], "template": r["template"], "scale": scale}
         try:
-            nt = build_circuit("Standard", stub, qf, endpoint, timeout_s=build_timeout)
+            nt = build_circuit("Standard", stub, qf, endpoint, timeout_s=build_timeout, construction=construction)
             rec.update(pqe_stages(nt, cap_s=cap_s))
         except subprocess.TimeoutExpired:
             rec["status"] = "construct-too-large"
@@ -146,10 +151,13 @@ if __name__ == "__main__":
     ap.add_argument("--scale", default=None)
     ap.add_argument("--endpoint", default="http://localhost:7200/repositories/watdiv")
     ap.add_argument("--cap", type=float, default=120.0)
+    ap.add_argument("--construction", default="flat")
+    ap.add_argument("--classes", default=None, help="comma list e.g. C,S,M to restrict")
     args, _ = ap.parse_known_args()
     if args.selftest:
         selftest()
     elif args.scale:
-        run_all(args.scale, args.endpoint, cap_s=args.cap)
+        cls = set(args.classes.split(",")) if args.classes else None
+        run_all(args.scale, args.endpoint, cap_s=args.cap, construction=args.construction, classes=cls)
     else:
-        print("use --selftest or --scale 10M --endpoint <url>")
+        print("use --selftest or --scale 10M --endpoint <url> [--construction factored] [--classes C,S,M]")
