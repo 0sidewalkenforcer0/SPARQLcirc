@@ -1,0 +1,7 @@
+query,operator,repo,status,answers,gates,total_ms,total_min,total_max
+WD-star,BGP-join,wdreal,ok,2061,8244,4700,4557,6493
+WD-union,UNION,wdreal,ok,108072,325552,12768,12759,16799
+WD-opt,OPTIONAL,wdreal,too-large,,,,,
+WD-minus,MINUS,wdreal,ok,49187,2322637,62253,61664,62259
+WD-path,PATH-P279+,wdpaths,ok,16,537,2365,2318,2409
+WD-path2,PATH-P131+,wdpaths,ok,2,15,836,828,840

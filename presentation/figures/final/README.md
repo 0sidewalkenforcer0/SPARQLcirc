@@ -51,6 +51,7 @@ pages too (below); MillenniumDB shows `DATA PENDING`.
 | `result_r9_5_pqe_headtohead` | pqe | E11 amortization + WatDiv per-template ratio + non-monotone ✗ | **real** (E11 8.2×@1000; WatDiv ≈1.3× median; 5 OPTIONAL ✗) |
 | `result_r9_2b_multisource` | multisource | cross-source dedup: overlap sweep + K-source sweep | **real** (2× at full overlap; 1.71× @6 sources; 2.9× PQE) |
 | `result_r9_5_e2e_{graphdb,qlever,oxigraph,millenniumdb}` | e2e | per-engine end-to-end PQE (construct + compile+WMC), 2 scales | **real** (construct dominates; NPCS lower on selective; OPTIONAL ✗) |
+| `result_r9_8_wikidata_breadth` | wikidata | full fragment (BGP/UNION/OPT/MINUS + P279+/P131+) on real Wikidata | **real** (5/6 exact incl non-monotone MINUS 49k ans + paths; OPT flat too-large) |
 | `paper_fig1..4`, `paper_table1` | composite | compact 2×2 / 1×3 / table | real |
 
 ## Three real engines; the rest pending
