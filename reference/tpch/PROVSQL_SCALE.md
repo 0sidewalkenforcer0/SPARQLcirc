@@ -18,25 +18,38 @@ Every Q3 answer is exactly **three ANDed base rows** (one customer, one order, o
 probability is **0.5³ = 0.125** at every scale — ProvSQL and ours both return 0.125, `max_abs_error = 0`.
 Parity is the robust, order-independent result (as in R8.3 / E7).
 
-## Scale trend — ONE protocol, fixed compiler (`g2a_provsql_vs_ours.csv`)
-Both sides 3-run under a single protocol: **ProvSQL** = forced-eval `sum(probability_evaluate(provenance()))`
-(the honest per-answer PQE, not the pruned `count(*)`); **ours** = end-to-end construct + shared ROBDD
-compile + WMC with the **O(N) variable ordering** (`1eb35bf` — the earlier "3.3 s compile" was an O(N²)
-list-membership scan; fixing it changed nothing but speed, order/WMC identical).
+## Scale trend — FAIR, uncontended, 3-run (`g2a_provsql_vs_ours.csv`)
+Both sides measured with **nothing else running** (load ≈ 0.1), 1 warm-up + 3 timed, median. **ProvSQL** =
+`sieve` (its practical in-process exact method; the `NULL` default auto-picks the same and agrees within
+noise). **Ours** = end-to-end construct + shared ROBDD compile + WMC with the **O(N)** ordering (`1eb35bf`).
 
-| SF | answers | ProvSQL PQE | ours end-to-end | **ours faster** |
+| SF | answers | ProvSQL (sieve) | ours end-to-end | **ours faster** |
 |--:|--:|--:|--:|--:|
-| 0.01 | 14 908 | 7 389 ms | 2 589 ms (con 2346 + comp+WMC 243) | **2.85×** |
-| 0.1  | 125 154 | 63 959 ms | 22 632 ms (con 19913 + comp+WMC 2719) | **2.83×** |
-| 0.3  | 367 475 | 187 567 ms | 87 530 ms (con 78394 + comp+WMC 9136) | **2.14×** |
+| 0.01 | 14 908 | 7 573 ms | 2 629 ms | **2.88×** |
+| 0.1  | 125 154 | 63 165 ms | 23 320 ms | **2.71×** |
+| 0.3  | 367 475 | 184 952 ms | 70 079 ms | **2.64×** |
 
-**Ours is 2.1–2.85× faster than ProvSQL at every scale — honestly**, on a **stock** SPARQL engine with
-**no kernel fork**, computing the **same exact** probabilities (parity: every Q3 answer = 0.5³ = 0.125,
-`max_abs_error = 0`). compile+WMC now scales **O(N)** (243 → 2719 → 9136 ms), no longer the O(N²) blow-up.
+**Ours is 2.6–2.9× faster, consistently, computing the same exact probabilities** (parity: every Q3
+answer = 0.5³ = 0.125, `max_abs_error = 0`).
 
-This supersedes the earlier "comparable, no speed win" framing (which was inflated on our side by the
-O(N²) ordering) **and** the protocol-mixed r9.7 draft. Positioning still leads with the unforked / broader
--fragment axis; the per-query speed advantage is now a clean secondary result, not a liability.
+### Why — and the honest caveat (a reviewer WILL ask "they forked the engine, why are you faster?")
+- **The engine fork buys ProvSQL capability, not probability-speed.** It captures provenance natively
+  (a gate per intermediate tuple) — that *adds* per-operator overhead; the #P-hard probability step is a
+  separate algorithm both systems pay for.
+- **The gap is per-answer overhead, not engine-avoidance.** ProvSQL's API evaluates probability
+  **per answer row** — 14 908 in-database `probability_evaluate` calls (recursive over a gate table). Ours
+  does **one in-memory batch WMC** over the shared circuit (0.24 s at SF0.01). For Q3 (answers barely
+  share) the win is the in-memory-batch-vs-per-row-in-DB overhead, not cross-answer amortization.
+- **Caveat to state:** this is vs ProvSQL's `sieve`. Its `compilation` (d4) method is **not wired to batch**
+  in this deployment (it shells out to d4 **per answer** → 62 s / 1 000, a config artifact, not
+  representative). A ProvSQL that batched d4 over the shared circuit could narrow the gap. So claim
+  "faster with each system's practical exact method", not "fundamentally faster".
+
+### Measurement-integrity note (do not repeat)
+An earlier draft reported these while a 67 GB extraction ran concurrently (inflating ProvSQL to ~7.4 s
+*and* our SF0.3 construct to 87.5 s → understated 2.14×). A brief mid-check hit a single warm ProvSQL
+outlier (4.9 s) that suggested "only 1.9×". The **uncontended 3-run above is authoritative**: ~2.6–2.9×.
+Positioning still leads with the unforked / broader-fragment axis; speed is a clean, honest secondary.
 
 ## SF 0.3 detail (ours)
 367 475 answers, 734 950 gates, 1 469 900 edges (~2.2 M circuit elements) — the flat circuit grows

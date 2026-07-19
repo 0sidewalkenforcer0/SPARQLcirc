@@ -194,10 +194,10 @@ def fig_provsql_tpch():
     ax.legend(frameon=False, loc="upper left", fontsize=6.0)
     fs.panel_label(ax, 1, x=-0.18)
 
-    fs.footer(fig, "Q3 SPJ, p=0.5, ONE protocol, 3-run: ProvSQL forced-eval sum(probability_evaluate); ours end-to-end "
-                   "= construct + shared ROBDD compile + WMC with the O(N) ordering (1eb35bf, was an O(N²) scan). "
-                   "Probability parity EXACT (both 0.5³=0.125/answer). Ours is 2.1–2.85× faster across SF 0.01/0.1/0.3 "
-                   "— on a stock engine, no fork.")
+    fs.footer(fig, "Q3 SPJ, p=0.5. FAIR uncontended 3-run: ProvSQL sieve (its practical exact method) vs ours "
+                   "end-to-end (construct + shared ROBDD compile + WMC, O(N) ordering). Parity EXACT (both 0.5³=0.125). "
+                   "Ours 2.6–2.9× faster across SF 0.01/0.1/0.3 — stock engine, no fork. The gap is in-memory batch WMC "
+                   "vs ProvSQL's per-answer in-database evaluation; method-sensitive (its d4 isn't batched here).")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.21, top=0.86, wspace=0.29)
     fs.save(fig, "result_r9_7_provsql_tpch", OUT, creator=CREATOR)
 

@@ -39,7 +39,7 @@ superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two 
 
 | query | scale | answers | ProvSQL PQE (median [min–max]) | ours (above) | ours speed-up |
 |---|---|--:|--:|--:|--:|
-| tpch-Q3 | SF 0.01 | 14 908 | **7.74 s [7.32–7.86]** | **2.63 s** | **2.9×** |
+| tpch-Q3 | SF 0.01 | 14 908 | **7.57 s** (fair, uncontended 3-run) | **2.63 s** | **2.9×** |
 
 **Ours ~3× faster — honestly, after the O(N²) ordering fix.** Both numbers are 5-run under one protocol
 (ProvSQL forced-eval `sum(probability_evaluate(provenance()))`, consumed-probability checksum `sum=0.125·n`
