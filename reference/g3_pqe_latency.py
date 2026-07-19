@@ -27,8 +27,11 @@ PLEAF = 0.5                                                # per-token probabili
 def plan(scheme, qtext):
     """Emit the CONSTRUCT plan (in-memory on empty data) for a scheme (Standard / naryrel)."""
     qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(qtext); qf.close()
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", scheme, EMPTY.name, qf.name],
-                       capture_output=True, text=True)
+    # --construction=flat: read-only, NPCS-comparable CONSTRUCT plan. Without it CircuitRun defaults to
+    # factored (needs a writable endpoint + feedback INSERT), which yields 0 gates when the plan is POSTed
+    # read-only -> "0 answer gates". Flat is the right construction for these PQE-latency measurements.
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat", scheme,
+                        EMPTY.name, qf.name], capture_output=True, text=True)
     if r.returncode != 0:                                  # FAIL-FAST: a failed rewrite must stop, not
         raise RuntimeError(f"CircuitRun rewrite failed (rc={r.returncode}, scheme={scheme}): {r.stderr[-500:]}")
     out = []

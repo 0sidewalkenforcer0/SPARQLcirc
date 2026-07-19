@@ -1,5 +1,7 @@
 # R8.3 — ProvSQL vs ours on a RECONVERGENT query + SF 0.1 end-to-end
 
+> ⚠️ **Timings SUPERSEDED — cite [`CANONICAL_TIMINGS.md`](CANONICAL_TIMINGS.md).** After the O(N) ordering fix (`1eb35bf`) ours is faster at BOTH scales (SF0.01 316ms, SF0.1 2.97s vs ProvSQL 795ms/6.79s); the earlier "ProvSQL faster at SF0.1" was the O(N²) list-scan. Parity (max_abs_error=0.0) unchanged.
+
 The review noted G2a/E7's Q3 has a single 3-token product per answer → probability is trivially
 `0.5³ = 0.125`; it validates *execution compatibility* but not *shared-circuit WMC*. R8.3 adds a query
 with **multiple derivations per answer that share a base token** (reconvergent lineage) and completes the

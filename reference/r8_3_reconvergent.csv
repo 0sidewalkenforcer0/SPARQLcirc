@@ -1,3 +1,3 @@
 sf,runs,ours_answers,provsql_answers,ours_total_median_ms,ours_total_min_ms,ours_total_max_ms,ours_total_sd_ms,provsql_total_median_ms,provsql_total_min_ms,provsql_total_max_ms,provsql_total_sd_ms,construct_median_ms,compile_median_ms,wmc_median_ms,ours_valid,keys_match,k_keys_match,only_ours,only_provsql,missing_k,extra_k,max_abs_error,cf_maxerr,agree
-0.01,5,247,247,442.94,435.057,457.31,8.199,732.624,730.328,771.553,17.436,259.153,182.392,1.98,True,True,True,0,0,0,0,0.0,0.0,True
-0.1,5,2086,2086,12948.379,12819.103,13152.826,119.715,6744.482,6463.471,6771.661,128.556,2326.569,10599.544,22.102,True,True,True,0,0,0,0,0.0,0.0,True
+0.01,5,247,247,316.449,311.301,322.878,4.339,795.023,747.469,816.677,30.205,237.385,76.007,2.904,True,True,True,0,0,0,0,0.0,0.0,True
+0.1,5,2086,2086,2969.901,2915.847,3167.055,98.002,6787.698,6583.091,6875.863,113.596,2155.068,784.398,29.439,True,True,True,0,0,0,0,0.0,0.0,True

@@ -66,27 +66,27 @@ per-query at this scale — but the contribution is the unforked/broader-fragmen
 
 | query | scale | answers | ours total (median [min–max]) | ProvSQL total | faster |
 |---|---|--:|--:|--:|:--:|
-| Qrecon (reconvergent) | SF 0.01 |  247 | **443 ms** [435–457] | 733 ms [730–772] | **ours** |
-| Qrecon (reconvergent) | SF 0.1  | 2086 | 12.9 s [12.8–13.2] | **6.7 s** [6.5–6.8] | ProvSQL |
+| Qrecon (reconvergent) | SF 0.01 |  247 | **316 ms** [311–323] | 795 ms [747–817] | **ours 2.5×** |
+| Qrecon (reconvergent) | SF 0.1  | 2086 | **2.97 s** [2.92–3.17] | 6.79 s [6.58–6.88] | **ours 2.3×** |
 
-5-run (1 warm-up + 5), current HEAD. A naive per-answer product-sum would exceed 1 for 243/247 (SF 0.01)
-and 2058/2086 (SF 0.1); the shared circuit (and ProvSQL) get it right.
-**Probability parity — definitively established this run** (`r8_3_reconvergent.py`, keyed by `c_custkey`):
-ours **== the closed form** `0.5·(1−0.5^K)` per answer (independent K, `cf_maxerr = 0.0`) **and** ours
-**== ProvSQL** `probability_evaluate(provenance())` per customer (`max_abs_error = 0.0`, keys_match).
-**Timing is scale-dependent:** ours is faster at SF 0.01 but **ProvSQL is faster at SF 0.1** — under the
-`90c3c3c` boundaries our total now includes the pure-Python variable ordering, which grows with the
-circuit (SF 0.1: ~12 s of ordering). The robust result is the **exact-probability parity**, not the speed.
+5-run (1 warm-up + 5), O(N)-ordering compiler (`1eb35bf`). A naive per-answer product-sum would exceed 1
+for 243/247 (SF 0.01) and 2058/2086 (SF 0.1); the shared circuit (and ProvSQL) get it right.
+**Probability parity — definitively established** (`r8_3_reconvergent.py`, keyed by `c_custkey`): ours
+**== the closed form** `0.5·(1−0.5^K)` per answer (`cf_maxerr = 0.0`) **and** ours **== ProvSQL** per
+customer (`max_abs_error = 0.0`, keys_match). **Ours is now faster at BOTH scales** — the O(N) ordering fix
+dropped SF 0.1 compile from **10.6 s → 0.78 s**, flipping the earlier "ProvSQL faster at SF 0.1" (that was
+the O(N²) list-scan, not a real cost). This reconvergent query — where the `cust` token IS shared across
+K products — is the case the shared circuit is built for, and it wins end-to-end (2.3–2.5×) with exact parity.
 
 ## Still open
 
-- TPC-H Q3 **SF 0.1 / SF 1** full-pipeline ours: Q3 SF 0.1 stays **construction-only** (125 154-answer
-  circuit = pure-Python compile bottleneck; native/d4 compile is the follow-up). SF 1 not loaded.
-  (R8.3's SF 0.1 end-to-end is delivered via Qrecon above, whose smaller circuit compiles.)
-- **✓ `wikidata-WDpath` re-measured on the `PathIsoSeq` jar** (done): total dropped **8.04 s → 2.14 s**
-  (compile 5.75 s → 1 ms) — the isolation fix shrinks the reconvergent cones (19–233 → 1–20 tokens), so the
-  total did *not* hold; the main table above is the current-HEAD value. 16 answers, OBDD==PWE 15/15.
-- **Instance breadth (`g4_instances.py`) and Qrecon (R8.3) rows still show pre-`90c3c3c`-boundary numbers**
-  — a light re-run under the new boundaries is the remaining refresh (the main 3-row table + ProvSQL are
-  current-HEAD).
-- **WatDiv 200 M: dropped** — the 2014 generator segfaults on the modern toolchain; 10 M / 100 M stand.
+- **✓ TPC-H Q3 SF 0.1 / SF 0.3 full-pipeline ours — RESOLVED by the O(N) ordering fix** (`1eb35bf`). The
+  "pure-Python compile bottleneck" was the O(N²) list-scan; with it gone, full end-to-end is
+  **SF 0.1 = 23.3 s, SF 0.3 = 70.1 s** (fair uncontended 3-run, `g2a_provsql_vs_ours.csv`), compile+WMC now
+  O(N). SF 1 still not loaded (disk).
+- **✓ `wikidata-WDpath` re-measured on the `PathIsoSeq` jar** (done): total **8.04 s → 2.14 s**
+  (compile 5.75 s → 1 ms); 16 answers, OBDD==PWE 15/15.
+- **✓ Instance breadth (`g4_instances.py`) and Qrecon (R8.3) refreshed** under the O(N) compiler: 5
+  mktsegments ours ~1.7–2.6 s vs ProvSQL ~5–7.5 s (all ~2.9×); Qrecon ours faster at BOTH scales (above).
+- **WatDiv 200 M / 1 B: dropped** — the 2014 generator segfaults on the modern toolchain; 10 M / 100 M
+  (+ Wikidata subsets) stand. Reified 1 B is disk-infeasible here.
