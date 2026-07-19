@@ -63,6 +63,7 @@ def _worker(ttl, q, meta, qout):
         if not table:
             qout.put({"status": "no-answers"}); return
         root = next(iter(table.values()))
+        random.seed(meta["name"])                     # per-instance deterministic weights (from fix/eval-script-robustness)
         P = {c.gates[g][1]: round(random.uniform(0.3, 0.9), 3) for g in c.gates if c.gates[g][0] == "leaf"}
         e = export_cnf.export(c.gates, root, P)
         cnf = os.path.join(CNFDIR, meta["name"] + ".cnf"); open(cnf, "w").write(e["dimacs"])
