@@ -12,11 +12,11 @@ Def-"Gate congruence" simplifications) therefore get the SAME id and are stored
 once -> the circuit is a maximally shared DAG.
 
 Collision resistance (the issue.txt concern): child order is canonicalized by
-*sorting the child ids* (fixed-width sha1 hex strings), NOT by an order-invariant
+*sorting the child ids* (fixed-width sha256 hex strings), NOT by an order-invariant
 SUM/COUNT aggregate.  A commutative gate's key is  op | sorted(child_ids)  with a
-delimiter that cannot occur inside a sha1 hex id, so the serialization is
+delimiter that cannot occur inside a sha256 hex id, so the serialization is
 injective on the child multiset (duplicates are kept -> no false idempotence);
-distinct gates collide only under a sha1 collision.
+distinct gates collide only under a sha256 collision.
 
 This Python algebraic reference preserves those duplicate children. The Java engine's
 RDF interchange uses unindexed edges and is intentionally consumed as the Boolean/PQE
@@ -26,7 +26,7 @@ import hashlib
 
 
 def _sha(s: str) -> str:
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 class Circuit:
