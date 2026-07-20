@@ -143,6 +143,16 @@ public class CircuitRewriter {
         }
         if (node instanceof LeftJoin) {
             LeftJoin lj = (LeftJoin) node;
+            // Fail fast on the W3C filtered left join (OPTIONAL whose inner FILTER references both
+            // operands): RDF4J attaches that FILTER as the LeftJoin condition, which our rewriting
+            // does not model. Dropping it would silently emit a circuit for the *unfiltered* query
+            // (wrong answers, no error) — exactly what assertPureBgp refuses for FILTER-in-BGP.
+            if (lj.getCondition() != null) {
+                throw new UnsupportedOperationException(
+                        "Unsupported operator: filtered left join (OPTIONAL with a FILTER condition "
+                      + "over both operands) is outside the supported fragment. Refusing to emit a "
+                      + "circuit for the unfiltered query; rewrite without the inner FILTER.");
+            }
             return new LeftJoin(normalize(lj.getLeftArg().clone()), normalize(lj.getRightArg().clone()));
         }
         if (node instanceof Difference) {

@@ -327,6 +327,19 @@ public class CircuitRewriterTest {
                 "SELECT ?o WHERE { { SELECT ?o WHERE { <urn:s> <urn:p> ?o } } }"), "Unsupported pattern"); // subquery
     }
 
+    @Test
+    public void circuitRewriterRejectsFilteredLeftJoin() {
+        // W3C filtered left join: RDF4J attaches the FILTER as the LeftJoin condition. The rewriting
+        // does not model it; dropping it would silently emit a circuit for the *unfiltered* OPTIONAL
+        // (wrong answers, no error). It must be rejected loudly, like FILTER-in-BGP (assertPureBgp).
+        assertRejected(() -> new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-flj")
+                .constructionPlan("SELECT ?x ?y WHERE { ?x <urn:a> ?age OPTIONAL { ?x <urn:b> ?y . FILTER(?y > ?age) } }"),
+                "filtered left join");
+        // The plain (condition-free) OPTIONAL must still compile.
+        new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-flj-ok")
+                .constructionPlan("SELECT ?x ?y WHERE { ?x <urn:a> ?age OPTIONAL { ?x <urn:b> ?y } }");
+    }
+
     private static Model executePlan(RepositoryConnection con, String query) {
         return executePlan(con, query, ConstructionMode.FACTORED);
     }

@@ -1,0 +1,60 @@
+case,answer,players,shapley_circuit_eq_bruteforce,max_abs_diff,efficiency_ok,shapley,why_not_subtrahend
+drug-minus,?x=Warfarin,2,yes,0,yes,p1=1/2 p2=-1/2,p2
+drug-minus,?x=Ibuprofen,2,yes,0,yes,p4=1/2 p5=-1/2,p5
+and,"frozenset({('?x', 'Alice')})",3,yes,0,yes,u1=1/6 u2=1/6 u3=2/3,
+union,"frozenset({('?x', 'Alice')})",3,yes,0,yes,u1=1/3 u2=1/3 u3=1/3,
+union,"frozenset({('?x', 'Bob')})",1,yes,0,yes,u4=1,
+union,"frozenset({('?x', 'Carol')})",1,yes,0,yes,u5=1,
+minus,"frozenset({('?x', 'Alice')})",3,yes,0,yes,u1=1/3 u2=1/3 u3=-2/3,u3
+minus,"frozenset({('?x', 'Bob')})",1,yes,0,yes,u4=1,
+optional,"frozenset({('?x', 'Alice'), ('?c', 'Italy')})",3,yes,0,yes,u1=1/6 u2=1/6 u3=2/3,
+optional,"frozenset({('?x', 'Alice')})",3,yes,0,yes,u1=1/3 u2=1/3 u3=-2/3,u3
+optional,"frozenset({('?x', 'Bob')})",1,yes,0,yes,u4=1,
+chain,"frozenset({('?z', 'C'), ('?x', 'A')})",5,yes,0,yes,t1=7/60 t2=7/60 t3=11/30 t4=1/5 t5=1/5,
+union2,"frozenset({('?x', 'A')})",6,yes,0,yes,t1=1/15 t2=1/15 t3=11/60 t4=1/10 t5=1/10 t6=29/60,
+minus2,"frozenset({('?x', 'A'), ('?y', 'B')})",3,yes,0,yes,t1=1/3 t2=1/3 t3=-2/3,t3
+minus2,"frozenset({('?x', 'A'), ('?y', 'D')})",2,yes,0,yes,t4=1/2 t5=-1/2,t5
+minus2,"frozenset({('?x', 'A'), ('?y', 'F')})",1,yes,0,yes,t7=1,
+optional2,"frozenset({('?z', 'C'), ('?x', 'A'), ('?y', 'B')})",3,yes,0,yes,t1=1/6 t2=1/6 t3=2/3,
+optional2,"frozenset({('?z', 'C'), ('?x', 'A'), ('?y', 'D')})",2,yes,0,yes,t4=1/2 t5=1/2,
+optional2,"frozenset({('?x', 'A'), ('?y', 'B')})",3,yes,0,yes,t1=1/3 t2=1/3 t3=-2/3,t3
+optional2,"frozenset({('?x', 'A'), ('?y', 'D')})",2,yes,0,yes,t4=1/2 t5=-1/2,t5
+optional2,"frozenset({('?x', 'A'), ('?y', 'F')})",1,yes,0,yes,t7=1,
+opt_disjoint,"frozenset({('?e', 'E'), ('?x', 'A'), ('?y', 'B'), ('?a', 'A')})",3,yes,0,yes,t1=1/6 t2=1/6 t6=2/3,
+opt_disjoint,"frozenset({('?e', 'E'), ('?x', 'A'), ('?y', 'D'), ('?a', 'A')})",2,yes,0,yes,t4=1/2 t6=1/2,
+opt_disjoint,"frozenset({('?e', 'E'), ('?x', 'A'), ('?a', 'A'), ('?y', 'F')})",2,yes,0,yes,t6=1/2 t7=1/2,
+opt_disjoint,"frozenset({('?x', 'A'), ('?y', 'B')})",3,yes,0,yes,t1=1/3 t2=1/3 t6=-2/3,t6
+opt_disjoint,"frozenset({('?x', 'A'), ('?y', 'D')})",2,yes,0,yes,t4=1/2 t6=-1/2,t6
+opt_disjoint,"frozenset({('?x', 'A'), ('?y', 'F')})",2,yes,0,yes,t6=-1/2 t7=1/2,t6
+minus_union,"frozenset({('?x', 'A')})",6,yes,0,yes,t1=13/60 t2=13/60 t3=-1/5 t4=1/4 t5=-7/60 t7=19/30,t3 t5
+share_union,"frozenset({('?d', 'D'), ('?a', 'A')})",3,yes,0,yes,t1=2/3 t2=1/6 t3=1/6,
+selfjoin,"frozenset({('?d', 'B')})",2,yes,0,yes,s1=1/2 s2=1/2,
+path_plus_cyc,"frozenset({('?x', 'A'), ('?y', 'B')})",1,yes,0,yes,e1=1,
+path_plus_cyc,"frozenset({('?x', 'B'), ('?y', 'C')})",4,yes,0,yes,e1=0 e2=1 e3=0 e4=0,
+path_plus_cyc,"frozenset({('?x', 'A'), ('?y', 'C')})",4,yes,0,yes,e1=1/6 e2=1/6 e3=2/3 e4=0,
+path_plus_cyc,"frozenset({('?x', 'C'), ('?y', 'A')})",1,yes,0,yes,e4=1,
+path_plus_cyc,"frozenset({('?x', 'B'), ('?y', 'A')})",3,yes,0,yes,e2=1/2 e3=0 e4=1/2,
+path_plus_cyc,"frozenset({('?x', 'A'), ('?y', 'A')})",4,yes,0,yes,e1=1/12 e2=1/12 e3=1/4 e4=7/12,
+path_plus_cyc,"frozenset({('?y', 'B'), ('?x', 'C')})",2,yes,0,yes,e1=1/2 e4=1/2,
+path_plus_cyc,"frozenset({('?x', 'C'), ('?y', 'C')})",4,yes,0,yes,e1=1/12 e2=1/12 e3=1/4 e4=7/12,
+path_plus_cyc,"frozenset({('?x', 'B'), ('?y', 'B')})",3,yes,0,yes,e1=1/3 e2=1/3 e4=1/3,
+path_star_cyc,"frozenset({('?x', 'A'), ('?y', 'B')})",1,yes,0,yes,e1=1,
+path_star_cyc,"frozenset({('?x', 'B'), ('?y', 'C')})",4,yes,0,yes,e1=0 e2=1 e3=0 e4=0,
+path_star_cyc,"frozenset({('?x', 'A'), ('?y', 'C')})",4,yes,0,yes,e1=1/6 e2=1/6 e3=2/3 e4=0,
+path_star_cyc,"frozenset({('?x', 'C'), ('?y', 'A')})",1,yes,0,yes,e4=1,
+path_star_cyc,"frozenset({('?x', 'B'), ('?y', 'A')})",3,yes,0,yes,e2=1/2 e3=0 e4=1/2,
+path_star_cyc,"frozenset({('?x', 'A'), ('?y', 'A')})",4,yes,0,yes,e1=1/3 e2=0 e3=1/3 e4=1/3,
+path_star_cyc,"frozenset({('?y', 'B'), ('?x', 'C')})",2,yes,0,yes,e1=1/2 e4=1/2,
+path_star_cyc,"frozenset({('?x', 'C'), ('?y', 'C')})",4,yes,0,yes,e1=0 e2=1/3 e3=1/3 e4=1/3,
+path_star_cyc,"frozenset({('?x', 'B'), ('?y', 'B')})",3,yes,0,yes,e1=1/2 e2=1/2 e4=0,
+path_bound_src,"frozenset({('?y', 'B')})",1,yes,0,yes,e1=1,
+path_bound_src,"frozenset({('?y', 'C')})",4,yes,0,yes,e1=1/6 e2=1/6 e3=2/3 e4=0,
+path_bound_src,"frozenset({('?y', 'A')})",4,yes,0,yes,e1=1/12 e2=1/12 e3=1/4 e4=7/12,
+path_seq,"frozenset({('?z', 'Z'), ('?x', 'X')})",2,yes,0,yes,a=1/2 b=1/2,
+path_alt,"frozenset({('?z', 'Z'), ('?x', 'X')})",3,yes,0,yes,a=1/6 b=1/6 c=2/3,
+path_inv,"frozenset({('?y', 'Y'), ('?x', 'X')})",1,yes,0,yes,a=1,
+path_opt,"frozenset({('?z', 'Z'), ('?x', 'X')})",1,yes,0,yes,c=1,
+path_opt,"frozenset({('?x', 'Y'), ('?z', 'Y')})",3,yes,0,yes,a=1/3 b=1/3 d=1/3,
+path_opt,"frozenset({('?z', 'X'), ('?x', 'X')})",2,yes,0,yes,a=1/2 c=1/2,
+path_opt,"frozenset({('?z', 'Z'), ('?x', 'Z')})",3,yes,0,yes,b=1/3 c=1/3 d=1/3,
+path_plus_join,"frozenset({('?y', 'C')})",4,yes,0,yes,e1=1/12 e2=1/12 e3=1/4 e4=7/12,

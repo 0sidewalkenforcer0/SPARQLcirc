@@ -153,29 +153,33 @@ def fig_sharing_crossover():
 
 # ------------------------------------------------------- R9.7 ProvSQL / TPC-H
 def fig_provsql_tpch():
-    """Drafts r9_7 structure (1x2: matched cells + scale trend), real G4.
+    """r9_7 (1x2): both panels FAIR and uncontended.
 
-    The five TPC-H Q3 segments (ours vs ProvSQL, 5-run median +/- sd) are real; a clean
-    full-PQE scale-factor sweep is not committed (g2a mixes full-PQE and construct-only
-    points), so the trend panel stays PENDING.
+    (a) the reconvergent query at SF 0.01/0.1 (r8_3_reconvergent.csv) -- ours faster at
+        BOTH scales after the O(N) ordering fix; (b) the TPC-H Q3 full-PQE scale trend at
+        SF 0.01/0.1/0.3 (g2a_provsql_vs_ours.csv). Neither uses the older contended
+        5-segment g4_instances numbers.
     """
-    g4 = [r for r in rd("g4_instances.csv") if r["shape"] == "tpch-Q3-SPJ"]
+    r8 = sorted(rd("r8_3_reconvergent.csv"), key=lambda r: float(r["sf"]))
     fig, axes = plt.subplots(1, 2, figsize=(fs.FIG_WIDTH, 2.55))
 
     ax = axes[0]
-    x = np.arange(len(g4))
-    ours = np.array([float(r["ours_median_ms"]) / 1000 for r in g4])
-    prov = np.array([float(r["provsql_median_ms"]) / 1000 for r in g4])
-    ours_sd = np.array([float(r["ours_sd_ms"]) / 1000 for r in g4])
-    prov_sd = np.array([float(r["provsql_sd_ms"]) / 1000 for r in g4])
+    x = np.arange(len(r8))
+    ours = np.array([float(r["ours_total_median_ms"]) / 1000 for r in r8])
+    prov = np.array([float(r["provsql_total_median_ms"]) / 1000 for r in r8])
+    ours_sd = np.array([float(r["ours_total_sd_ms"]) / 1000 for r in r8])
+    prov_sd = np.array([float(r["provsql_total_sd_ms"]) / 1000 for r in r8])
     fs.grouped_bars(ax, x, [ours, prov], [SP_CIRCUIT, SP_NPCS], ["SPARQLcirc", "ProvSQL"],
                     log=False, yerr=[ours_sd, prov_sd])
-    ax.set_xticks(x, ["Auto.", "Build.", "Furn.", "House.", "Mach."])
+    ax.set_xticks(x, ["SF 0.01", "SF 0.1"])
     ax.set_ylim(0, float(max(prov + prov_sd)) * 1.15)
-    ax.set_xlabel("TPC-H Q3 market segment")
+    ax.set_xlabel("reconvergent query")
     ax.set_ylabel("End-to-end PQE (s)")
-    ax.set_title("Matched Q3 segments", pad=4)
+    ax.set_title("Reconvergent (ours faster, both)", pad=4)
     ax.legend(frameon=False, loc="upper left", ncol=1)
+    for xi, o, p in zip(x, ours, prov):
+        ax.annotate(f"{p/o:.1f}×", (xi, o), xytext=(0, 2), textcoords="offset points",
+                    ha="center", fontsize=5.6, color=SP_CIRCUIT)
     fs.panel_label(ax, 0, x=-0.18)
 
     ax = axes[1]
@@ -194,10 +198,11 @@ def fig_provsql_tpch():
     ax.legend(frameon=False, loc="upper left", fontsize=6.0)
     fs.panel_label(ax, 1, x=-0.18)
 
-    fs.footer(fig, "Q3 SPJ, p=0.5. FAIR uncontended 3-run: ProvSQL sieve (its practical exact method) vs ours "
-                   "end-to-end (construct + shared ROBDD compile + WMC, O(N) ordering). Parity EXACT (both 0.5³=0.125). "
-                   "Ours 2.6–2.9× faster across SF 0.01/0.1/0.3 — stock engine, no fork. The gap is in-memory batch WMC "
-                   "vs ProvSQL's per-answer in-database evaluation; method-sensitive (its d4 isn't batched here).")
+    fs.footer(fig, "p=0.5, FAIR uncontended (>=3-run median). ProvSQL sieve (its practical exact method) vs ours "
+                   "end-to-end (construct + shared ROBDD compile + WMC, O(N) ordering). Parity EXACT. Ours faster at "
+                   "every scale: reconvergent 2.3–2.5× (a), Q3 SPJ 2.6–2.9× across SF 0.01/0.1/0.3 (b) — stock engine, "
+                   "no fork. The gap is in-memory batch WMC vs ProvSQL's per-answer in-database evaluation; "
+                   "method-sensitive (its d4 isn't batched here).")
     fig.subplots_adjust(left=0.085, right=0.995, bottom=0.21, top=0.86, wspace=0.29)
     fs.save(fig, "result_r9_7_provsql_tpch", OUT, creator=CREATOR)
 
