@@ -73,7 +73,7 @@ JAVA = os.environ.get("PCM_JAVA_BIN") or shutil.which("java") or "java"
 # overrides below.
 FORMAL_WARMUPS = 1
 FORMAL_RUNS = 5
-FORMAL_TIMEOUT = 300.0
+FORMAL_TIMEOUT = 500.0
 FORMAL_UPDATE_CHUNK_TRIPLES = 1000
 FORMAL_ORPHAN_CLEANUP_TIMEOUT = 15.0
 FORMAL_CLASSES = ("L", "S", "F", "C", "O", "M")
@@ -88,7 +88,7 @@ COMMIT = subprocess.run(
     text=True,
 ).stdout.strip() or "?"
 
-PROTOCOL = "r9.2-frozen-identity-v7"
+PROTOCOL = "r9.2-frozen-identity-v8"
 NOTE_PREFIX = "pcm-meta-v2:"
 PROVENANCE_VAR = "finalprovennacevariable"  # legacy name; capture-safe builds may rename it
 GENERATED_PROVENANCE_RE = re.compile(
