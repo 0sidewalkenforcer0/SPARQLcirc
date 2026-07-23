@@ -1,0 +1,110 @@
+  [graphdb 10M F/F1 B] ok             ans=2 276863ms
+  [graphdb 10M F/F1 R] ok             ans=2 28ms
+  [graphdb 10M F/F1 N] ok             ans=2 18ms
+  [graphdb 10M F/F1 C] ok             ans=2 103ms gates=4
+  [graphdb 10M F/F2 B] ok             ans=1 4ms
+  [graphdb 10M F/F2 R] ok             ans=1 7ms
+  [graphdb 10M F/F2 N] ok             ans=1 8ms
+  [graphdb 10M F/F2 C] ok             ans=1 48ms gates=2
+  [graphdb 10M F/F3 B] ok             ans=3 4ms
+  [graphdb 10M F/F3 R] ok             ans=3 20ms
+  [graphdb 10M F/F3 N] ok             ans=3 24ms
+  [graphdb 10M F/F3 C] ok             ans=3 139ms gates=6
+  [graphdb 10M F/F4 B] ok             ans=68 5ms
+  [graphdb 10M F/F4 R] ok             ans=68 155ms
+  [graphdb 10M F/F4 N] ok             ans=68 199ms
+  [graphdb 10M F/F4 C] ok             ans=68 2631ms gates=136
+  [graphdb 10M F/F5 B] ok             ans=29 5ms
+  [graphdb 10M F/F5 R] ok             ans=29 9ms
+  [graphdb 10M F/F5 N] ok             ans=29 14ms
+  [graphdb 10M F/F5 C] ok             ans=29 82ms gates=58
+  [graphdb 10M L/L1 B] ok             ans=2 4ms
+  [graphdb 10M L/L1 R] ok             ans=2 6ms
+  [graphdb 10M L/L1 N] ok             ans=2 12ms
+  [graphdb 10M L/L1 C] ok             ans=2 41ms gates=4
+  [graphdb 10M L/L2 B] ok             ans=36 5ms
+  [graphdb 10M L/L2 R] ok             ans=36 85ms
+  [graphdb 10M L/L2 N] ok             ans=36 435ms
+  [graphdb 10M L/L2 C] ok             ans=36 2124ms gates=72
+  [graphdb 10M L/L3 B] ok             ans=49 4ms
+  [graphdb 10M L/L3 R] ok             ans=49 6ms
+  [graphdb 10M L/L3 N] ok             ans=5 11ms
+  [graphdb 10M L/L3 C] ok             ans=5 27ms gates=54
+  [graphdb 10M L/L4 B] ok             ans=29 5ms
+  [graphdb 10M L/L4 R] ok             ans=29 11ms
+  [graphdb 10M L/L4 N] ok             ans=29 47ms
+  [graphdb 10M L/L4 C] ok             ans=29 150ms gates=58
+  [graphdb 10M L/L5 B] ok             ans=38 5ms
+  [graphdb 10M L/L5 R] ok             ans=38 84ms
+  [graphdb 10M L/L5 N] ok             ans=38 438ms
+  [graphdb 10M L/L5 C] ok             ans=38 1805ms gates=76
+  [graphdb 10M M/M1 B] ok             ans=111614 504ms
+  [graphdb 10M M/M1 R] ok             ans=111614 1546ms
+  [graphdb 10M M/M1 N] ok             ans=112401 5604ms
+  [graphdb 10M M/M1 C] timeout        ans=None timeout
+  [graphdb 10M M/M2 B] ok             ans=115865 268164ms
+  [graphdb 10M M/M2 R] ok             ans=115865 1152ms
+  [graphdb 10M M/M2 N] ok             ans=152275 4622ms
+  [graphdb 10M M/M2 C] ok             ans=152275 72502ms gates=986177
+  [graphdb 10M M/M3 B] ok             ans=42628 189ms
+  [graphdb 10M M/M3 R] ok             ans=42628 770ms
+  [graphdb 10M M/M3 N] ok             ans=149634 4069ms
+  [graphdb 10M M/M3 C] ok             ans=149634 121542ms gates=1048170
+  [graphdb 10M M/M4 B] ok             ans=89467 1314ms
+  [graphdb 10M M/M4 R] ok             ans=89467 8755ms
+  [graphdb 10M M/M4 N] ok             ans=149998 37643ms
+  [graphdb 10M M/M4 C] timeout        ans=None timeout
+  [graphdb 10M M/M5 B] ok             ans=89794 568ms
+  [graphdb 10M M/M5 R] ok             ans=89794 847ms
+  [graphdb 10M M/M5 N] ok             ans=112401 3757ms
+  [graphdb 10M M/M5 C] ok             ans=112401 64252ms gates=866555
+  [graphdb 10M O/O1 B] ok             ans=49 6ms
+  [graphdb 10M O/O1 R] ok             ans=49 6ms
+  [graphdb 10M O/O1 N] ok             ans=51 96ms
+  [graphdb 10M O/O1 C] ok             ans=51 10286ms gates=5251
+  [graphdb 10M O/O2 B] ok             ans=58 4ms
+  [graphdb 10M O/O2 R] ok             ans=58 5ms
+  [graphdb 10M O/O2 N] ok             ans=63 941ms
+  [graphdb 10M O/O2 C] ok             ans=63 18582ms gates=224970
+  [graphdb 10M O/O3 B] ok             ans=279 7ms
+  [graphdb 10M O/O3 R] ok             ans=279 12ms
+  [graphdb 10M O/O3 N] ok             ans=308 84ms
+  [graphdb 10M O/O3 C] ok             ans=308 10356ms gates=6455
+  [graphdb 10M O/O4 B] ok             ans=745 14ms
+  [graphdb 10M O/O4 R] ok             ans=745 88ms
+  [graphdb 10M O/O4 N] ok             ans=783 626ms
+  [graphdb 10M O/O4 C] ok             ans=783 12927ms gates=13817
+  [graphdb 10M O/O5 B] ok             ans=58 4ms
+  [graphdb 10M O/O5 R] ok             ans=58 5ms
+  [graphdb 10M O/O5 N] ok             ans=14 934ms
+  [graphdb 10M O/O5 C] ok             ans=14 8852ms gates=224921
+  [graphdb 10M S/S1 B] ok             ans=5 5ms
+  [graphdb 10M S/S1 R] ok             ans=5 9ms
+  [graphdb 10M S/S1 N] ok             ans=5 12ms
+  [graphdb 10M S/S1 C] ok             ans=5 90ms gates=10
+  [graphdb 10M S/S2 B] ok             ans=255 14ms
+  [graphdb 10M S/S2 R] ok             ans=255 643ms
+  [graphdb 10M S/S2 N] ok             ans=255 2770ms
+  [graphdb 10M S/S2 C] ok             ans=255 25771ms gates=510
+  [graphdb 10M S/S3 B] ok             ans=297 7ms
+  [graphdb 10M S/S3 R] ok             ans=297 136ms
+  [graphdb 10M S/S3 N] ok             ans=128 90ms
+  [graphdb 10M S/S3 C] ok             ans=128 730ms gates=425
+  [graphdb 10M S/S4 B] ok             ans=1 5ms
+  [graphdb 10M S/S4 R] ok             ans=1 263ms
+  [graphdb 10M S/S4 N] ok             ans=1 265ms
+  [graphdb 10M S/S4 C] ok             ans=1 1070ms gates=2
+  [graphdb 10M S/S5 B] ok             ans=26 5ms
+  [graphdb 10M S/S5 R] ok             ans=26 29ms
+  [graphdb 10M S/S5 N] ok             ans=26 54ms
+  [graphdb 10M S/S5 C] ok             ans=26 319ms gates=52
+  [graphdb 10M S/S6 B] ok             ans=2 4ms
+  [graphdb 10M S/S6 R] ok             ans=2 5ms
+  [graphdb 10M S/S6 N] ok             ans=2 6ms
+  [graphdb 10M S/S6 C] ok             ans=2 23ms gates=4
+  [graphdb 10M S/S7 B] ok             ans=1 4ms
+  [graphdb 10M S/S7 R] ok             ans=1 4ms
+  [graphdb 10M S/S7 N] ok             ans=1 4ms
+  [graphdb 10M S/S7 C] ok             ans=1 7ms gates=2
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/graphdb_10m_flmos.csv

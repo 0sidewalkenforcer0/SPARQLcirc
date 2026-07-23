@@ -1,0 +1,14 @@
+  [graphdb 10M C/C1 B] ok             ans=16 86ms
+  [graphdb 10M C/C1 R] ok             ans=16 1251ms
+  [graphdb 10M C/C1 N] ok             ans=8 206ms
+  [graphdb 10M C/C1 C] ok             ans=8 4065ms gates=24
+  [graphdb 10M C/C2 B] ok             ans=0 55ms
+  [graphdb 10M C/C2 R] ok             ans=0 426ms
+  [graphdb 10M C/C2 N] ok             ans=0 792ms
+  [graphdb 10M C/C2 C] ok             ans=0 15582ms
+  [graphdb 10M C/C3 B] ok             ans=434169 510ms
+  [graphdb 10M C/C3 R] ok             ans=434169 767912ms
+  [graphdb 10M C/C3 N] timeout        ans=None timeout
+  [graphdb 10M C/C3 C] timeout        ans=None timeout
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/graphdb_10m_c.csv
