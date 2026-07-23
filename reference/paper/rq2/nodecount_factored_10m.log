@@ -1,0 +1,22 @@
+  [graphdb 10M C/C1 C] ok             ans=8 563098ms gates=612977
+  [graphdb 10M C/C2 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M C/C3 C] err:worker-reap ans=None err:worker-reap
+  [graphdb 10M F/F1 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M F/F2 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M F/F3 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M F/F4 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M F/F5 C] ok             ans=29 740ms gates=348
+  [graphdb 10M L/L1 C] ok             ans=2 265ms gates=12
+  [graphdb 10M L/L2 C] ok             ans=36 1295ms gates=181
+  [graphdb 10M L/L3 C] ok             ans=5 236ms gates=69
+  [graphdb 10M L/L4 C] ok             ans=29 227ms gates=116
+  [graphdb 10M L/L5 C] ok             ans=38 961ms gates=191
+  [graphdb 10M S/S1 C] ok             ans=5 875ms gates=58
+  [graphdb 10M S/S2 C] ok             ans=255 11156ms gates=2550
+  [graphdb 10M S/S3 C] ok             ans=128 1653ms gates=1577
+  [graphdb 10M S/S4 C] ok             ans=1 5309ms gates=8
+  [graphdb 10M S/S5 C] ok             ans=26 651ms gates=260
+  [graphdb 10M S/S6 C] ok             ans=2 340ms gates=16
+  [graphdb 10M S/S7 C] ok             ans=1 246ms gates=6
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_10m.csv
