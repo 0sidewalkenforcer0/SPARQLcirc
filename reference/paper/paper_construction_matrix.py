@@ -88,7 +88,7 @@ COMMIT = subprocess.run(
     text=True,
 ).stdout.strip() or "?"
 
-PROTOCOL = "r9.2-frozen-identity-v8"
+PROTOCOL = "r9.2-frozen-identity-v9"
 NOTE_PREFIX = "pcm-meta-v2:"
 PROVENANCE_VAR = "finalprovennacevariable"  # legacy name; capture-safe builds may rename it
 GENERATED_PROVENANCE_RE = re.compile(
@@ -1445,6 +1445,31 @@ def npcs_csv_candidate_multiset(text, rewritten_query=None):
     return normalized_csv_multiset(text, drop_vars=(provenance,))
 
 
+def _npcs_node_counts(text, rewritten_query=None):
+    """Node counts for an NPCS provenance CSV (RQ2 compactness): (otimes, oplus, ominus, leaves),
+    one node per otimes/oplus/ominus operator and per leaf.  The operator symbols occur only inside
+    provenance strings, so they are counted over the whole response; leaves (the reified-statement
+    atoms that are the direct children of a product) are counted only inside the provenance column,
+    so answer-binding IRIs in other columns are not miscounted.  Grammar:
+    engine/examples/npcs_optional.expected.txt  (a sum wraps a product wraps leaf atoms; OPTIONAL/
+    MINUS add a difference operator).
+    NOTE: leaf tokenisation assumes leaf atoms contain none of the four delimiters used by the
+    provenance grammar.  Validate against a real WatDiv NPCS response and widen the split class if
+    leaf IRIs embed any of them."""
+    otimes, oplus, ominus = text.count("⊗"), text.count("⊕"), text.count("⊖")
+    leaves = None
+    try:
+        prov = provenance_output_variable(csv_variables(text), rewritten_query=rewritten_query)
+        leaves = 0
+        for row in csv.DictReader(text.splitlines()):
+            cell = row.get(prov) or ""
+            if "⊗" in cell:
+                leaves += sum(1 for atom in re.split(r"[⊕⊗⊖(),]+", cell) if atom)
+    except Exception:
+        leaves = None
+    return otimes, oplus, ominus, leaves
+
+
 def _digest_counted(items):
     """Stable SHA-256 over ``(key, multiplicity)`` pairs."""
     payload = [
@@ -1845,12 +1870,19 @@ def parse_circuit(nt_lines, include_keys=False):
             feeds.setdefault(obj.strip("<>"), set()).add(subject)
         elif predicate == "urn:circuit:in":
             tin.setdefault(subject, set()).add(obj.strip("<>"))
-    _, answer_gates, bindings = circuit_io.parse(lines)
+    circ, answer_gates, bindings = circuit_io.parse(lines)
     keys = {circuit_io.answer_key(bindings.get(gate, {})) for gate in answer_gates}
     gates = sum(1 for value in typ.values() if value.endswith(("Times", "Plus", "Minus")))
     times = sum(1 for value in typ.values() if value.endswith("Times"))
+    plus = sum(1 for value in typ.values() if value.endswith("Plus"))
+    minus = sum(1 for value in typ.values() if value.endswith("Minus"))
+    leaves = sum(1 for op, _payload in circ.values() if op == "leaf")
     edges = sum(map(len, tin.values())) + sum(map(len, feeds.values()))
-    result = (gates, edges, len(answer_gates), times)
+    # RQ2 compactness node count: each leaf, product, sum and difference is one node.  `gates`
+    # stays operator-only for back-compat; `nodes` = leaves + operators is the full count that is
+    # compared against the NPCS node count.
+    nodestats = {"leaves": leaves, "plus": plus, "minus": minus, "nodes": leaves + gates}
+    result = (gates, edges, len(answer_gates), times, nodestats)
     return result + (keys,) if include_keys else result
 
 
@@ -2218,7 +2250,7 @@ def _execute_c_once(
     # Wire drain ended before each merge above.  Final circuit decode and
     # binding recovery remain wholly in the disjoint client-parse interval.
     parse_started = time.monotonic()
-    gates, edges, answers, derivations, keys = parse_circuit(unique, include_keys=True)
+    gates, edges, answers, derivations, nodestats, keys = parse_circuit(unique, include_keys=True)
     canonical = circuit_cache.canonical_bytes(unique)
     circuit_sha = hashlib.sha256(canonical).hexdigest()
     answer_fingerprint = set_evidence(keys)["answer_fingerprint"]
@@ -2258,6 +2290,10 @@ def _execute_c_once(
             "edges": edges,
             "answers": answers,
             "derivations": derivations,
+            "leaves": nodestats["leaves"],
+            "plus": nodestats["plus"],
+            "minus": nodestats["minus"],
+            "nodes": nodestats["nodes"],
             "canonical_bytes": dedup_bytes,
         },
     }
@@ -2339,6 +2375,7 @@ def _time_method_impl(
     samples, parse_samples, protocol_cost_samples, construct_total_samples = [], [], [], []
     construct_unattributed_samples = []
     answers = response_bytes = gates = edges = derivations = ntok = None
+    npcs_oplus = npcs_ominus = npcs_leaves = None
     evidence = {}
     protocol_samples = []
     warmup_signatures = []
@@ -2415,6 +2452,9 @@ def _time_method_impl(
                             candidates, kind="csv-candidate-multiset-v1"
                         )
                         ntok = text.count("⊗")
+                        _, npcs_oplus, npcs_ominus, npcs_leaves = _npcs_node_counts(
+                            text, rewritten_query=bodies[0]
+                        )
                 else:
                     run_answers = answers
             _remaining(deadline)
@@ -2495,6 +2535,9 @@ def _time_method_impl(
         "edges": edges,
         "derivations": derivations,
         "ntok": ntok,
+        "npcs_oplus": npcs_oplus,
+        "npcs_ominus": npcs_ominus,
+        "npcs_leaves": npcs_leaves,
         "rewrite_ms": round(rewrite_ms, 6),
         "evidence": evidence,
         "protocol_metrics": protocol_metrics,
@@ -2945,6 +2988,7 @@ COLS = LEGACY_COLS[:-1] + [
     "access_mode", "base_data_name", "reified_data_name", "update_canary_sha256",
     "store_instance_sha256", "store_discriminator_sha256", "tool_sha256",
     "java_runtime_sha256",
+    "npcs_oplus", "npcs_ominus", "npcs_leaves",
     "run_identity_sha256", "notes"
 ]
 
@@ -4483,6 +4527,9 @@ def _run_matrix(
                             "edges": result["edges"],
                             "derivations": result.get("derivations"),
                             "npcs_token_occurrences": result.get("ntok"),
+                            "npcs_oplus": result.get("npcs_oplus"),
+                            "npcs_ominus": result.get("npcs_ominus"),
+                            "npcs_leaves": result.get("npcs_leaves"),
                             "rewrite_ms": result.get("rewrite_ms"),
                             "samples_json": json.dumps(result["samples"]),
                             "protocol": PROTOCOL,
