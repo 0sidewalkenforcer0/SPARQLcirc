@@ -1,0 +1,52 @@
+  [graphdb 10M C/C1 N] ok             ans=8 8805ms
+  [graphdb 10M C/C1 C] ok             ans=8 4094ms gates=24
+  [graphdb 10M C/C2 N] ok             ans=0 1262ms
+  [graphdb 10M C/C2 C] ok             ans=0 15055ms
+  [graphdb 10M C/C3 N] timeout        ans=None timeout
+  [graphdb 10M C/C3 C] timeout        ans=None timeout
+  [graphdb 10M F/F1 N] ok             ans=2 605ms
+  [graphdb 10M F/F1 C] ok             ans=2 236ms gates=4
+  [graphdb 10M F/F2 N] ok             ans=1 117ms
+  [graphdb 10M F/F2 C] ok             ans=1 74ms gates=2
+  [graphdb 10M F/F3 N] ok             ans=3 956ms
+  [graphdb 10M F/F3 C] ok             ans=3 262ms gates=6
+  [graphdb 10M F/F4 N] ok             ans=68 1463ms
+  [graphdb 10M F/F4 C] ok             ans=68 2914ms gates=136
+  [graphdb 10M F/F5 N] ok             ans=29 81ms
+  [graphdb 10M F/F5 C] ok             ans=29 97ms gates=58
+  [graphdb 10M L/L1 N] ok             ans=2 53ms
+  [graphdb 10M L/L1 C] ok             ans=2 47ms gates=4
+  [graphdb 10M L/L2 N] ok             ans=36 1246ms
+  [graphdb 10M L/L2 C] ok             ans=36 2380ms gates=72
+  [graphdb 10M L/L3 N] ok             ans=5 16ms
+  [graphdb 10M L/L3 C] ok             ans=5 34ms gates=54
+  [graphdb 10M L/L4 N] ok             ans=29 61ms
+  [graphdb 10M L/L4 C] ok             ans=29 169ms gates=58
+  [graphdb 10M L/L5 N] ok             ans=38 470ms
+  [graphdb 10M L/L5 C] ok             ans=38 1795ms gates=76
+  [graphdb 10M O/O1 N] ok             ans=51 417ms
+  [graphdb 10M O/O1 C] ok             ans=51 11249ms gates=5251
+  [graphdb 10M O/O2 N] ok             ans=63 2922ms
+  [graphdb 10M O/O2 C] ok             ans=63 17226ms gates=224970
+  [graphdb 10M O/O3 N] ok             ans=308 88ms
+  [graphdb 10M O/O3 C] ok             ans=308 8806ms gates=6455
+  [graphdb 10M O/O4 N] ok             ans=783 794ms
+  [graphdb 10M O/O4 C] ok             ans=783 12149ms gates=13817
+  [graphdb 10M O/O5 N] ok             ans=14 1008ms
+  [graphdb 10M O/O5 C] ok             ans=14 13017ms gates=224921
+  [graphdb 10M S/S1 N] ok             ans=5 26ms
+  [graphdb 10M S/S1 C] ok             ans=5 132ms gates=10
+  [graphdb 10M S/S2 N] ok             ans=255 3408ms
+  [graphdb 10M S/S2 C] ok             ans=255 30163ms gates=510
+  [graphdb 10M S/S3 N] ok             ans=128 142ms
+  [graphdb 10M S/S3 C] ok             ans=128 1029ms gates=425
+  [graphdb 10M S/S4 N] ok             ans=1 554ms
+  [graphdb 10M S/S4 C] ok             ans=1 5516ms gates=2
+  [graphdb 10M S/S5 N] ok             ans=26 86ms
+  [graphdb 10M S/S5 C] ok             ans=26 462ms gates=52
+  [graphdb 10M S/S6 N] ok             ans=2 10ms
+  [graphdb 10M S/S6 C] ok             ans=2 41ms gates=4
+  [graphdb 10M S/S7 N] ok             ans=1 8ms
+  [graphdb 10M S/S7 C] ok             ans=1 10ms gates=2
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_flat_10m.csv
