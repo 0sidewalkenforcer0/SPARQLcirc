@@ -34,12 +34,16 @@ def assemble_flat():
 
 def assemble_factored():
     r10 = read(f"{ART}/nodecount_factored_10m.csv")
+    r10f = read(f"{ART}/nodecount_factored_10m_f.csv")  # Q4b backfill of transient-cleanup F gaps
     r100 = read(f"{ART}/nodecount_factored_100m_fls.csv") + read(f"{ART}/nodecount_factored_100m_c.csv")
     if not r10:
         print("  factored: missing 10M input, skip"); return None
     header = list(r10[0].keys())
     keep = lambda r: r["class"] in CLASSES and r["method"] == "C"
-    rows = [r for r in r10 if keep(r)] + [r for r in r100 if keep(r)]
+    # layer the F backfill over the erred 10M F rows
+    fbk = {(r["class"], r["template"]): r for r in r10f if keep(r)}
+    base10 = [fbk.get((r["class"], r["template"]), r) for r in r10 if keep(r)]
+    rows = base10 + [r for r in r100 if keep(r)]
     if not r100: print("  factored: 100M not ready yet (Q4 pending) — writing 10M-only for now")
     out = f"{HERE}/nodecount_factored_10m_100m.csv"; write(out, header, rows); return out
 

@@ -1,0 +1,7 @@
+  [graphdb 10M F/F1 C] ok             ans=2 722ms gates=18
+  [graphdb 10M F/F2 C] ok             ans=1 791ms gates=17
+  [graphdb 10M F/F3 C] ok             ans=3 813ms gates=34
+  [graphdb 10M F/F4 C] ok             ans=68 3524ms gates=213
+  [graphdb 10M F/F5 C] ok             ans=29 768ms gates=348
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_10m_f.csv
