@@ -1,0 +1,110 @@
+  [millenniumdb 10M F/F1 B] ok             ans=2 14ms
+  [millenniumdb 10M F/F1 R] ok             ans=2 72ms
+  [millenniumdb 10M F/F1 N] ok             ans=2 17ms
+  [millenniumdb 10M F/F1 C] ok             ans=2 96ms gates=4
+  [millenniumdb 10M F/F2 B] ok             ans=1 9ms
+  [millenniumdb 10M F/F2 R] ok             ans=1 25ms
+  [millenniumdb 10M F/F2 N] ok             ans=1 12ms
+  [millenniumdb 10M F/F2 C] ok             ans=1 26ms gates=2
+  [millenniumdb 10M F/F3 B] ok             ans=3 11ms
+  [millenniumdb 10M F/F3 R] ok             ans=3 30ms
+  [millenniumdb 10M F/F3 N] ok             ans=3 11ms
+  [millenniumdb 10M F/F3 C] ok             ans=3 37ms gates=6
+  [millenniumdb 10M F/F4 B] ok             ans=68 11ms
+  [millenniumdb 10M F/F4 R] ok             ans=68 82ms
+  [millenniumdb 10M F/F4 N] ok             ans=68 47ms
+  [millenniumdb 10M F/F4 C] ok             ans=68 279ms gates=136
+  [millenniumdb 10M F/F5 B] ok             ans=29 7ms
+  [millenniumdb 10M F/F5 R] ok             ans=29 31ms
+  [millenniumdb 10M F/F5 N] ok             ans=29 44ms
+  [millenniumdb 10M F/F5 C] ok             ans=29 226ms gates=58
+  [millenniumdb 10M L/L1 B] ok             ans=2 5ms
+  [millenniumdb 10M L/L1 R] ok             ans=2 20ms
+  [millenniumdb 10M L/L1 N] ok             ans=2 8ms
+  [millenniumdb 10M L/L1 C] ok             ans=2 17ms gates=4
+  [millenniumdb 10M L/L2 B] ok             ans=36 5ms
+  [millenniumdb 10M L/L2 R] ok             ans=36 242ms
+  [millenniumdb 10M L/L2 N] ok             ans=36 34ms
+  [millenniumdb 10M L/L2 C] ok             ans=36 115ms gates=72
+  [millenniumdb 10M L/L3 B] ok             ans=49 2ms
+  [millenniumdb 10M L/L3 R] ok             ans=49 4ms
+  [millenniumdb 10M L/L3 N] ok             ans=5 22ms
+  [millenniumdb 10M L/L3 C] ok             ans=5 54ms gates=54
+  [millenniumdb 10M L/L4 B] ok             ans=29 2ms
+  [millenniumdb 10M L/L4 R] ok             ans=29 6ms
+  [millenniumdb 10M L/L4 N] ok             ans=29 24ms
+  [millenniumdb 10M L/L4 C] ok             ans=29 118ms gates=58
+  [millenniumdb 10M L/L5 B] ok             ans=38 4ms
+  [millenniumdb 10M L/L5 R] ok             ans=38 144ms
+  [millenniumdb 10M L/L5 N] ok             ans=38 33ms
+  [millenniumdb 10M L/L5 C] ok             ans=38 159ms gates=76
+  [millenniumdb 10M M/M1 B] ok             ans=111614 753ms
+  [millenniumdb 10M M/M1 R] ok             ans=14341 60831ms
+  [millenniumdb 10M M/M1 N] timeout        ans=None timeout
+  [millenniumdb 10M M/M1 C] ok             ans=112401 145825ms gates=862001
+  [millenniumdb 10M M/M2 B] ok             ans=115865 908ms
+  [millenniumdb 10M M/M2 R] ok             ans=115865 2275ms
+  [millenniumdb 10M M/M2 N] timeout        ans=None timeout
+  [millenniumdb 10M M/M2 C] ok             ans=115829 141069ms gates=876839
+  [millenniumdb 10M M/M3 B] ok             ans=42628 351ms
+  [millenniumdb 10M M/M3 R] ok             ans=42628 3872ms
+  [millenniumdb 10M M/M3 N] timeout        ans=None timeout
+  [millenniumdb 10M M/M3 C] ok             ans=96430 187057ms gates=888558
+  [millenniumdb 10M M/M4 B] ok             ans=89467 816ms
+  [millenniumdb 10M M/M4 R] ok             ans=89467 3814ms
+  [millenniumdb 10M M/M4 N] err:ValueError ans=None err:ValueError
+  [millenniumdb 10M M/M4 C] ok             ans=98127 214352ms gates=1156039
+  [millenniumdb 10M M/M5 B] ok             ans=89794 567ms
+  [millenniumdb 10M M/M5 R] ok             ans=89794 4738ms
+  [millenniumdb 10M M/M5 N] timeout        ans=None timeout
+  [millenniumdb 10M M/M5 C] ok             ans=81173 184016ms gates=772871
+  [millenniumdb 10M O/O1 B] ok             ans=49 3ms
+  [millenniumdb 10M O/O1 R] ok             ans=49 128ms
+  [millenniumdb 10M O/O1 N] ok             ans=50 2447ms
+  [millenniumdb 10M O/O1 C] ok             ans=51 913ms gates=5251
+  [millenniumdb 10M O/O2 B] ok             ans=58 2ms
+  [millenniumdb 10M O/O2 R] ok             ans=58 927ms
+  [millenniumdb 10M O/O2 N] ok             ans=62 10107ms
+  [millenniumdb 10M O/O2 C] ok             ans=63 30863ms gates=224970
+  [millenniumdb 10M O/O3 B] ok             ans=279 3ms
+  [millenniumdb 10M O/O3 R] ok             ans=279 16ms
+  [millenniumdb 10M O/O3 N] ok             ans=307 13563ms
+  [millenniumdb 10M O/O3 C] ok             ans=308 1086ms gates=6455
+  [millenniumdb 10M O/O4 B] ok             ans=745 7ms
+  [millenniumdb 10M O/O4 R] ok             ans=745 52ms
+  [millenniumdb 10M O/O4 N] err:ValueError ans=None err:ValueError
+  [millenniumdb 10M O/O4 C] ok             ans=783 2567ms gates=13817
+  [millenniumdb 10M O/O5 B] ok             ans=58 3ms
+  [millenniumdb 10M O/O5 R] ok             ans=58 8ms
+  [millenniumdb 10M O/O5 N] ok             ans=14 9291ms
+  [millenniumdb 10M O/O5 C] ok             ans=14 28818ms gates=224921
+  [millenniumdb 10M S/S1 B] ok             ans=5 10ms
+  [millenniumdb 10M S/S1 R] ok             ans=5 27ms
+  [millenniumdb 10M S/S1 N] ok             ans=5 20ms
+  [millenniumdb 10M S/S1 C] ok             ans=5 38ms gates=10
+  [millenniumdb 10M S/S2 B] ok             ans=255 12ms
+  [millenniumdb 10M S/S2 R] ok             ans=255 354ms
+  [millenniumdb 10M S/S2 N] ok             ans=255 379ms
+  [millenniumdb 10M S/S2 C] ok             ans=255 417ms gates=510
+  [millenniumdb 10M S/S3 B] ok             ans=297 5ms
+  [millenniumdb 10M S/S3 R] ok             ans=297 114ms
+  [millenniumdb 10M S/S3 N] ok             ans=128 131ms
+  [millenniumdb 10M S/S3 C] ok             ans=128 216ms gates=425
+  [millenniumdb 10M S/S4 B] ok             ans=1 5ms
+  [millenniumdb 10M S/S4 R] ok             ans=1 195ms
+  [millenniumdb 10M S/S4 N] ok             ans=1 65ms
+  [millenniumdb 10M S/S4 C] ok             ans=1 76ms gates=2
+  [millenniumdb 10M S/S5 B] ok             ans=26 3ms
+  [millenniumdb 10M S/S5 R] ok             ans=26 84ms
+  [millenniumdb 10M S/S5 N] ok             ans=26 77ms
+  [millenniumdb 10M S/S5 C] ok             ans=26 81ms gates=52
+  [millenniumdb 10M S/S6 B] ok             ans=2 3ms
+  [millenniumdb 10M S/S6 R] ok             ans=2 568ms
+  [millenniumdb 10M S/S6 N] ok             ans=2 543ms
+  [millenniumdb 10M S/S6 C] ok             ans=2 484ms gates=4
+  [millenniumdb 10M S/S7 B] ok             ans=1 3ms
+  [millenniumdb 10M S/S7 R] ok             ans=1 7ms
+  [millenniumdb 10M S/S7 N] ok             ans=1 9ms
+  [millenniumdb 10M S/S7 C] ok             ans=1 10ms gates=2
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/millenniumdb_10m_flmos.csv

@@ -1,0 +1,14 @@
+  [millenniumdb 10M C/C1 B] ok             ans=16 28ms
+  [millenniumdb 10M C/C1 R] ok             ans=16 1014ms
+  [millenniumdb 10M C/C1 N] ok             ans=8 972ms
+  [millenniumdb 10M C/C1 C] ok             ans=8 984ms gates=24
+  [millenniumdb 10M C/C2 B] ok             ans=0 40ms
+  [millenniumdb 10M C/C2 R] ok             ans=0 1470ms
+  [millenniumdb 10M C/C2 N] ok             ans=0 1368ms
+  [millenniumdb 10M C/C2 C] ok             ans=0 1017ms
+  [millenniumdb 10M C/C3 B] ok             ans=434169 1436ms
+  [millenniumdb 10M C/C3 R] ok             ans=434169 23608ms
+  [millenniumdb 10M C/C3 N] err:Error      ans=None err:Error
+  [millenniumdb 10M C/C3 C] ok             ans=278 60617ms gates=144954
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/millenniumdb_10m_c.csv
