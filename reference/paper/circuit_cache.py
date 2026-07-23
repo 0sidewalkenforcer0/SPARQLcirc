@@ -197,6 +197,10 @@ def canonical_bytes(lines):
         except UnicodeDecodeError:
             raise
         line = line.strip()
+        # Serialization-agnostic content-addressing (RQ3 byte-identity): N-Triples does
+        # not escape "'", so "\'" == "'".  MillenniumDB emits the non-standard "\'";
+        # normalize it so the circuit hash is identical to the engines that emit plain "'".
+        line = line.replace("\\'", "'")
         if not line or PRIVATE_PREDICATE.match(line):
             continue
         if not line.endswith(" ."):
