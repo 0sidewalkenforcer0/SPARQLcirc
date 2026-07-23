@@ -1,0 +1,10 @@
+AGGRESSIVE 100M F,L,M,O,S @90g/3600s start=17:12:44
+run1 exit=0 end=20:49:38
+run2 C start=20:49:38
+run2 C exit=0 end=20:49:42
+Q1b-retry 100M O,S start=20:55:16
+O,S exit=0 end=21:18:34
+Q1b-retry 100M C start=21:18:34
+C exit=1 end=21:18:34
+Q1b-retry2 100M C (fresh) start=21:19:49
+C exit=0 end=23:03:50

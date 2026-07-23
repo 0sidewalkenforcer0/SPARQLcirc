@@ -1,0 +1,14 @@
+  [graphdb 100M C/C1 B] ok             ans=201 939ms
+  [graphdb 100M C/C1 R] ok             ans=201 16380ms
+  [graphdb 100M C/C1 N] ok             ans=91 2470ms
+  [graphdb 100M C/C1 C] ok             ans=91 43203ms gates=292
+  [graphdb 100M C/C2 B] ok             ans=22 1337ms
+  [graphdb 100M C/C2 R] ok             ans=22 8557ms
+  [graphdb 100M C/C2 N] ok             ans=22 10401ms
+  [graphdb 100M C/C2 C] ok             ans=22 169587ms gates=44
+  [graphdb 100M C/C3 B] ok             ans=4244261 6742ms
+  [graphdb 100M C/C3 R] timeout        ans=None timeout
+  [graphdb 100M C/C3 N] err:RemoteDisconnected ans=None err:RemoteDisconnected
+  [graphdb 100M C/C3 C] err:network    ans=None err:network
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/graphdb_100m_c.csv

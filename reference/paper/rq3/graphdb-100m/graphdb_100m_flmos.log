@@ -1,0 +1,110 @@
+  [graphdb 100M F/F1 B] ok             ans=11 1267ms
+  [graphdb 100M F/F1 R] ok             ans=11 958ms
+  [graphdb 100M F/F1 N] ok             ans=11 377ms
+  [graphdb 100M F/F1 C] ok             ans=11 5125ms gates=22
+  [graphdb 100M F/F2 B] ok             ans=13 46ms
+  [graphdb 100M F/F2 R] ok             ans=13 173ms
+  [graphdb 100M F/F2 N] ok             ans=13 53ms
+  [graphdb 100M F/F2 C] ok             ans=13 465ms gates=26
+  [graphdb 100M F/F3 B] ok             ans=19 68ms
+  [graphdb 100M F/F3 R] ok             ans=19 409ms
+  [graphdb 100M F/F3 N] ok             ans=19 218ms
+  [graphdb 100M F/F3 C] ok             ans=19 2168ms gates=38
+  [graphdb 100M F/F4 B] ok             ans=103 35ms
+  [graphdb 100M F/F4 R] ok             ans=103 2260ms
+  [graphdb 100M F/F4 N] ok             ans=103 2258ms
+  [graphdb 100M F/F4 C] ok             ans=103 24616ms gates=206
+  [graphdb 100M F/F5 B] ok             ans=38 75ms
+  [graphdb 100M F/F5 R] ok             ans=38 41ms
+  [graphdb 100M F/F5 N] ok             ans=38 29ms
+  [graphdb 100M F/F5 C] ok             ans=38 96ms gates=76
+  [graphdb 100M L/L1 B] ok             ans=4 22ms
+  [graphdb 100M L/L1 R] ok             ans=4 23ms
+  [graphdb 100M L/L1 N] ok             ans=4 20ms
+  [graphdb 100M L/L1 C] ok             ans=4 55ms gates=8
+  [graphdb 100M L/L2 B] ok             ans=961 178ms
+  [graphdb 100M L/L2 R] ok             ans=961 6077ms
+  [graphdb 100M L/L2 N] ok             ans=961 20777ms
+  [graphdb 100M L/L2 C] ok             ans=961 69348ms gates=1922
+  [graphdb 100M L/L3 B] ok             ans=7 8ms
+  [graphdb 100M L/L3 R] ok             ans=7 10ms
+  [graphdb 100M L/L3 N] ok             ans=3 18ms
+  [graphdb 100M L/L3 C] ok             ans=3 30ms gates=10
+  [graphdb 100M L/L4 B] ok             ans=299 61ms
+  [graphdb 100M L/L4 R] ok             ans=299 125ms
+  [graphdb 100M L/L4 N] ok             ans=299 442ms
+  [graphdb 100M L/L4 C] ok             ans=299 1424ms gates=598
+  [graphdb 100M L/L5 B] ok             ans=1310 280ms
+  [graphdb 100M L/L5 R] ok             ans=1310 2999ms
+  [graphdb 100M L/L5 N] ok             ans=1310 14951ms
+  [graphdb 100M L/L5 C] ok             ans=1310 57117ms gates=2620
+  [graphdb 100M M/M1 B] ok             ans=1113720 9925ms
+  [graphdb 100M M/M1 R] ok             ans=1113720 25422ms
+  [graphdb 100M M/M1 N] ok             ans=1119055 89316ms
+  [graphdb 100M M/M1 C] timeout        ans=None timeout
+  [graphdb 100M M/M2 B] timeout        ans=None timeout
+  [graphdb 100M M/M2 R] ok             ans=1143538 250907ms
+  [graphdb 100M M/M2 N] ok             ans=1499014 72404ms
+  [graphdb 100M M/M2 C] ok             ans=1499014 827442ms gates=9733180
+  [graphdb 100M M/M3 B] ok             ans=511051 4219ms
+  [graphdb 100M M/M3 R] ok             ans=511051 10191ms
+  [graphdb 100M M/M3 N] err:Error      ans=None err:Error
+  [graphdb 100M M/M3 C] ok             ans=1480510 1180692ms gates=10402550
+  [graphdb 100M M/M4 B] err:network    ans=None err:network
+  [graphdb 100M M/M4 R] err:network    ans=None err:network
+  [graphdb 100M M/M4 N] err:network    ans=None err:network
+  [graphdb 100M M/M4 C] err:network    ans=None err:network
+  [graphdb 100M M/M5 B] err:network    ans=None err:network
+  [graphdb 100M M/M5 R] err:network    ans=None err:network
+  [graphdb 100M M/M5 N] err:network    ans=None err:network
+  [graphdb 100M M/M5 C] err:network    ans=None err:network
+  [graphdb 100M O/O1 B] err:network    ans=None err:network
+  [graphdb 100M O/O1 R] err:network    ans=None err:network
+  [graphdb 100M O/O1 N] err:network    ans=None err:network
+  [graphdb 100M O/O1 C] err:network    ans=None err:network
+  [graphdb 100M O/O2 B] err:network    ans=None err:network
+  [graphdb 100M O/O2 R] err:network    ans=None err:network
+  [graphdb 100M O/O2 N] err:network    ans=None err:network
+  [graphdb 100M O/O2 C] err:network    ans=None err:network
+  [graphdb 100M O/O3 B] err:network    ans=None err:network
+  [graphdb 100M O/O3 R] err:network    ans=None err:network
+  [graphdb 100M O/O3 N] err:network    ans=None err:network
+  [graphdb 100M O/O3 C] err:network    ans=None err:network
+  [graphdb 100M O/O4 B] err:network    ans=None err:network
+  [graphdb 100M O/O4 R] err:network    ans=None err:network
+  [graphdb 100M O/O4 N] err:network    ans=None err:network
+  [graphdb 100M O/O4 C] err:network    ans=None err:network
+  [graphdb 100M O/O5 B] err:network    ans=None err:network
+  [graphdb 100M O/O5 R] err:network    ans=None err:network
+  [graphdb 100M O/O5 N] err:network    ans=None err:network
+  [graphdb 100M O/O5 C] err:network    ans=None err:network
+  [graphdb 100M S/S1 B] err:network    ans=None err:network
+  [graphdb 100M S/S1 R] err:network    ans=None err:network
+  [graphdb 100M S/S1 N] err:network    ans=None err:network
+  [graphdb 100M S/S1 C] err:network    ans=None err:network
+  [graphdb 100M S/S2 B] err:network    ans=None err:network
+  [graphdb 100M S/S2 R] err:network    ans=None err:network
+  [graphdb 100M S/S2 N] err:network    ans=None err:network
+  [graphdb 100M S/S2 C] err:network    ans=None err:network
+  [graphdb 100M S/S3 B] err:network    ans=None err:network
+  [graphdb 100M S/S3 R] err:network    ans=None err:network
+  [graphdb 100M S/S3 N] err:network    ans=None err:network
+  [graphdb 100M S/S3 C] err:network    ans=None err:network
+  [graphdb 100M S/S4 B] err:network    ans=None err:network
+  [graphdb 100M S/S4 R] err:network    ans=None err:network
+  [graphdb 100M S/S4 N] err:network    ans=None err:network
+  [graphdb 100M S/S4 C] err:network    ans=None err:network
+  [graphdb 100M S/S5 B] err:network    ans=None err:network
+  [graphdb 100M S/S5 R] err:network    ans=None err:network
+  [graphdb 100M S/S5 N] err:network    ans=None err:network
+  [graphdb 100M S/S5 C] err:network    ans=None err:network
+  [graphdb 100M S/S6 B] err:network    ans=None err:network
+  [graphdb 100M S/S6 R] err:network    ans=None err:network
+  [graphdb 100M S/S6 N] err:network    ans=None err:network
+  [graphdb 100M S/S6 C] err:network    ans=None err:network
+  [graphdb 100M S/S7 B] err:network    ans=None err:network
+  [graphdb 100M S/S7 R] err:network    ans=None err:network
+  [graphdb 100M S/S7 N] err:network    ans=None err:network
+  [graphdb 100M S/S7 C] err:network    ans=None err:network
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/graphdb_100m_flmos.csv

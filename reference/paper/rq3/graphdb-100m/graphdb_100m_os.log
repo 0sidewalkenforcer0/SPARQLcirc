@@ -1,0 +1,50 @@
+  [graphdb 100M O/O1 B] ok             ans=7 1138ms
+  [graphdb 100M O/O1 R] ok             ans=7 40ms
+  [graphdb 100M O/O1 N] ok             ans=7 3856ms
+  [graphdb 100M O/O1 C] ok             ans=7 109665ms gates=50355
+  [graphdb 100M O/O2 B] ok             ans=18 10ms
+  [graphdb 100M O/O2 R] ok             ans=18 10ms
+  [graphdb 100M O/O2 N] ok             ans=21 28548ms
+  [graphdb 100M O/O2 C] ok             ans=21 195951ms gates=2238194
+  [graphdb 100M O/O3 B] ok             ans=2914 305ms
+  [graphdb 100M O/O3 R] ok             ans=2914 466ms
+  [graphdb 100M O/O3 N] ok             ans=3213 932ms
+  [graphdb 100M O/O3 C] ok             ans=3213 101118ms gates=65488
+  [graphdb 100M O/O4 B] ok             ans=26131 1057ms
+  [graphdb 100M O/O4 R] ok             ans=26131 6329ms
+  [graphdb 100M O/O4 N] ok             ans=27441 23967ms
+  [graphdb 100M O/O4 C] ok             ans=27441 179337ms gates=232881
+  [graphdb 100M O/O5 B] ok             ans=18 7ms
+  [graphdb 100M O/O5 R] ok             ans=18 7ms
+  [graphdb 100M O/O5 N] ok             ans=14 8781ms
+  [graphdb 100M O/O5 C] ok             ans=14 86490ms gates=2238187
+  [graphdb 100M S/S1 B] ok             ans=7 76ms
+  [graphdb 100M S/S1 R] ok             ans=7 30ms
+  [graphdb 100M S/S1 N] ok             ans=7 18ms
+  [graphdb 100M S/S1 C] ok             ans=7 101ms gates=14
+  [graphdb 100M S/S2 B] ok             ans=2689 250ms
+  [graphdb 100M S/S2 R] ok             ans=2689 9215ms
+  [graphdb 100M S/S2 N] ok             ans=2689 28426ms
+  [graphdb 100M S/S2 C] ok             ans=2689 252639ms gates=5378
+  [graphdb 100M S/S3 B] ok             ans=3189 134ms
+  [graphdb 100M S/S3 R] ok             ans=3189 1804ms
+  [graphdb 100M S/S3 N] ok             ans=1346 844ms
+  [graphdb 100M S/S3 C] ok             ans=1346 6924ms gates=4535
+  [graphdb 100M S/S4 B] ok             ans=2 39ms
+  [graphdb 100M S/S4 R] ok             ans=2 1151ms
+  [graphdb 100M S/S4 N] ok             ans=2 1337ms
+  [graphdb 100M S/S4 C] ok             ans=2 11305ms gates=4
+  [graphdb 100M S/S5 B] ok             ans=341 52ms
+  [graphdb 100M S/S5 R] ok             ans=341 305ms
+  [graphdb 100M S/S5 N] ok             ans=341 509ms
+  [graphdb 100M S/S5 C] ok             ans=341 3280ms gates=682
+  [graphdb 100M S/S6 B] ok             ans=13 8ms
+  [graphdb 100M S/S6 R] ok             ans=13 31ms
+  [graphdb 100M S/S6 N] ok             ans=13 29ms
+  [graphdb 100M S/S6 C] ok             ans=13 201ms gates=26
+  [graphdb 100M S/S7 B] ok             ans=2 7ms
+  [graphdb 100M S/S7 R] ok             ans=2 7ms
+  [graphdb 100M S/S7 N] ok             ans=2 7ms
+  [graphdb 100M S/S7 C] ok             ans=2 11ms gates=4
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/graphdb_100m_os.csv
