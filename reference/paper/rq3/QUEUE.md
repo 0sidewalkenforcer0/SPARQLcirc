@@ -14,10 +14,14 @@
 - Endpoints: `_DEFAULT_ENDPOINTS` is correct (graphdb watdiv / watdivbase / watdiv100m / watdiv100mbase). No endpoint env vars needed. (Ignore the spec's `watdiv10m` names.)
 - RESTART GraphDB: `JAVA_HOME=/mnt/nfs/home/ac145595/.conda/envs/sparqlcirc/lib/jvm PATH=$JAVA_HOME/bin:$PATH GDB_HEAP_SIZE=90g GDB_JAVA_OPTS="-Dgraphdb.home=/mnt/nfs/home/ac145595/workspace/graphdb-home" /mnt/nfs/home/ac145595/workspace/tools/graphdb-10.7.6/bin/graphdb -d` then poll 7200.
 - Facts: PCM_FORCE_FLAT=1 => flat; unset => factored (writable only; factored applies to BGP classes C,F,L,S — O/M error/fall-back, so factored runs use C,F,L,S). GraphDB at 90g. Idle 10M engines (oxi/qlever/mdb) currently stopped.
+- GOTCHAS: (1) `rm` the `--out` CSV before re-running a class into it, else the harness rejects the resume with `ValueError: noncanonical batch_id identity` (checkpoint expects the same batch_id). (2) Don't string-compare curl'd counts (trailing CR); strip with `tr -dc 0-9` or check reachability only. (3) 100M heavy MINUS/CC3 can OOM even @90g and crash GraphDB → run C (and retries of M) ISOLATED, restart after.
 
 ## ITEMS
-### Q1 [RUNNING bbfcudz7x] GraphDB 100M aggressive — flat, single-run, 3600s
+### Q1 [DONE d9e1b6c → Q2 RUNNING bw7jkkmrf] GraphDB 100M aggressive — flat, single-run, 3600s
+DONE: C 26/30 (F/L/O/S full, MM2[9.7M gates]/MM3[10.4M gates] built, CC1/CC2 built; caps CC3+MM1/MM4/MM5). Pushed to reference/paper/rq3/graphdb-100m/.
 F,L,M,O,S then C isolated; PCM_FORCE_FLAT=1; circuits->graphdb-100m. on-done: push to `reference/paper/rq3/graphdb-100m/`. Also provides 100M flat node counts (v9) for RQ2.
+- Run1 built F, L, **MM2 (9.7M gates, 827s), MM3 (10.4M gates, 1181s)** then **MM4 OOM-crashed GraphDB @90g** → O,S,C lost (network). MM1 timeout(>3600s).
+- Q1b [bb1rddfzc] recovery: restarted GraphDB, running O,S then C isolated → graphdb_100m_os.csv / _c.csv. MM1/MM4/MM5 + C3 recorded as caps (crash-prone/too-heavy; not worth repeated crash-restart). Final 100M = flmos(F,L,MM2,MM3) + os(O,S) + c(C1,C2).
 
 ### Q2 [PENDING] RQ2 flat node counts @10M (my 10M matrices were v8 = no node counts)
 `PCM_FORCE_FLAT=1 PCM_CIRCUIT_CACHE_DIR=$ART/circuits/rq2-flat-10m timeout 7200 python3 paper_construction_matrix.py --exploratory --engines graphdb --scales 10M --classes C,F,L,O,S --methods N,C --warmups 0 --runs 1 --out $ART/nodecount_flat_10m.csv` → push to `reference/paper/rq2/`.
