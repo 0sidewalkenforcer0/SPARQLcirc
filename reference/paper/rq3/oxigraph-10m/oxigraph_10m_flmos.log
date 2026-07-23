@@ -1,0 +1,110 @@
+  [oxigraph 10M F/F1 B] ok             ans=2 171ms
+  [oxigraph 10M F/F1 R] ok             ans=2 2308ms
+  [oxigraph 10M F/F1 N] ok             ans=2 1744ms
+  [oxigraph 10M F/F1 C] ok             ans=2 1421ms gates=4
+  [oxigraph 10M F/F2 B] ok             ans=1 21ms
+  [oxigraph 10M F/F2 R] ok             ans=1 527ms
+  [oxigraph 10M F/F2 N] ok             ans=1 9904ms
+  [oxigraph 10M F/F2 C] ok             ans=1 7466ms gates=2
+  [oxigraph 10M F/F3 B] ok             ans=3 12ms
+  [oxigraph 10M F/F3 R] ok             ans=3 597ms
+  [oxigraph 10M F/F3 N] ok             ans=3 2326ms
+  [oxigraph 10M F/F3 C] ok             ans=3 1733ms gates=6
+  [oxigraph 10M F/F4 B] ok             ans=68 89ms
+  [oxigraph 10M F/F4 R] ok             ans=68 1296ms
+  [oxigraph 10M F/F4 N] ok             ans=68 11449ms
+  [oxigraph 10M F/F4 C] ok             ans=68 9019ms gates=136
+  [oxigraph 10M F/F5 B] ok             ans=29 44ms
+  [oxigraph 10M F/F5 R] ok             ans=29 55ms
+  [oxigraph 10M F/F5 N] ok             ans=29 5767ms
+  [oxigraph 10M F/F5 C] ok             ans=29 3384ms gates=58
+  [oxigraph 10M L/L1 B] ok             ans=2 16ms
+  [oxigraph 10M L/L1 R] ok             ans=2 1234ms
+  [oxigraph 10M L/L1 N] ok             ans=2 1197ms
+  [oxigraph 10M L/L1 C] ok             ans=2 1204ms gates=4
+  [oxigraph 10M L/L2 B] ok             ans=36 211ms
+  [oxigraph 10M L/L2 R] ok             ans=36 144227ms
+  [oxigraph 10M L/L2 N] ok             ans=36 808ms
+  [oxigraph 10M L/L2 C] ok             ans=36 679ms gates=72
+  [oxigraph 10M L/L3 B] ok             ans=49 3ms
+  [oxigraph 10M L/L3 R] ok             ans=49 1178ms
+  [oxigraph 10M L/L3 N] ok             ans=5 104984ms
+  [oxigraph 10M L/L3 C] ok             ans=5 101607ms gates=54
+  [oxigraph 10M L/L4 B] ok             ans=29 21ms
+  [oxigraph 10M L/L4 R] ok             ans=29 1236ms
+  [oxigraph 10M L/L4 N] ok             ans=29 1237ms
+  [oxigraph 10M L/L4 C] ok             ans=29 1223ms gates=58
+  [oxigraph 10M L/L5 B] ok             ans=38 71ms
+  [oxigraph 10M L/L5 R] ok             ans=38 707ms
+  [oxigraph 10M L/L5 N] ok             ans=38 165208ms
+  [oxigraph 10M L/L5 C] ok             ans=38 165361ms gates=76
+  [oxigraph 10M M/M1 B] ok             ans=111614 7300ms
+  [oxigraph 10M M/M1 R] ok             ans=111614 17850ms
+  [oxigraph 10M M/M1 N] ok             ans=112401 21273ms
+  [oxigraph 10M M/M1 C] ok             ans=112401 157743ms gates=862001
+  [oxigraph 10M M/M2 B] ok             ans=115865 799ms
+  [oxigraph 10M M/M2 R] ok             ans=115865 5410ms
+  [oxigraph 10M M/M2 N] ok             ans=152275 9055ms
+  [oxigraph 10M M/M2 C] ok             ans=152275 184805ms gates=986177
+  [oxigraph 10M M/M3 B] ok             ans=42628 423ms
+  [oxigraph 10M M/M3 R] ok             ans=42628 5646ms
+  [oxigraph 10M M/M3 N] ok             ans=149634 10640ms
+  [oxigraph 10M M/M3 C] ok             ans=149634 104484ms gates=1048170
+  [oxigraph 10M M/M4 B] ok             ans=89467 5701ms
+  [oxigraph 10M M/M4 R] ok             ans=89467 59269ms
+  [oxigraph 10M M/M4 N] ok             ans=149998 83560ms
+  [oxigraph 10M M/M4 C] timeout        ans=None timeout
+  [oxigraph 10M M/M5 B] ok             ans=89794 639ms
+  [oxigraph 10M M/M5 R] ok             ans=89794 5167ms
+  [oxigraph 10M M/M5 N] ok             ans=112401 8675ms
+  [oxigraph 10M M/M5 C] ok             ans=112401 145909ms gates=866555
+  [oxigraph 10M O/O1 B] ok             ans=49 6ms
+  [oxigraph 10M O/O1 R] ok             ans=49 1937ms
+  [oxigraph 10M O/O1 N] ok             ans=51 2593ms
+  [oxigraph 10M O/O1 C] ok             ans=51 5255ms gates=5251
+  [oxigraph 10M O/O2 B] ok             ans=58 3ms
+  [oxigraph 10M O/O2 R] ok             ans=58 14417ms
+  [oxigraph 10M O/O2 N] ok             ans=63 5363ms
+  [oxigraph 10M O/O2 C] ok             ans=63 11642ms gates=224970
+  [oxigraph 10M O/O3 B] ok             ans=279 8ms
+  [oxigraph 10M O/O3 R] ok             ans=279 4856ms
+  [oxigraph 10M O/O3 N] ok             ans=308 2594ms
+  [oxigraph 10M O/O3 C] ok             ans=308 5226ms gates=6455
+  [oxigraph 10M O/O4 B] ok             ans=745 17ms
+  [oxigraph 10M O/O4 R] ok             ans=745 20865ms
+  [oxigraph 10M O/O4 N] ok             ans=783 965ms
+  [oxigraph 10M O/O4 C] ok             ans=783 2119ms gates=13817
+  [oxigraph 10M O/O5 B] ok             ans=58 3ms
+  [oxigraph 10M O/O5 R] ok             ans=58 14783ms
+  [oxigraph 10M O/O5 N] ok             ans=14 5374ms
+  [oxigraph 10M O/O5 C] ok             ans=14 11615ms gates=224921
+  [oxigraph 10M S/S1 B] ok             ans=5 6ms
+  [oxigraph 10M S/S1 R] ok             ans=5 33ms
+  [oxigraph 10M S/S1 N] ok             ans=5 3643ms
+  [oxigraph 10M S/S1 C] ok             ans=5 3818ms gates=10
+  [oxigraph 10M S/S2 B] ok             ans=255 137ms
+  [oxigraph 10M S/S2 R] ok             ans=255 5859ms
+  [oxigraph 10M S/S2 N] ok             ans=255 38113ms
+  [oxigraph 10M S/S2 C] ok             ans=255 37836ms gates=510
+  [oxigraph 10M S/S3 B] ok             ans=297 33ms
+  [oxigraph 10M S/S3 R] ok             ans=297 2106ms
+  [oxigraph 10M S/S3 N] ok             ans=128 1627ms
+  [oxigraph 10M S/S3 C] ok             ans=128 1661ms gates=425
+  [oxigraph 10M S/S4 B] ok             ans=1 27ms
+  [oxigraph 10M S/S4 R] ok             ans=1 2630ms
+  [oxigraph 10M S/S4 N] ok             ans=1 1891ms
+  [oxigraph 10M S/S4 C] ok             ans=1 1959ms gates=2
+  [oxigraph 10M S/S5 B] ok             ans=26 32ms
+  [oxigraph 10M S/S5 R] ok             ans=26 254ms
+  [oxigraph 10M S/S5 N] ok             ans=26 1921ms
+  [oxigraph 10M S/S5 C] ok             ans=26 1906ms gates=52
+  [oxigraph 10M S/S6 B] ok             ans=2 3ms
+  [oxigraph 10M S/S6 R] ok             ans=2 548ms
+  [oxigraph 10M S/S6 N] ok             ans=2 167ms
+  [oxigraph 10M S/S6 C] ok             ans=2 160ms gates=4
+  [oxigraph 10M S/S7 B] ok             ans=1 2ms
+  [oxigraph 10M S/S7 R] ok             ans=1 4ms
+  [oxigraph 10M S/S7 N] ok             ans=1 106708ms
+  [oxigraph 10M S/S7 C] ok             ans=1 104434ms gates=2
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/oxigraph_10m_flmos.csv
