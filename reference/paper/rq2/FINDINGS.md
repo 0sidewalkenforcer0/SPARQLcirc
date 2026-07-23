@@ -10,9 +10,9 @@ Deterministic (content-addressed) so one measured run per cell. Metric verified 
 |---|---|---|---|
 | NPCS (method N) | done 24/25 | done (assembled, N ok 26/30 → 21/25 for C,F,L,O,S) | Q2 / Q1 |
 | flat circuit (C, effective=flat) | done 24/25 | done | Q2 / Q1 |
-| factored (C, effective=factored) | done 9 BGP + expected empties | **running (Q4)** | Q3 / Q4 |
+| factored (C, effective=factored) | done: L/S full, F=FF5, C=CC1 (FF1-4 transient cleanup) | done: F/L/S 17/17, C empty (expected) | Q3 / Q4 |
 
-Deliverables: `nodecount_flat_10m_100m.csv` (DONE, pushed), `nodecount_factored_10m_100m.csv` (pending Q4).
+Deliverables: `nodecount_flat_10m_100m.csv` (DONE), `nodecount_factored_10m_100m.csv` (DONE, 40 rows / 31 ok).
 Reconvergence half of the figure is already real: `reference/watdiv/unbound_factored_vs_flat.csv`.
 
 ## NPCS tokenizer validated (spec E-C1c)

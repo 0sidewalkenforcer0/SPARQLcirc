@@ -1,0 +1,19 @@
+  [graphdb 100M F/F1 C] ok             ans=11 22485ms gates=84
+  [graphdb 100M F/F2 C] ok             ans=13 1922ms gates=221
+  [graphdb 100M F/F3 C] ok             ans=19 11234ms gates=330
+  [graphdb 100M F/F4 C] ok             ans=103 188278ms gates=366
+  [graphdb 100M F/F5 C] ok             ans=38 943ms gates=456
+  [graphdb 100M L/L1 C] ok             ans=4 316ms gates=24
+  [graphdb 100M L/L2 C] ok             ans=961 46501ms gates=4806
+  [graphdb 100M L/L3 C] ok             ans=3 231ms gates=19
+  [graphdb 100M L/L4 C] ok             ans=299 1209ms gates=1196
+  [graphdb 100M L/L5 C] ok             ans=1310 25441ms gates=6551
+  [graphdb 100M S/S1 C] ok             ans=7 942ms gates=86
+  [graphdb 100M S/S2 C] ok             ans=2689 137339ms gates=26890
+  [graphdb 100M S/S3 C] ok             ans=1346 16923ms gates=16649
+  [graphdb 100M S/S4 C] ok             ans=2 8051ms gates=16
+  [graphdb 100M S/S5 C] ok             ans=341 4749ms gates=3410
+  [graphdb 100M S/S6 C] ok             ans=13 535ms gates=104
+  [graphdb 100M S/S7 C] ok             ans=2 271ms gates=12
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_100m_fls.csv

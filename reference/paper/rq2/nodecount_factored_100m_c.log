@@ -1,0 +1,5 @@
+  [graphdb 100M C/C1 C] timeout        ans=None timeout
+  [graphdb 100M C/C2 C] err:cleanup    ans=None err:cleanup
+  [graphdb 100M C/C3 C] err:cleanup    ans=None err:cleanup
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_100m_c.csv

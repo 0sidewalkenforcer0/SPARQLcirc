@@ -16,6 +16,8 @@
 - Facts: PCM_FORCE_FLAT=1 => flat; unset => factored (writable only; factored applies to BGP classes C,F,L,S — O/M error/fall-back, so factored runs use C,F,L,S). GraphDB at 90g. Idle 10M engines (oxi/qlever/mdb) currently stopped.
 - GOTCHAS: (1) `rm` the `--out` CSV before re-running a class into it, else the harness rejects the resume with `ValueError: noncanonical batch_id identity` (checkpoint expects the same batch_id). (2) Don't string-compare curl'd counts (trailing CR); strip with `tr -dc 0-9` or check reachability only. (3) 100M heavy MINUS/CC3 can OOM even @90g and crash GraphDB → run C (and retries of M) ISOLATED, restart after.
 
+## STATUS: **QUEUE COMPLETE** (2026-07-24) — Q1..Q5 done+pushed. factored 100M: F/L/S 17/17, C empty (CC1 timeout, CC2/3 cleanup — expected). GraphDB survived isolated C. Optional tail: fill transient 10M-F cleanup gaps (Q4b), then idle-engine 100M byte-identity.
+
 ## ITEMS
 ### Q1 [DONE d9e1b6c] GraphDB 100M aggressive — flat, single-run, 3600s
 DONE: C 26/30 (F/L/O/S full, MM2[9.7M gates]/MM3[10.4M gates] built, CC1/CC2 built; caps CC3+MM1/MM4/MM5). Pushed to reference/paper/rq3/graphdb-100m/.
@@ -31,10 +33,10 @@ F,L,M,O,S then C isolated; PCM_FORCE_FLAT=1; circuits->graphdb-100m. on-done: pu
 
 
 > **Q3 finding (2026-07-24):** factored is the staged/feedback construction, NOT a compaction. On *bound* WatDiv it emits MORE explicit structure than flat (verified via persisted .nt: same query, flat 55 subj/200 tri vs factored 116/296). So factored >= flat here: SS2 3570 vs 1530, LL1 18 vs 10, CC1 blew to ~997k. C2/C3/FF errored (protocol/cleanup/reap). This is EXPECTED per RQ2 spec ("a few too-large/timeout cells... honest data; leave them empty"). factored's compaction WIN is the separate reconvergence half (unbound_factored_vs_flat.csv, already real). 9 BGP cells clean @10M.
-### Q4 [RUNNING] RQ2 factored @100M (writable; F,L,S then C isolated for C3 OOM)
+### Q4 [DONE] RQ2 factored @100M (writable; F,L,S then C isolated for C3 OOM)
 `unset PCM_FORCE_FLAT; PCM_CIRCUIT_CACHE_DIR=$ART/circuits/rq2-factored-100m timeout 28800 python3 paper_construction_matrix.py --exploratory --engines graphdb --scales 100M --classes F,L,S --methods C --warmups 0 --runs 1 --out $ART/nodecount_factored_100m_fls.csv`; then same with `--classes C ... --out $ART/nodecount_factored_100m_c.csv` → push.
 
-### Q5 [PENDING] Assemble + validate + push
+### Q5 [DONE] Assemble + validate + push
 Build `reference/paper/nodecount_flat_10m_100m.csv` (10M from Q2 + 100M C,F,L,O,S from Q1's `graphdb_100m_*.csv`) and `nodecount_factored_10m_100m.csv` (Q3+Q4). Node = leaves+⊗+⊕+⊖; NPCS = `npcs_token_occurrences+npcs_oplus+npcs_ominus+npcs_leaves`; flat/factored = `structure_signature.nodes`. Validate NPCS leaf tokenizer once (spec E-C1c). Push both CSVs to `reference/paper/`. Then queue COMPLETE — stop until user returns.
 
 ## OPTIONAL TAIL (only if time; not yet requested)
