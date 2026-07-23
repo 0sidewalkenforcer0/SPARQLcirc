@@ -1,0 +1,110 @@
+  [qlever 10M F/F1 B] ok             ans=2 34ms
+  [qlever 10M F/F1 R] ok             ans=2 205ms
+  [qlever 10M F/F1 N] ok             ans=2 153ms
+  [qlever 10M F/F1 C] ok             ans=2 251ms gates=4
+  [qlever 10M F/F2 B] ok             ans=1 60ms
+  [qlever 10M F/F2 R] ok             ans=1 186ms
+  [qlever 10M F/F2 N] ok             ans=1 160ms
+  [qlever 10M F/F2 C] ok             ans=1 767ms gates=2
+  [qlever 10M F/F3 B] ok             ans=3 37ms
+  [qlever 10M F/F3 R] ok             ans=3 178ms
+  [qlever 10M F/F3 N] ok             ans=3 73ms
+  [qlever 10M F/F3 C] ok             ans=3 268ms gates=6
+  [qlever 10M F/F4 B] ok             ans=68 111ms
+  [qlever 10M F/F4 R] ok             ans=68 289ms
+  [qlever 10M F/F4 N] ok             ans=68 337ms
+  [qlever 10M F/F4 C] ok             ans=68 6580ms gates=136
+  [qlever 10M F/F5 B] ok             ans=29 57ms
+  [qlever 10M F/F5 R] ok             ans=29 348ms
+  [qlever 10M F/F5 N] ok             ans=29 253ms
+  [qlever 10M F/F5 C] ok             ans=29 293ms gates=58
+  [qlever 10M L/L1 B] ok             ans=2 15ms
+  [qlever 10M L/L1 R] ok             ans=2 131ms
+  [qlever 10M L/L1 N] ok             ans=2 20ms
+  [qlever 10M L/L1 C] ok             ans=2 57ms gates=4
+  [qlever 10M L/L2 B] ok             ans=36 22ms
+  [qlever 10M L/L2 R] ok             ans=36 186ms
+  [qlever 10M L/L2 N] ok             ans=36 30ms
+  [qlever 10M L/L2 C] ok             ans=36 51ms gates=72
+  [qlever 10M L/L3 B] ok             ans=49 3ms
+  [qlever 10M L/L3 R] ok             ans=49 23ms
+  [qlever 10M L/L3 N] ok             ans=5 106ms
+  [qlever 10M L/L3 C] ok             ans=5 19ms gates=54
+  [qlever 10M L/L4 B] ok             ans=29 19ms
+  [qlever 10M L/L4 R] ok             ans=29 16ms
+  [qlever 10M L/L4 N] ok             ans=29 19ms
+  [qlever 10M L/L4 C] ok             ans=29 27ms gates=58
+  [qlever 10M L/L5 B] ok             ans=38 32ms
+  [qlever 10M L/L5 R] ok             ans=38 124ms
+  [qlever 10M L/L5 N] ok             ans=38 29ms
+  [qlever 10M L/L5 C] ok             ans=38 64ms gates=76
+  [qlever 10M M/M1 B] ok             ans=111614 516ms
+  [qlever 10M M/M1 R] ok             ans=111614 663ms
+  [qlever 10M M/M1 N] ok             ans=112401 2321ms
+  [qlever 10M M/M1 C] err:ValueError ans=None err:ValueError
+  [qlever 10M M/M2 B] ok             ans=115865 507ms
+  [qlever 10M M/M2 R] ok             ans=115865 625ms
+  [qlever 10M M/M2 N] ok             ans=152275 1739ms
+  [qlever 10M M/M2 C] err:ValueError ans=None err:ValueError
+  [qlever 10M M/M3 B] ok             ans=42628 230ms
+  [qlever 10M M/M3 R] ok             ans=42628 302ms
+  [qlever 10M M/M3 N] ok             ans=149634 2377ms
+  [qlever 10M M/M3 C] err:ValueError ans=None err:ValueError
+  [qlever 10M M/M4 B] ok             ans=89467 460ms
+  [qlever 10M M/M4 R] ok             ans=89467 1142ms
+  [qlever 10M M/M4 N] ok             ans=149998 15110ms
+  [qlever 10M M/M4 C] err:ValueError ans=None err:ValueError
+  [qlever 10M M/M5 B] ok             ans=89794 391ms
+  [qlever 10M M/M5 R] ok             ans=89794 396ms
+  [qlever 10M M/M5 N] ok             ans=112401 893ms
+  [qlever 10M M/M5 C] err:ValueError ans=None err:ValueError
+  [qlever 10M O/O1 B] ok             ans=49 11ms
+  [qlever 10M O/O1 R] ok             ans=49 7ms
+  [qlever 10M O/O1 N] ok             ans=51 35ms
+  [qlever 10M O/O1 C] ok             ans=51 738ms gates=5251
+  [qlever 10M O/O2 B] ok             ans=58 9ms
+  [qlever 10M O/O2 R] ok             ans=58 4ms
+  [qlever 10M O/O2 N] ok             ans=63 9ms
+  [qlever 10M O/O2 C] ok             ans=63 7716ms gates=224970
+  [qlever 10M O/O3 B] ok             ans=279 9ms
+  [qlever 10M O/O3 R] ok             ans=279 4ms
+  [qlever 10M O/O3 N] ok             ans=308 12ms
+  [qlever 10M O/O3 C] ok             ans=308 330ms gates=6455
+  [qlever 10M O/O4 B] ok             ans=745 18ms
+  [qlever 10M O/O4 R] ok             ans=745 9ms
+  [qlever 10M O/O4 N] ok             ans=783 54ms
+  [qlever 10M O/O4 C] ok             ans=783 1019ms gates=13817
+  [qlever 10M O/O5 B] ok             ans=58 3ms
+  [qlever 10M O/O5 R] ok             ans=58 3ms
+  [qlever 10M O/O5 N] ok             ans=14 7ms
+  [qlever 10M O/O5 C] ok             ans=14 622ms gates=224921
+  [qlever 10M S/S1 B] ok             ans=5 164ms
+  [qlever 10M S/S1 R] ok             ans=5 1396ms
+  [qlever 10M S/S1 N] ok             ans=5 603ms
+  [qlever 10M S/S1 C] ok             ans=5 5478ms gates=10
+  [qlever 10M S/S2 B] ok             ans=255 12ms
+  [qlever 10M S/S2 R] ok             ans=255 611ms
+  [qlever 10M S/S2 N] ok             ans=255 465ms
+  [qlever 10M S/S2 C] ok             ans=255 449ms gates=510
+  [qlever 10M S/S3 B] ok             ans=297 11ms
+  [qlever 10M S/S3 R] ok             ans=297 477ms
+  [qlever 10M S/S3 N] ok             ans=128 428ms
+  [qlever 10M S/S3 C] ok             ans=128 450ms gates=425
+  [qlever 10M S/S4 B] ok             ans=1 14ms
+  [qlever 10M S/S4 R] ok             ans=1 472ms
+  [qlever 10M S/S4 N] ok             ans=1 434ms
+  [qlever 10M S/S4 C] ok             ans=1 414ms gates=2
+  [qlever 10M S/S5 B] ok             ans=26 9ms
+  [qlever 10M S/S5 R] ok             ans=26 495ms
+  [qlever 10M S/S5 N] ok             ans=26 345ms
+  [qlever 10M S/S5 C] ok             ans=26 403ms gates=52
+  [qlever 10M S/S6 B] ok             ans=2 4ms
+  [qlever 10M S/S6 R] ok             ans=2 88ms
+  [qlever 10M S/S6 N] ok             ans=2 27ms
+  [qlever 10M S/S6 C] ok             ans=2 49ms gates=4
+  [qlever 10M S/S7 B] ok             ans=1 10ms
+  [qlever 10M S/S7 R] ok             ans=1 88ms
+  [qlever 10M S/S7 N] ok             ans=1 24ms
+  [qlever 10M S/S7 C] ok             ans=1 60ms gates=2
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/qlever_10m_flmos.csv

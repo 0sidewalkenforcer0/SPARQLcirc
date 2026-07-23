@@ -1,0 +1,14 @@
+  [qlever 10M C/C1 B] ok             ans=16 50ms
+  [qlever 10M C/C1 R] ok             ans=16 484ms
+  [qlever 10M C/C1 N] ok             ans=8 159ms
+  [qlever 10M C/C1 C] ok             ans=8 338ms gates=24
+  [qlever 10M C/C2 B] ok             ans=0 68ms
+  [qlever 10M C/C2 R] ok             ans=0 571ms
+  [qlever 10M C/C2 N] ok             ans=0 939ms
+  [qlever 10M C/C2 C] ok             ans=0 1089ms
+  [qlever 10M C/C3 B] ok             ans=434169 985ms
+  [qlever 10M C/C3 R] ok             ans=434169 1847ms
+  [qlever 10M C/C3 N] err:Error      ans=None err:Error
+  [qlever 10M C/C3 C] err:ValueError ans=None err:ValueError
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/qlever_10m_c.csv
