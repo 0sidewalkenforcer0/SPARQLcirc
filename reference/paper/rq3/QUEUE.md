@@ -39,5 +39,14 @@ F,L,M,O,S then C isolated; PCM_FORCE_FLAT=1; circuits->graphdb-100m. on-done: pu
 ### Q5 [DONE] Assemble + validate + push
 Build `reference/paper/nodecount_flat_10m_100m.csv` (10M from Q2 + 100M C,F,L,O,S from Q1's `graphdb_100m_*.csv`) and `nodecount_factored_10m_100m.csv` (Q3+Q4). Node = leaves+⊗+⊕+⊖; NPCS = `npcs_token_occurrences+npcs_oplus+npcs_ominus+npcs_leaves`; flat/factored = `structure_signature.nodes`. Validate NPCS leaf tokenizer once (spec E-C1c). Push both CSVs to `reference/paper/`. Then queue COMPLETE — stop until user returns.
 
+## Q6 [PARTIAL->continuing] 100M cross-engine byte-identity
+Proof DONE: Oxigraph 9/9 (FF1-5,LL1-4) BYTE-IDENTICAL to GraphDB-100M (0 mismatch). Oxigraph ~150x slower (LL3 ~19min). Continuing: L,O,S,M into oxi_100m_byteid_losm.csv, timeout 1200s. Then restart GraphDB.
+**GraphDB is STOPPED** (freed 90g for Oxigraph). To resume GraphDB work, restart per COMMON recipe.
+Goal: show circuit_sha256 built at 100M on Oxigraph/QLever/MDB == GraphDB-100M (rq3/graphdb-100m/graphdb_100m_assembled.csv, C rows). 100M indexes already exist: oxi-watdiv100m(+base), qlever-watdiv100m(+base), mdb-watdiv100m(+base).
+- Driver script: `scratchpad/byteid_oxi_100m.sh <CLASSES>` — stops GraphDB, starts oxi `serve -l <store> -b localhost:7880|7881` (reified|base) via tools/images/oxigraph.sif, smoke-checks counts, runs `--engines oxigraph --scales 100M --methods C --warmups 0 --runs 1` flat (PCM_FORCE_FLAT=1) into $ART/oxi_100m_byteid.csv.
+- Endpoints already in _DEFAULT_ENDPOINTS: oxigraph 100M reified=7880/query base=7881/query update=7880/update; qlever 100M=7003/7004; mdb 100M=1236/1237.
+- Proof step: F,L. If shas match GraphDB -> expand O,S (+M on writable oxi), then QLever/MDB (read-only: monotone+OPTIONAL only, no MINUS).
+- Compare: join oxi_100m_byteid.csv to graphdb_100m_assembled.csv on (class,template), check circuit_sha256 equal.
+
 ## OPTIONAL TAIL (only if time; not yet requested)
 - Other engines (Oxigraph/QLever/MDB) @100M for cross-engine byte-identity at scale (restart each, run flat single-run). Skip unless clearly wanted.

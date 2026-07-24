@@ -1,0 +1,9 @@
+  [oxigraph 100M F/F1 C] ok             ans=11 15811ms gates=22
+  [oxigraph 100M F/F2 C] ok             ans=13 104304ms gates=26
+  [oxigraph 100M F/F3 C] ok             ans=19 25400ms gates=38
+  [oxigraph 100M F/F4 C] ok             ans=103 123646ms gates=206
+  [oxigraph 100M F/F5 C] ok             ans=38 59447ms gates=76
+  [oxigraph 100M L/L1 C] ok             ans=4 12147ms gates=8
+  [oxigraph 100M L/L2 C] ok             ans=961 30039ms gates=1922
+  [oxigraph 100M L/L3 C] ok             ans=3 1165693ms gates=10
+  [oxigraph 100M L/L4 C] ok             ans=299 13000ms gates=598
