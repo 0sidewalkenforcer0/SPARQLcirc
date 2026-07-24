@@ -67,3 +67,22 @@ IRIs (`.../wsdbm/User71713`), so `npcs_leaves` is an exact statement-id count. N
    should frame it as "the circuit pays a size cost to gain exact non-monotone evaluation that NPCS
    cannot provide," rather than as NPCS being more compact. Consider whether to keep O in the
    node-count figure or move the OPTIONAL story to the capability/correctness result.
+
+## E-C1b non-monotone coverage (2026-07-24)
+
+Spec `b35a5fd` asked for factored on OPTIONAL and N+flat+factored on MINUS.
+
+### factored on OPTIONAL / MINUS: BLOCKED (engine limitation)
+`--methods C` without `PCM_FORCE_FLAT` on O and M returns **`ConstructionProtocolError` (requested=factored, effective=flat) on all 10 cells**. CircuitRun emits a factored (feedback) plan only for pure BGP (C/F/L/S); for OPTIONAL/MINUS it produces a flat plan, and the harness flags the mismatch. So factored-O/M is not a run gap but an **engine capability gap** (paper_construction_matrix.py:1725,1787). Realising the spec's idea (compress reconvergent OPTIONAL via factoring) needs CircuitRun to support factored variable-elimination on the non-monotone positive part.
+
+### MINUS: NPCS vs flat circuit (real, runnable) — flat is competitive-to-smaller
+
+| cell | NPCS | flat circuit | flat vs NPCS |
+|---|---:|---:|---|
+| M1 | 566321 | — | flat timeout |
+| M2 | 1278365 | 1250853 | 0.98x |
+| M3 | 3564246 | 1347804 | 0.38x |
+| M4 | 21175727 | — | flat timeout |
+| M5 | 1078995 | 1131231 | 1.05x |
+
+**On MINUS the flat circuit is <= NPCS** where both build: MM3 flat 1.35M vs NPCS 3.56M (2.6x smaller), MM2/MM5 ~equal; NPCS MINUS is very large (MM4 21.2M). This is the **opposite of OPTIONAL** (flat > NPCS): the circuit's sub-structure sharing wins on MINUS even without factoring. So for the figure, MINUS enters as **NPCS vs flat** and favors the circuit; OPTIONAL remains the caveat pending factored-O engine support.

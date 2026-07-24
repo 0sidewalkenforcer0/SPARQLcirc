@@ -1,0 +1,7 @@
+  [graphdb 10M M/M1 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M M/M2 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M M/M3 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M M/M4 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M M/M5 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_M_10m.csv

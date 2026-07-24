@@ -1,0 +1,12 @@
+  [graphdb 10M M/M1 N] ok             ans=112401 11794ms
+  [graphdb 10M M/M1 C] timeout        ans=None timeout
+  [graphdb 10M M/M2 N] ok             ans=152275 253097ms
+  [graphdb 10M M/M2 C] ok             ans=152275 74254ms gates=986177
+  [graphdb 10M M/M3 N] ok             ans=149634 3906ms
+  [graphdb 10M M/M3 C] ok             ans=149634 123298ms gates=1048170
+  [graphdb 10M M/M4 N] ok             ans=149998 34753ms
+  [graphdb 10M M/M4 C] timeout        ans=None timeout
+  [graphdb 10M M/M5 N] ok             ans=112401 3847ms
+  [graphdb 10M M/M5 C] ok             ans=112401 63790ms gates=866555
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_flat_M_10m.csv
