@@ -1,0 +1,24 @@
+  [oxigraph 100M L/L1 C] ok             ans=4 109822ms gates=8
+  [oxigraph 100M L/L2 C] ok             ans=961 104366ms gates=1922
+  [oxigraph 100M L/L3 C] timeout        ans=None timeout
+  [oxigraph 100M L/L4 C] ok             ans=299 15241ms gates=598
+  [oxigraph 100M L/L5 C] timeout        ans=None timeout
+  [oxigraph 100M M/M1 C] timeout        ans=None timeout
+  [oxigraph 100M M/M2 C] timeout        ans=None timeout
+  [oxigraph 100M M/M3 C] timeout        ans=None timeout
+  [oxigraph 100M M/M4 C] timeout        ans=None timeout
+  [oxigraph 100M M/M5 C] timeout        ans=None timeout
+  [oxigraph 100M O/O1 C] ok             ans=7 52042ms gates=50355
+  [oxigraph 100M O/O2 C] ok             ans=21 130756ms gates=2238194
+  [oxigraph 100M O/O3 C] ok             ans=3213 53574ms gates=65488
+  [oxigraph 100M O/O4 C] ok             ans=27441 71987ms gates=232881
+  [oxigraph 100M O/O5 C] ok             ans=14 130495ms gates=2238187
+  [oxigraph 100M S/S1 C] ok             ans=7 83746ms gates=14
+  [oxigraph 100M S/S2 C] ok             ans=2689 445997ms gates=5378
+  [oxigraph 100M S/S3 C] ok             ans=1346 17771ms gates=4535
+  [oxigraph 100M S/S4 C] ok             ans=2 61111ms gates=4
+  [oxigraph 100M S/S5 C] ok             ans=341 20692ms gates=682
+  [oxigraph 100M S/S6 C] ok             ans=13 1943ms gates=26
+  [oxigraph 100M S/S7 C] ok             ans=2 1167592ms gates=4
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/oxi_100m_byteid_losm.csv

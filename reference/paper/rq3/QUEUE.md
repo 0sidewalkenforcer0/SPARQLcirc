@@ -39,8 +39,8 @@ F,L,M,O,S then C isolated; PCM_FORCE_FLAT=1; circuits->graphdb-100m. on-done: pu
 ### Q5 [DONE] Assemble + validate + push
 Build `reference/paper/nodecount_flat_10m_100m.csv` (10M from Q2 + 100M C,F,L,O,S from Q1's `graphdb_100m_*.csv`) and `nodecount_factored_10m_100m.csv` (Q3+Q4). Node = leaves+⊗+⊕+⊖; NPCS = `npcs_token_occurrences+npcs_oplus+npcs_ominus+npcs_leaves`; flat/factored = `structure_signature.nodes`. Validate NPCS leaf tokenizer once (spec E-C1c). Push both CSVs to `reference/paper/`. Then queue COMPLETE — stop until user returns.
 
-## Q6 [PARTIAL->continuing] 100M cross-engine byte-identity
-Proof DONE: Oxigraph 9/9 (FF1-5,LL1-4) BYTE-IDENTICAL to GraphDB-100M (0 mismatch). Oxigraph ~150x slower (LL3 ~19min). Continuing: L,O,S,M into oxi_100m_byteid_losm.csv, timeout 1200s. Then restart GraphDB.
+## Q6 [DONE] 100M cross-engine byte-identity
+DONE 2026-07-24: Oxigraph-100M vs GraphDB-100M = 21/21 BYTE-IDENTICAL (F5 L4 O5 S7); MINUS timed out on Oxigraph (construction cost, not correctness; writable-pair MINUS identity holds at 10M). Results in rq3/oxigraph-100m/BYTEID_100M.md. Oxigraph stopped, GraphDB restarted after. Construction-cost analysis in rq3/CONSTRUCTION_COST_ENGINE.md.
 **GraphDB is STOPPED** (freed 90g for Oxigraph). To resume GraphDB work, restart per COMMON recipe.
 Goal: show circuit_sha256 built at 100M on Oxigraph/QLever/MDB == GraphDB-100M (rq3/graphdb-100m/graphdb_100m_assembled.csv, C rows). 100M indexes already exist: oxi-watdiv100m(+base), qlever-watdiv100m(+base), mdb-watdiv100m(+base).
 - Driver script: `scratchpad/byteid_oxi_100m.sh <CLASSES>` — stops GraphDB, starts oxi `serve -l <store> -b localhost:7880|7881` (reified|base) via tools/images/oxigraph.sif, smoke-checks counts, runs `--engines oxigraph --scales 100M --methods C --warmups 0 --runs 1` flat (PCM_FORCE_FLAT=1) into $ART/oxi_100m_byteid.csv.

@@ -1,17 +1,28 @@
 # RQ3 byte-identity at 100M — Oxigraph vs GraphDB
 
-circuit_sha256 of the flat circuit, built independently on each engine over the same reified WatDiv 100M.
+Independently constructed flat provenance circuits over the same reified WatDiv **100M**; we compare `circuit_sha256` (SHA-256 over the sorted-unique N-Triples of the emitted circuit). Oxigraph 0.5.x (Rust/RocksDB) vs GraphDB 10.7.6 (Java/RDF4J).
 
-| cell | identical | circuit_sha256 |
-|---|---|---|
-| FF1 | ✓ | `57d0c632f5cd8e44e0f2a01d4a37e6cb…` |
-| FF2 | ✓ | `f26139cae7a9692a2838a20fd01905e3…` |
-| FF3 | ✓ | `f207c0a00082018b703df0d83098bf58…` |
-| FF4 | ✓ | `4d1917acf6a8f4ba2cec030de209c95a…` |
-| FF5 | ✓ | `76dcaf1041b8189fd188bbb42838ce63…` |
-| LL1 | ✓ | `4ef4d3922d50e7e0953b8afb47240498…` |
-| LL2 | ✓ | `35d15df64205e5280d0c1f070a238b2b…` |
-| LL3 | ✓ | `859ad29edf5220d2f8a344caa1ae953c…` |
-| LL4 | ✓ | `6e357be51063612b79512719e90439be…` |
+| class | oxi built | both-built (comparable) | byte-identical |
+|---|---|---|---|
+| F | 5/5 | 5 | **5/5** |
+| L | 4/5 (rest timeout) | 4 | **4/4** |
+| O | 5/5 | 5 | **5/5** |
+| S | 7/7 | 7 | **7/7** |
+| M | 0/5 (rest timeout) | 0 | **0/0** |
 
-**9/9 byte-identical** (partial: proof run stopped after LL4; L5+O,S,M in continuation). Extends the 4-engine identity from 10M to 100M on an independent engine (Oxigraph 0.5.x, Rust) vs GraphDB (Java/RDF4J).
+**Total: 21/21 byte-identical** on every cell both engines built.
+
+## Reading
+
+- **F, L, O, S (monotone BGP + OPTIONAL): every comparable cell is byte-identical.** This extends the
+  4-engine identity established at 10M (GraphDB/Oxigraph/QLever/MillenniumDB) to 100M on a second,
+  independent engine.
+- **MINUS (M) timed out on Oxigraph at 100M** (1200 s/cell cap). This is a *construction-cost* limit,
+  not a correctness one: MINUS circuits are the heaviest to build and Oxigraph's join evaluation is
+  far slower than GraphDB's (see `../CONSTRUCTION_COST_ENGINE.md`). At 10M the writable-pair MINUS
+  circuits were byte-identical (GraphDB = Oxigraph); at 100M Oxigraph cannot build them within the cap.
+- Content-addressing is plain `SHA256` over canonical N-Triples; the circuit is a certified
+  SPARQL-1.1-only, deterministic artifact, so identity is expected and here confirmed at scale.
+
+_Data: `oxi_100m_byteid.csv` (proof: F,L) + `oxi_100m_byteid_losm.csv` (L,O,S,M). Single measured
+run/cell. GraphDB reference: `../graphdb-100m/graphdb_100m_assembled.csv`._
