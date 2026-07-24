@@ -3,6 +3,7 @@ package npcs.circuit;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -67,12 +68,17 @@ public class CircuitRewriterTest {
         assertFalse(flat.requiresFeedback());
         assertEquals(1, flat.steps().size());
 
+        // UNION of pure BGPs: each branch is now factored (min-scope variable elimination), so the
+        // composite construction is factored — not the old whole-query flat fallback.
         String union = "SELECT ?z WHERE { { <urn:s> <urn:p> ?z } UNION { <urn:s> <urn:q> ?z } }";
-        CircuitConstructionPlan fallback = defaultRewriter.constructionPlan(union);
-        assertEquals(ConstructionMode.FACTORED, fallback.requestedMode());
-        assertEquals(ConstructionMode.FLAT, fallback.effectiveMode());
-        assertNotNull(fallback.fallbackReason());
-        assertTrue(fallback.fallbackReason().contains("not a pure BGP"));
+        CircuitConstructionPlan unionPlan = defaultRewriter.constructionPlan(union);
+        assertEquals(ConstructionMode.FACTORED, unionPlan.requestedMode());
+        assertEquals(ConstructionMode.FACTORED, unionPlan.effectiveMode());
+        assertTrue(unionPlan.requiresFeedback());
+        assertNull(unionPlan.fallbackReason());
+        for (CircuitConstructionPlan.Step step : unionPlan.steps()) {
+            new SPARQLParser().parseQuery(step.query(), null);     // every emitted step is valid SPARQL
+        }
     }
 
     @Test

@@ -79,6 +79,71 @@ final class FactoredBgpRewriter {
     }
 
     private CircuitConstructionPlan plan(List<PatternEntry> patterns, List<String> outputVariables) {
+        Relation result = eliminate(patterns, new HashSet<>(outputVariables));
+        steps.add(new CircuitConstructionPlan.Step(
+                answerQuery(result, outputVariables), false, "answers"));
+        return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
+                ConstructionMode.FACTORED, null);
+    }
+
+    /**
+     * Factored marginal: min-scope variable elimination down to {@code keepVariables}, then a sink ⊕
+     * whose content-addressed IRI is {@code plusPrefix}+SHA256(bindingKey(gateTag, keepVariables)) — the
+     * SAME id the flat {@code CircuitRewriter.productPlus} emits, so a ⊖ built over this marginal connects
+     * to it unchanged. The reified statement-id leaves are identical to the flat gate's, so the difference
+     * semantics (and WMC) are preserved; only the minuend/subtrahend polynomial is factored (shared).
+     */
+    static CircuitConstructionPlan buildMarginal(Reification scheme, String generatedPrefix,
+                                                 String workspaceId, List<StatementPattern> inputPatterns,
+                                                 List<String> keepVariables, String plusPrefix, String gateTag) {
+        if (inputPatterns.isEmpty()) {
+            throw new UnsupportedOperationException("Factored construction requires a non-empty BGP.");
+        }
+        List<PatternEntry> patterns = new ArrayList<>();
+        for (int i = 0; i < inputPatterns.size(); i++) {
+            patterns.add(new PatternEntry(inputPatterns.get(i), patternKey(inputPatterns.get(i)), i));
+        }
+        patterns.sort(Comparator.comparing((PatternEntry p) -> p.key)
+                .thenComparingInt(p -> p.originalPosition));
+        // Fingerprint the internal (base/join/marg) gates by patterns + kept vars + the caller's gate tag,
+        // so P1 and P2 marginals of one query never share an intermediate gate id.
+        StringBuilder semantic = new StringBuilder("FACTORED-MARGINAL");
+        for (PatternEntry pattern : patterns) semantic.append(part(pattern.key));
+        semantic.append("|KEEP");
+        for (String keep : keepVariables) semantic.append(part(keep));
+        semantic.append("|TAG").append(part(gateTag));
+        String fp = sha256hex(semantic.toString());
+        FactoredBgpRewriter planner = new FactoredBgpRewriter(scheme, generatedPrefix, workspaceId, fp);
+        return planner.planMarginal(patterns, keepVariables, plusPrefix, gateTag);
+    }
+
+    private CircuitConstructionPlan planMarginal(List<PatternEntry> patterns, List<String> keepVariables,
+                                                 String plusPrefix, String gateTag) {
+        Relation result = eliminate(patterns, new HashSet<>(keepVariables));
+        steps.add(new CircuitConstructionPlan.Step(
+                marginalSink(result, keepVariables, plusPrefix, gateTag), false, "marginal-sink"));
+        return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
+                ConstructionMode.FACTORED, null);
+    }
+
+    /**
+     * Sink ⊕ keyed by {@code keepVariables}: every factored-result row for a given key-binding feeds one
+     * shared Plus gate (so multiple derivations of the same binding are summed, matching the flat gate).
+     */
+    private String marginalSink(Relation input, List<String> keepVariables, String plusPrefix, String gateTag) {
+        String inputRow = qv("f_input_row"), source = qv("f_source"), plus = qv("f_plus");
+        StringBuilder query = new StringBuilder(PRE);
+        query.append("CONSTRUCT {\n")
+             .append("  ").append(plus).append(" a c:Plus .\n")
+             .append("  ").append(source).append(" c:feeds ").append(plus).append(" .\n")
+             .append("}\nWHERE {\n")
+             .append(rowPattern(inputRow, input, source))
+             .append(bindIri(plus, plusPrefix, bindingKey(gateTag, keepVariables)))
+             .append("}\n");
+        return query.toString();
+    }
+
+    private Relation eliminate(List<PatternEntry> patterns, Set<String> outputs) {
         // Source-restriction pushdown: if any pattern carries a constant subject/object the query is
         // SELECTIVE, so each base relation is semi-joined to the rest of the BGP (only full-match rows
         // materialise). Without it an interior pattern with no constant (e.g. a chain edge) would build its
@@ -100,7 +165,6 @@ final class FactoredBgpRewriter {
             relations.add(relation);
         }
 
-        Set<String> outputs = new HashSet<>(outputVariables);
         while (true) {
             List<String> candidates = new ArrayList<>();
             for (Relation relation : relations) {
@@ -113,7 +177,7 @@ final class FactoredBgpRewriter {
             if (candidates.isEmpty()) break;
             Collections.sort(candidates);
 
-            String eliminate = null;
+            String elimVar = null;
             int bestCost = Integer.MAX_VALUE;
             for (String candidate : candidates) {
                 LinkedHashSet<String> scope = new LinkedHashSet<>();
@@ -123,28 +187,25 @@ final class FactoredBgpRewriter {
                 int cost = scope.size();
                 if (cost < bestCost) {
                     bestCost = cost;
-                    eliminate = candidate;
+                    elimVar = candidate;
                 }
             }
 
             List<Relation> involved = new ArrayList<>();
             List<Relation> rest = new ArrayList<>();
             for (Relation relation : relations) {
-                (relation.variables.contains(eliminate) ? involved : rest).add(relation);
+                (relation.variables.contains(elimVar) ? involved : rest).add(relation);
             }
             Relation joined = involved.get(0);
             for (int i = 1; i < involved.size(); i++) joined = join(joined, involved.get(i));
-            Relation marginalized = marginalize(joined, eliminate);
+            Relation marginalized = marginalize(joined, elimVar);
             rest.add(marginalized);
             relations = rest;
         }
 
         Relation result = relations.get(0);
         for (int i = 1; i < relations.size(); i++) result = join(result, relations.get(i));
-        steps.add(new CircuitConstructionPlan.Step(
-                answerQuery(result, outputVariables), false, "answers"));
-        return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
-                ConstructionMode.FACTORED, null);
+        return result;
     }
 
     private Relation relation(String hint, List<String> variables) {

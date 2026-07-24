@@ -89,9 +89,12 @@ public class CircuitRewriter {
     }
 
     /**
-     * Build an executable construction plan. Pure BGPs use min-scope variable
-     * elimination in FACTORED mode; UNION/MINUS/OPTIONAL retain the established
-     * flat operator plan and report that fallback explicitly in the plan.
+     * Build an executable construction plan. In FACTORED mode the BGP sub-parts of the query use
+     * min-scope variable elimination: a pure BGP directly; and the BGP branches of UNION/OPTIONAL and
+     * the P1/P2 marginals of MINUS/OPTIONAL via {@link FactoredBgpRewriter} (their content-addressed
+     * gate IRIs are unchanged, so the ⊕/⊖/UNION operator plan connects to them exactly as in flat mode).
+     * The composite plan is reported as effective=FACTORED when any sub-BGP was factored. FLAT mode (and
+     * a query with no factorable sub-BGP) keeps the one-⊗-per-derivation operator plan.
      */
     public CircuitConstructionPlan constructionPlan(String query) {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
@@ -111,15 +114,16 @@ public class CircuitRewriter {
                     collect(bgpCandidate), W);
         }
 
-        List<String> queries = branchPlan(body, W);
-        List<CircuitConstructionPlan.Step> steps = new ArrayList<>();
-        for (int i = 0; i < queries.size(); i++) {
-            steps.add(new CircuitConstructionPlan.Step(queries.get(i), false, "flat[" + i + "]"));
-        }
-        String fallback = constructionMode == ConstructionMode.FACTORED
-                ? "query body is not a pure BGP; UNION/MINUS/OPTIONAL use the flat operator plan"
+        List<CircuitConstructionPlan.Step> steps = branchPlan(body, W);
+        // Any factored sub-BGP contributes feedback steps (base/join/marginalize private messages);
+        // their presence is exactly what makes the composite construction "factored" for this query.
+        boolean anyFactored = false;
+        for (CircuitConstructionPlan.Step s : steps) if (s.feedback()) { anyFactored = true; break; }
+        ConstructionMode effective = anyFactored ? ConstructionMode.FACTORED : ConstructionMode.FLAT;
+        String fallback = (constructionMode == ConstructionMode.FACTORED && effective == ConstructionMode.FLAT)
+                ? "query body is not a pure BGP and no sub-BGP was factored; using the flat operator plan"
                 : null;
-        return new CircuitConstructionPlan(steps, constructionMode, ConstructionMode.FLAT, fallback);
+        return new CircuitConstructionPlan(steps, constructionMode, effective, fallback);
     }
 
     public ConstructionMode constructionMode() { return constructionMode; }
@@ -210,14 +214,14 @@ public class CircuitRewriter {
      *   - OPTIONAL: optionalPlan (AND-branch + unguarded DIFF)
      *   - BGP:      1 CONSTRUCT    (⊗ per derivation -> ⊕ per answer)
      */
-    private List<String> branchPlan(TupleExpr body, List<String> W) {
+    private List<CircuitConstructionPlan.Step> branchPlan(TupleExpr body, List<String> W) {
         // Look through the Distinct + inner Projection that a property-path `?` expansion wraps around
         // its Union (both are no-ops for our content-addressed, set-semantics answer gates).
         if (body instanceof Distinct)   return branchPlan(normalize(((Distinct) body).getArg()), W);
         if (body instanceof Projection) return branchPlan(normalize(((Projection) body).getArg()), W);
         if (body instanceof Union) {
             Union u = (Union) body;
-            List<String> plan = new ArrayList<>(branchPlan(u.getLeftArg(), W));
+            List<CircuitConstructionPlan.Step> plan = new ArrayList<>(branchPlan(u.getLeftArg(), W));
             plan.addAll(branchPlan(u.getRightArg(), W));
             return plan;
         }
@@ -228,12 +232,31 @@ public class CircuitRewriter {
             return optionalPlan((LeftJoin) body, W);
         }
         if (body instanceof ZeroLengthPath) {                 // zero-length path, e.g. the ?-branch of :p?
-            List<String> plan = new ArrayList<>();
-            plan.add(zeroLengthPlan((ZeroLengthPath) body, W));
+            List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
+            plan.add(flatStep(zeroLengthPlan((ZeroLengthPath) body, W), "zerolen"));
             return plan;
         }
-        List<String> plan = new ArrayList<>();
-        plan.add(bgp(collect(body), W));
+        return bgpSteps(collect(body), W);                    // pure BGP branch: factored in FACTORED mode
+    }
+
+    private CircuitConstructionPlan.Step flatStep(String query, String label) {
+        return new CircuitConstructionPlan.Step(query, false, label);
+    }
+
+    /**
+     * BGP sub-plan producing the answer ⊕ keyed by {@code W}. In FACTORED mode this is the same
+     * min-scope variable elimination validated for whole-query pure BGPs (its answer gate is
+     * byte-for-byte identical to the flat {@link #bgp} answer gate, so a factored branch and a flat
+     * branch merge into one shared answer ⊕); in FLAT mode it is the single one-⊗-per-derivation
+     * CONSTRUCT. This is where OPTIONAL's reconvergent P1∪P2 AND-branch gets compressed.
+     */
+    private List<CircuitConstructionPlan.Step> bgpSteps(List<StatementPattern> sps, List<String> W) {
+        if (constructionMode == ConstructionMode.FACTORED && !sps.isEmpty()) {
+            return new ArrayList<>(FactoredBgpRewriter.build(
+                    scheme, generatedPrefix, workspaceId, sps, W).steps());
+        }
+        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
+        plan.add(flatStep(bgp(sps, W), "flat-bgp"));
         return plan;
     }
 
@@ -315,28 +338,30 @@ public class CircuitRewriter {
      * iff it matches SOME branch). A branch sharing no variable with P1 is a no-op and
      * is skipped; if no branch overlaps, MINUS is a no-op (= P1).
      */
-    private List<String> minusPlan(Difference diff, List<String> W) {
+    private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W) {
         List<StatementPattern> L = collect(diff.getLeftArg());
         LinkedHashSet<String> V1 = vars(L);
         List<List<StatementPattern>> removing = new ArrayList<>();
         for (List<StatementPattern> Rb : unionBranches(diff.getRightArg())) {
             if (!intersect(V1, vars(Rb)).isEmpty()) removing.add(Rb);   // overlap ⇒ can remove
         }
-        List<String> plan = new ArrayList<>();
+        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         if (removing.isEmpty()) {                                      // no overlap ⇒ MINUS is a no-op
-            plan.add(bgp(L, W));
+            plan.addAll(bgpSteps(L, W));                                // = P1 (factored in FACTORED mode)
             return plan;
         }
         String p1Tag = "P1@" + bgpFingerprint(L);
         String opFp = diffFingerprint(L, removing);
-        plan.add(productPlus(L, "a", "urn:g:p1:", p1Tag, V1));          // ⊗ -> ⊕_{P1}(V1)
+        // ⊕_{P1}(V1): the minuend marginal. Factored when possible (compresses reconvergent P1);
+        // its content-addressed IRI is unchanged, so subFeeds/minusRoot connect regardless.
+        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
         for (List<StatementPattern> Rb : removing) {
             LinkedHashSet<String> V2 = vars(Rb);
             String p2Tag = "P2@" + bgpFingerprint(Rb);
-            plan.add(productPlus(Rb, "b", "urn:g:p2:", p2Tag, V2));     // ⊗ -> ⊕_{P2}(V2)
-            plan.add(subFeeds(L, Rb, V1, V2, p2Tag, opFp));              // ⊕_{P2} -> ⊕_{sub}(V1)
+            plan.addAll(marginalPlus(Rb, "b", "urn:g:p2:", p2Tag, V2)); // ⊕_{P2}(V2)
+            plan.add(flatStep(subFeeds(L, Rb, V1, V2, p2Tag, opFp), "sub")); // ⊕_{P2} -> ⊕_{sub}(V1)
         }
-        plan.add(minusRoot(L, V1, W, p1Tag, opFp));                    // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
+        plan.add(flatStep(minusRoot(L, V1, W, p1Tag, opFp), "minusRoot")); // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
         return plan;
     }
 
@@ -410,13 +435,13 @@ public class CircuitRewriter {
     }
 
     // --------------------------- OPTIONAL = (P1 AND P2) UNION (P1 DIFF P2) ---------------------------
-    private List<String> optionalPlan(LeftJoin lj, List<String> W) {
+    private List<CircuitConstructionPlan.Step> optionalPlan(LeftJoin lj, List<String> W) {
         List<StatementPattern> L = collect(lj.getLeftArg());
         List<StatementPattern> R = collect(lj.getRightArg());
         List<StatementPattern> both = new ArrayList<>(L); both.addAll(R);
 
-        List<String> plan = new ArrayList<>();
-        plan.add(bgp(both, W));                                          // AND-branch: ⊗ over P1∪P2 -> answer
+        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
+        plan.addAll(bgpSteps(both, W));                                  // AND-branch: ⊗ over P1∪P2 -> answer (factored)
         // DIFF-branch: P1-only answers with ⊖. UNLIKE MINUS this is UNGUARDED — OPTIONAL's negative
         // branch must subtract even when the operands share no variable. subFeeds reifies P1 and P2
         // in one WHERE, so disjoint operands cross-product and every P2 feeds every P1 subtrahend
@@ -426,10 +451,29 @@ public class CircuitRewriter {
         String p1Tag = "P1@" + bgpFingerprint(L);
         String p2Tag = "P2@" + bgpFingerprint(R);
         String opFp = diffFingerprint(L, Collections.singletonList(R));
-        plan.add(productPlus(L, "a", "urn:g:p1:", p1Tag, V1));
-        plan.add(productPlus(R, "b", "urn:g:p2:", p2Tag, V2));
-        plan.add(subFeeds(L, R, V1, V2, p2Tag, opFp));
-        plan.add(minusRoot(L, V1, W, p1Tag, opFp));
+        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
+        plan.addAll(marginalPlus(R, "b", "urn:g:p2:", p2Tag, V2));
+        plan.add(flatStep(subFeeds(L, R, V1, V2, p2Tag, opFp), "sub"));
+        plan.add(flatStep(minusRoot(L, V1, W, p1Tag, opFp), "minusRoot"));
+        return plan;
+    }
+
+    /**
+     * ⊕ keyed by {@code groupVars} (the P1/P2 marginal that feeds a ⊖). In FACTORED mode this is min-scope
+     * variable elimination down to {@code groupVars}, then a sink ⊕ carrying the SAME content-addressed IRI
+     * ({@code plusPrefix}+idKey(canonicalVars,groupTag)) as the flat gate, so subFeeds/minusRoot connect
+     * unchanged and the ⊖ leaves (reified statement ids) are identical — the difference semantics are
+     * preserved, only the minuend/subtrahend polynomial is factored. FLAT mode: one-⊗-per-derivation.
+     */
+    private List<CircuitConstructionPlan.Step> marginalPlus(List<StatementPattern> sps, String tokPrefix,
+            String plusPrefix, String groupTag, LinkedHashSet<String> groupVars) {
+        if (constructionMode == ConstructionMode.FACTORED && !sps.isEmpty()) {
+            return new ArrayList<>(FactoredBgpRewriter.buildMarginal(
+                    scheme, generatedPrefix, workspaceId, sps, canonicalVars(groupVars),
+                    plusPrefix, groupTag).steps());
+        }
+        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
+        plan.add(flatStep(productPlus(sps, tokPrefix, plusPrefix, groupTag, groupVars), "marg-flat"));
         return plan;
     }
 
