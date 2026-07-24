@@ -94,3 +94,43 @@ column. Not required for the figure.
 Push these back; the paper-side generator `figures/plot_compactness.py` will then be pointed at these
 CSVs (real NPCS/flat/factored) instead of synthesizing the WatDiv half. Nothing else in the figure or
 the §Compactness text changes.
+
+## E-C1b — non-monotone coverage (OPTIONAL + MINUS)
+
+The compactness figure must include the non-monotone fragment: both baselines evaluate it, and
+excluding it reduces the comparison to the monotone (SQL-like) core. Two gaps remain after E-C1:
+
+1. **factored on OPTIONAL was not run.** On O the *flat* circuit is large because OPTIONAL's internal
+   join reconverges (O2 at 10M: 337k nodes for 112k derivations) — the same blow-up as the reconvergent
+   family, which the factored construction compresses. NPCS's compact O string aggregates similarly
+   (and is not WMC-ready). Run factored on O to get our competitive form.
+2. **MINUS (M) was not run at all** (E-C1 covered C,F,L,O,S). Run N + C(flat) + C(factored) on M.
+
+Node counts and flags exactly as in E-C1. Expect some O/M cells to stay too-large even factored
+(OPTIONAL/MINUS can blow up like complex C3); leave them empty — that is honest.
+
+### factored on OPTIONAL (writable UPDATE endpoint, no force-flat)
+```bash
+unset PCM_FORCE_FLAT
+# base/reified/UPDATE endpoints for 10M and 100M as in E-C1 (b)
+python3 reference/paper/paper_construction_matrix.py \
+    --engines graphdb --scales 10M,100M --classes O --methods C \
+    --warmups 0 --runs 1 --out reference/paper/nodecount_factored_O_10m_100m.csv
+```
+
+### MINUS — all three constructions
+```bash
+export PCM_FORCE_FLAT=1                                   # NPCS + flat
+python3 reference/paper/paper_construction_matrix.py \
+    --engines graphdb --scales 10M,100M --classes M --methods N,C \
+    --warmups 0 --runs 1 --out reference/paper/nodecount_flat_M_10m_100m.csv
+unset PCM_FORCE_FLAT                                      # factored (needs UPDATE endpoint)
+python3 reference/paper/paper_construction_matrix.py \
+    --engines graphdb --scales 10M,100M --classes M --methods C \
+    --warmups 0 --runs 1 --out reference/paper/nodecount_factored_M_10m_100m.csv
+```
+
+Deliverables: `nodecount_factored_O_10m_100m.csv`, `nodecount_flat_M_10m_100m.csv`,
+`nodecount_factored_M_10m_100m.csv`. With these the compactness figure shows OPTIONAL and MINUS with our
+factored construction (competitive with NPCS where factored completes), so the size comparison spans
+the full SPARQL fragment, not just the monotone core.
