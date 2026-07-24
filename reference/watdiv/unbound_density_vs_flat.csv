@@ -1,0 +1,7 @@
+k,W,answers,flat_gates,flat_ms,factored_gates,factored_ms,flat_over_factored,flat_answers_ok,factored_answers_ok
+4,2,4,36,58,140,106,0.3,True,True
+4,3,9,252,92,369,131,0.7,True,True
+4,4,16,1040,142,752,172,1.4,True,True
+4,5,25,3150,284,1325,232,2.4,True,True
+4,6,36,7812,509,2124,335,3.7,True,True
+4,7,49,16856,814,3185,421,5.3,True,True
