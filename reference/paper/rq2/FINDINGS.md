@@ -115,3 +115,12 @@ the synthetic sweep `reference/watdiv/unbound_factored_vs_flat.csv` already capt
 WatDiv) does **not** hold. For O/M on WatDiv, factored = flat, so the figure can use flat; the OPTIONAL
 caveat (flat/factored-O ≫ NPCS, because NPCS lacks exact non-monotone PQE) **remains** and should be
 framed as size-for-capability. factored-MINUS is additionally more expensive to construct at scale.
+
+## MINUS @100M — tractability boundary (2026-07-25)
+
+Partial (GraphDB @90g): M2 flat=12.35M nodes, M3 flat=13.38M nodes built; M1 NPCS=5.62M built;
+**M4 OOM-crashed GraphDB** (its 10M NPCS was already 21.2M nodes → ~200M at 100M), which blocks M5
+(the harness runs templates in order and can't isolate one). So clean flat-vs-NPCS MINUS pairs at 100M
+are not obtainable — MINUS@100M circuits are 12–21M+ nodes and hit the engine memory limit. The clean
+compactness result for MINUS is at 10M (flat ≤ NPCS). This 100M behaviour is a legitimate **tractability
+boundary** data point (report honestly; ties to the WMC/#P-hardness limit discussion).

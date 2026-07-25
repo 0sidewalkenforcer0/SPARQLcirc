@@ -1,0 +1,12 @@
+  [graphdb 100M M/M1 N] ok             ans=1119055 206500ms
+  [graphdb 100M M/M1 C] timeout        ans=None timeout
+  [graphdb 100M M/M2 N] timeout        ans=None timeout
+  [graphdb 100M M/M2 C] ok             ans=1499014 1423397ms gates=9733180
+  [graphdb 100M M/M3 N] err:Error      ans=None err:Error
+  [graphdb 100M M/M3 C] ok             ans=1480510 1208572ms gates=10402550
+  [graphdb 100M M/M4 N] err:network    ans=None err:network
+  [graphdb 100M M/M4 C] err:network    ans=None err:network
+  [graphdb 100M M/M5 N] err:network    ans=None err:network
+  [graphdb 100M M/M5 C] err:network    ans=None err:network
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_flat_M_100m.csv
