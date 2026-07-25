@@ -15,6 +15,20 @@ identically**, then compiles to d-DNNF for fast exact weighted model counting (W
 
 ## The questions the evaluation answers (ranked by strength for VLDB)
 
+### Q6 — External baseline: vs ProvSQL, the SOTA exact-PQE system (STRONG — I was wrong to list this as a gap)
+*How does end-to-end exact PQE compare to the strongest external system (ProvSQL)?*
+- Evidence (`reference/g2a_provsql_vs_ours.csv`): FAIR uncontended 3-run medians, WatDiv SF 0.01/0.1/0.3.
+  **SPARQLcirc is ~2.7x faster than ProvSQL end-to-end with identical probabilities** (SF0.3: ours 70.1s
+  vs ProvSQL 185.0s, ratio 2.64x; SF0.1 2.71x; SF0.01 2.88x; both p=0.125, ProvSQL default agrees).
+- A more controlled per-answer head-to-head (`reference/level1_d4_headtohead.py`) forces BOTH systems
+  through the SAME compiler (pinned d4v2) at per-answer granularity, isolating the compiler so the
+  comparison is of the provenance representation, not the compiler. Runnable (postgres is up, ProvSQL at
+  `tools/provsql`, d4v2 at `tools/d4v2`); needs the `provsqltest` DB reachable + D4/D4V2 env. Not yet
+  re-run this campaign — a refinement, since g2a already gives the headline.
+- Phrase: "against ProvSQL, the strongest exact-PQE baseline, SPARQLcirc computes the same exact
+  probabilities ~2.7x faster end-to-end; a compiler-controlled per-answer comparison isolates the win to
+  the shared content-addressed representation."
+
 ### Q1 — Expressiveness / correctness (STRONG; universal, assert)
 *Can we compute **exact** probabilities for queries prior exact-PQE methods cannot — non-monotone
 OPTIONAL/MINUS and recursive paths?*
@@ -67,9 +81,10 @@ OPTIONAL/MINUS and recursive paths?*
 3. **Pure-SPARQL, cross-engine byte-identity** (Q3): 4 engines @10M, 2 @100M — deployable/reproducible.
 
 ## Gaps that most affect accept/reject (address before submission)
-1. **No external end-to-end PQE baseline.** We compare shared-vs-per-answer (self-baseline) and NPCS
-   on construction, but not the full exact-PQE task against a competing system. **Highest risk.**
-   Candidates: ProvSQL, a knowledge-compilation probabilistic DB, or a grounding-based exact method.
+1. **External end-to-end PQE baseline — LARGELY DONE (correction).** `g2a_provsql_vs_ours.csv` already
+   compares against ProvSQL (the SOTA exact-PQE system): ours ~2.7x faster, exact-agree, WatDiv SF
+   0.01-0.3. To strengthen: extend to larger scale + more query shapes, and re-run the compiler-controlled
+   `level1_d4_headtohead.py`. This is a refinement, no longer the top risk.
 2. **Synthetic data only.** WatDiv + synthetic probabilities. Add ≥1 real uncertain KG and justify the
    probability model.
 3. **Tractability boundary unstated.** WMC is #P-hard; d-DNNF can blow up. Characterise when it is
