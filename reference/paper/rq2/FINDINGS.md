@@ -124,3 +124,18 @@ Partial (GraphDB @90g): M2 flat=12.35M nodes, M3 flat=13.38M nodes built; M1 NPC
 are not obtainable — MINUS@100M circuits are 12–21M+ nodes and hit the engine memory limit. The clean
 compactness result for MINUS is at 10M (flat ≤ NPCS). This 100M behaviour is a legitimate **tractability
 boundary** data point (report honestly; ties to the WMC/#P-hardness limit discussion).
+
+### factored-O @100M confirms ≈flat at scale (2026-07-25)
+| cell | NPCS | flat | factored | fac/flat |
+|---|---:|---:|---:|---:|
+| OO2 | 140 | 3357263 | 3357273 | 1.00 |
+| OO5 | 140 | 3357256 | 3357265 | 1.00 |
+| OO3 | 19876 | 93562 | 94160 | 1.01 |
+| OO4 | 194707 | 308816 | 338879 | 1.10 |
+| OO1 | 49 | 75525 | err:ConstructionProtocolError | — |
+
+Same verdict at 100M: factored ≈ flat (OO2/OO5 identical at 3.357M), still ≫ NPCS (OO2 3.36M vs 140).
+factoring gives no compaction on WatDiv OPTIONAL at either scale; the OPTIONAL caveat is scale-invariant.
+(OO1 hit a ConstructionProtocolError at 100M — a single-cell fallback edge case, 4/5 confirm the trend.)
+**E-C1b conclusion (final): on WatDiv, factored O/M = flat; use flat for the figure's O/M bars; factoring's
+compaction win is exclusively the synthetic reconvergent sweep.**

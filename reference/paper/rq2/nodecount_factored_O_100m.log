@@ -1,0 +1,7 @@
+  [graphdb 100M O/O1 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 100M O/O2 C] ok             ans=21 1193764ms gates=2238204
+  [graphdb 100M O/O3 C] ok             ans=3213 118244ms gates=66086
+  [graphdb 100M O/O4 C] ok             ans=27441 252024ms gates=262944
+  [graphdb 100M O/O5 C] ok             ans=14 1071215ms gates=2238196
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_O_100m.csv
