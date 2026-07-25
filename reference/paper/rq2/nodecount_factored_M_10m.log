@@ -1,7 +1,7 @@
-  [graphdb 10M M/M1 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M M/M2 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M M/M3 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M M/M4 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M M/M5 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M M/M1 C] timeout        ans=None timeout
+  [graphdb 10M M/M2 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M M/M3 C] err:cleanup    ans=None err:cleanup
+  [graphdb 10M M/M4 C] timeout        ans=None timeout
+  [graphdb 10M M/M5 C] ok             ans=112401 255991ms gates=866555
 
 wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_M_10m.csv

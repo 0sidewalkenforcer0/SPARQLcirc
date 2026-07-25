@@ -86,3 +86,32 @@ Spec `b35a5fd` asked for factored on OPTIONAL and N+flat+factored on MINUS.
 | M5 | 1078995 | 1131231 | 1.05x |
 
 **On MINUS the flat circuit is <= NPCS** where both build: MM3 flat 1.35M vs NPCS 3.56M (2.6x smaller), MM2/MM5 ~equal; NPCS MINUS is very large (MM4 21.2M). This is the **opposite of OPTIONAL** (flat > NPCS): the circuit's sub-structure sharing wins on MINUS even without factoring. So for the figure, MINUS enters as **NPCS vs flat** and favors the circuit; OPTIONAL remains the caveat pending factored-O engine support.
+
+## E-C1b factored O/M now runs (engine fix) — but factored ≈ flat on WatDiv (2026-07-25)
+
+The engine now supports factored construction for OPTIONAL/MINUS/UNION (was flat-only; commit 9df1028).
+Verified exact: factored MINUS/OPTIONAL WMC == possible-world enumeration == flat (Δ=0); 10/10 unit
+tests; flat-mode output unchanged. So factored O/M can now enter the figure.
+
+**Result: on WatDiv, factored ≈ flat (no compaction).** True node counts (leaves+gates), 10M:
+
+| cell | NPCS | flat | factored | fac/flat | note |
+|---|---:|---:|---:|---:|---|
+| OO1 | 361 | 7806 | 7868 | 1.01 | |
+| OO2 | 476 | 337385 | 337439 | 1.00 | flat/factored ≫ NPCS |
+| OO3 | 1906 | 9235 | 9293 | 1.01 | |
+| OO4 | 5557 | 19571 | 20432 | 1.04 | |
+| OO5 | 476 | 337336 | 337351 | 1.00 | flat/factored ≫ NPCS |
+| MM5 | 1078995 | 1131231 | 1131231 | 1.00 | ≤ NPCS |
+| MM1/MM4 | — | (heavy) | timeout | — | factored MINUS too costly @900s |
+| MM2/MM3 | 1.28M/3.56M | 1.25M/1.35M | err:cleanup | — | factored MINUS caps where flat built |
+
+**Why:** WatDiv OPTIONAL/MINUS templates are bound and selective, so their derivations do not share
+sub-structure — there is nothing for variable elimination to factor, hence factored = flat (same as the
+bound-BGP finding). Factoring's real compaction win is the *reconvergent* regime (unbound joins), which
+the synthetic sweep `reference/watdiv/unbound_factored_vs_flat.csv` already captures.
+
+**Consequence for the figure/§Compactness:** the b35a5fd hypothesis (factored compresses OPTIONAL on
+WatDiv) does **not** hold. For O/M on WatDiv, factored = flat, so the figure can use flat; the OPTIONAL
+caveat (flat/factored-O ≫ NPCS, because NPCS lacks exact non-monotone PQE) **remains** and should be
+framed as size-for-capability. factored-MINUS is additionally more expensive to construct at scale.

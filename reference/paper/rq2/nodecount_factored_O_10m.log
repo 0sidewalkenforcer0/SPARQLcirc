@@ -1,7 +1,7 @@
-  [graphdb 10M O/O1 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M O/O2 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M O/O3 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M O/O4 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
-  [graphdb 10M O/O5 C] err:ConstructionProtocolError ans=None err:ConstructionProtocolError
+  [graphdb 10M O/O1 C] ok             ans=51 12195ms gates=5313
+  [graphdb 10M O/O2 C] ok             ans=63 95314ms gates=225024
+  [graphdb 10M O/O3 C] ok             ans=308 11820ms gates=6513
+  [graphdb 10M O/O4 C] ok             ans=783 17973ms gates=14678
+  [graphdb 10M O/O5 C] ok             ans=14 90295ms gates=224936
 
 wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/nodecount_factored_O_10m.csv
