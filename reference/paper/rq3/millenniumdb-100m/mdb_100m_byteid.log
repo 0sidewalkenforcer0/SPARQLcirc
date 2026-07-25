@@ -1,0 +1,24 @@
+  [millenniumdb 100M F/F1 C] ok             ans=11 1653ms gates=22
+  [millenniumdb 100M F/F2 C] ok             ans=13 385ms gates=26
+  [millenniumdb 100M F/F3 C] ok             ans=19 368ms gates=38
+  [millenniumdb 100M F/F4 C] ok             ans=103 810ms gates=206
+  [millenniumdb 100M F/F5 C] ok             ans=38 451ms gates=76
+  [millenniumdb 100M L/L1 C] ok             ans=4 84ms gates=8
+  [millenniumdb 100M L/L2 C] ok             ans=961 9722ms gates=1922
+  [millenniumdb 100M L/L3 C] ok             ans=3 29ms gates=10
+  [millenniumdb 100M L/L4 C] ok             ans=299 1389ms gates=598
+  [millenniumdb 100M L/L5 C] ok             ans=1310 8916ms gates=2620
+  [millenniumdb 100M O/O1 C] ok             ans=7 37039ms gates=50355
+  [millenniumdb 100M O/O2 C] ok             ans=21 138353ms gates=2238194
+  [millenniumdb 100M O/O3 C] ok             ans=3213 4009ms gates=65488
+  [millenniumdb 100M O/O4 C] ok             ans=27441 18425ms gates=232881
+  [millenniumdb 100M O/O5 C] ok             ans=14 132425ms gates=2238187
+  [millenniumdb 100M S/S1 C] ok             ans=7 43ms gates=14
+  [millenniumdb 100M S/S2 C] ok             ans=2689 4158ms gates=5378
+  [millenniumdb 100M S/S3 C] ok             ans=1346 1072ms gates=4535
+  [millenniumdb 100M S/S4 C] ok             ans=2 14624ms gates=4
+  [millenniumdb 100M S/S5 C] ok             ans=341 10042ms gates=682
+  [millenniumdb 100M S/S6 C] ok             ans=13 16ms gates=26
+  [millenniumdb 100M S/S7 C] ok             ans=2 22ms gates=4
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/mdb_100m_byteid.csv
