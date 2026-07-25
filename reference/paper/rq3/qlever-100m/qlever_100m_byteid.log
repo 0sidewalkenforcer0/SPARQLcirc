@@ -1,0 +1,24 @@
+  [qlever 100M F/F1 C] ok             ans=11 1461ms gates=22
+  [qlever 100M F/F2 C] ok             ans=13 1892ms gates=26
+  [qlever 100M F/F3 C] ok             ans=19 1273ms gates=38
+  [qlever 100M F/F4 C] ok             ans=103 10749ms gates=206
+  [qlever 100M F/F5 C] ok             ans=38 1378ms gates=76
+  [qlever 100M L/L1 C] ok             ans=4 550ms gates=8
+  [qlever 100M L/L2 C] ok             ans=961 1409ms gates=1922
+  [qlever 100M L/L3 C] ok             ans=3 59ms gates=10
+  [qlever 100M L/L4 C] ok             ans=299 321ms gates=598
+  [qlever 100M L/L5 C] ok             ans=1310 2061ms gates=2620
+  [qlever 100M O/O1 C] ok             ans=7 7984ms gates=50355
+  [qlever 100M O/O2 C] err:ValueError ans=None err:ValueError
+  [qlever 100M O/O3 C] ok             ans=3213 2996ms gates=65488
+  [qlever 100M O/O4 C] ok             ans=27441 21857ms gates=232881
+  [qlever 100M O/O5 C] err:ValueError ans=None err:ValueError
+  [qlever 100M S/S1 C] ok             ans=7 17855ms gates=14
+  [qlever 100M S/S2 C] ok             ans=2689 3217ms gates=5378
+  [qlever 100M S/S3 C] ok             ans=1346 1553ms gates=4535
+  [qlever 100M S/S4 C] ok             ans=2 1530ms gates=4
+  [qlever 100M S/S5 C] ok             ans=341 1176ms gates=682
+  [qlever 100M S/S6 C] ok             ans=13 412ms gates=26
+  [qlever 100M S/S7 C] ok             ans=2 501ms gates=4
+
+wrote/appended /mnt/nfs/home/ac145595/workspace/rq3-artifacts/qlever_100m_byteid.csv
