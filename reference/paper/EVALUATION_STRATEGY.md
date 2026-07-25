@@ -22,9 +22,10 @@ identically**, then compiles to d-DNNF for fast exact weighted model counting (W
   vs ProvSQL 185.0s, ratio 2.64x; SF0.1 2.71x; SF0.01 2.88x; both p=0.125, ProvSQL default agrees).
 - A more controlled per-answer head-to-head (`reference/level1_d4_headtohead.py`) forces BOTH systems
   through the SAME compiler (pinned d4v2) at per-answer granularity, isolating the compiler so the
-  comparison is of the provenance representation, not the compiler. Runnable (postgres is up, ProvSQL at
-  `tools/provsql`, d4v2 at `tools/d4v2`); needs the `provsqltest` DB reachable + D4/D4V2 env. Not yet
-  re-run this campaign — a refinement, since g2a already gives the headline.
+  comparison is of the provenance representation, not the compiler. Infra state (checked 2026-07-25): postgres up on port 5433 (socket workspace/pgsock), provsql schema +
+  all compilers registered (d4/d4v2/c2d/dsharp/ganak/...), d4v2 at tools/d4v2/scripts/d4_static. BUT the
+  TPC-H schemas (tpch001/tpch01) were dropped after the g2a run — re-running level1 needs a TPC-H
+  SF0.01/0.1 reload into ProvSQL first (a setup task). A refinement; g2a already gives the headline.
 - Phrase: "against ProvSQL, the strongest exact-PQE baseline, SPARQLcirc computes the same exact
   probabilities ~2.7x faster end-to-end; a compiler-controlled per-answer comparison isolates the win to
   the shared content-addressed representation."
