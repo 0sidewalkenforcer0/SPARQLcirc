@@ -10,6 +10,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -109,6 +110,15 @@ public class CircuitRewriter {
         }
         TupleExpr body = normalize(projection.getArg());
         TupleExpr bgpCandidate = unwrapSetWrappers(body);
+        // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
+        // operand's group, and the factored plan has no single group for it (its passes exchange
+        // materialized relations). Same answer gate either way, so this is a plan choice only.
+        if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)
+                && !Filters.of(bgpCandidate).isEmpty()) {
+            return new CircuitConstructionPlan(branchPlan(body, W), constructionMode,
+                    ConstructionMode.FLAT, "BGP carries a FILTER; the factored passes have no single "
+                    + "group for the condition, so the flat plan is used");
+        }
         if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)) {
             return FactoredBgpRewriter.build(scheme, generatedPrefix, workspaceId,
                     collect(bgpCandidate), W);
@@ -147,15 +157,26 @@ public class CircuitRewriter {
         }
         if (node instanceof LeftJoin) {
             LeftJoin lj = (LeftJoin) node;
-            // Fail fast on the W3C filtered left join (OPTIONAL whose inner FILTER references both
-            // operands): RDF4J attaches that FILTER as the LeftJoin condition, which our rewriting
-            // does not model. Dropping it would silently emit a circuit for the *unfiltered* query
-            // (wrong answers, no error) — exactly what assertPureBgp refuses for FILTER-in-BGP.
+            // The W3C algebra lifts a FILTER inside an OPTIONAL group to the LeftJoin condition.
+            // When that condition only mentions variables the RIGHT operand binds, it is equivalent
+            // to a filter on that operand — LeftJoin(A,B,f) = LeftJoin(A, σ_f(B)) — since the
+            // matched case agrees pointwise and the unmatched case asks the same question of the same
+            // filtered relation. We push it there, which is Def. 4.5's filter rule.
+            // A condition that also mentions a LEFT-operand variable is the genuine filtered left
+            // join, which the rewriting does not model: reject rather than emit a circuit for the
+            // *unfiltered* query (wrong answers, no error).
             if (lj.getCondition() != null) {
-                throw new UnsupportedOperationException(
-                        "Unsupported operator: filtered left join (OPTIONAL with a FILTER condition "
-                      + "over both operands) is outside the supported fragment. Refusing to emit a "
-                      + "circuit for the unfiltered query; rewrite without the inner FILTER.");
+                Set<String> used = Filters.conditionVars(lj.getCondition());
+                used.removeAll(Filters.patternVars(lj.getRightArg()));
+                if (!used.isEmpty()) {
+                    throw new UnsupportedOperationException(
+                            "Unsupported operator: filtered left join (OPTIONAL with a FILTER condition "
+                          + "over both operands; here it also references " + used + ", which the OPTIONAL's "
+                          + "own pattern does not bind) is outside the supported fragment. Refusing to emit a "
+                          + "circuit for the unfiltered query; rewrite without the inner FILTER.");
+                }
+                return normalize(new LeftJoin(lj.getLeftArg().clone(),
+                        new Filter(lj.getRightArg().clone(), lj.getCondition().clone())));
             }
             return new LeftJoin(normalize(lj.getLeftArg().clone()), normalize(lj.getRightArg().clone()));
         }
@@ -236,7 +257,7 @@ public class CircuitRewriter {
             plan.add(flatStep(zeroLengthPlan((ZeroLengthPath) body, W), "zerolen"));
             return plan;
         }
-        return bgpSteps(collect(body), W);                    // pure BGP branch: factored in FACTORED mode
+        return bgpSteps(collectBlock(body), W);               // pure BGP branch: factored in FACTORED mode
     }
 
     private CircuitConstructionPlan.Step flatStep(String query, String label) {
@@ -250,13 +271,13 @@ public class CircuitRewriter {
      * branch merge into one shared answer ⊕); in FLAT mode it is the single one-⊗-per-derivation
      * CONSTRUCT. This is where OPTIONAL's reconvergent P1∪P2 AND-branch gets compressed.
      */
-    private List<CircuitConstructionPlan.Step> bgpSteps(List<StatementPattern> sps, List<String> W) {
-        if (constructionMode == ConstructionMode.FACTORED && !sps.isEmpty()) {
+    private List<CircuitConstructionPlan.Step> bgpSteps(Block block, List<String> W) {
+        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
             return new ArrayList<>(FactoredBgpRewriter.build(
-                    scheme, generatedPrefix, workspaceId, sps, W).steps());
+                    scheme, generatedPrefix, workspaceId, block.patterns, W).steps());
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
-        plan.add(flatStep(bgp(sps, W), "flat-bgp"));
+        plan.add(flatStep(bgp(block, W), "flat-bgp"));
         return plan;
     }
 
@@ -310,9 +331,9 @@ public class CircuitRewriter {
     }
 
     // --------------------------- BGP ---------------------------
-    private String bgp(List<StatementPattern> sps, List<String> W) {
+    private String bgp(Block block, List<String> W) {
         List<String> toks = new ArrayList<>();
-        StringBuilder where = reify(sps, "a", toks);
+        StringBuilder where = reify(block, "a", toks);
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
         String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
         StringBuilder q = new StringBuilder(PRE);
@@ -339,11 +360,11 @@ public class CircuitRewriter {
      * is skipped; if no branch overlaps, MINUS is a no-op (= P1).
      */
     private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W) {
-        List<StatementPattern> L = collect(diff.getLeftArg());
-        LinkedHashSet<String> V1 = vars(L);
-        List<List<StatementPattern>> removing = new ArrayList<>();
-        for (List<StatementPattern> Rb : unionBranches(diff.getRightArg())) {
-            if (!intersect(V1, vars(Rb)).isEmpty()) removing.add(Rb);   // overlap ⇒ can remove
+        Block L = collectBlock(diff.getLeftArg());
+        LinkedHashSet<String> V1 = vars(L.patterns);
+        List<Block> removing = new ArrayList<>();
+        for (Block Rb : unionBlocks(diff.getRightArg())) {
+            if (!intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);   // overlap ⇒ can remove
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         if (removing.isEmpty()) {                                      // no overlap ⇒ MINUS is a no-op
@@ -355,8 +376,8 @@ public class CircuitRewriter {
         // ⊕_{P1}(V1): the minuend marginal. Factored when possible (compresses reconvergent P1);
         // its content-addressed IRI is unchanged, so subFeeds/minusRoot connect regardless.
         plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
-        for (List<StatementPattern> Rb : removing) {
-            LinkedHashSet<String> V2 = vars(Rb);
+        for (Block Rb : removing) {
+            LinkedHashSet<String> V2 = vars(Rb.patterns);
             String p2Tag = "P2@" + bgpFingerprint(Rb);
             plan.addAll(marginalPlus(Rb, "b", "urn:g:p2:", p2Tag, V2)); // ⊕_{P2}(V2)
             plan.add(flatStep(subFeeds(L, Rb, V1, V2, p2Tag, opFp), "sub")); // ⊕_{P2} -> ⊕_{sub}(V1)
@@ -377,11 +398,23 @@ public class CircuitRewriter {
         return out;
     }
 
+    /** {@link #unionBranches} keeping each branch's FILTERs with it (per-branch conditions differ). */
+    private static List<Block> unionBlocks(TupleExpr node) {
+        List<Block> out = new ArrayList<>();
+        if (node instanceof Union) {
+            out.addAll(unionBlocks(((Union) node).getLeftArg()));
+            out.addAll(unionBlocks(((Union) node).getRightArg()));
+        } else {
+            out.add(collectBlock(node));
+        }
+        return out;
+    }
+
     /** ⊗ per derivation feeding a ⊕ gate keyed by {@code groupVars}. */
-    private String productPlus(List<StatementPattern> sps, String tokPrefix,
+    private String productPlus(Block block, String tokPrefix,
                                String plusPrefix, String groupTag, LinkedHashSet<String> groupVars) {
         List<String> toks = new ArrayList<>();
-        StringBuilder where = reify(sps, tokPrefix, toks);
+        StringBuilder where = reify(block, tokPrefix, toks);
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
         String times = qv("t"), plus = qv("pg");
         StringBuilder q = new StringBuilder(PRE);
@@ -395,7 +428,7 @@ public class CircuitRewriter {
     }
 
     /** For each compatible (P1,P2) pair, ⊕_{P2}(μ2) feeds ⊕_{sub}(μ1). */
-    private String subFeeds(List<StatementPattern> L, List<StatementPattern> R,
+    private String subFeeds(Block L, Block R,
                             LinkedHashSet<String> V1, LinkedHashSet<String> V2,
                             String p2Tag, String opFp) {
         List<String> ta = new ArrayList<>(), tb = new ArrayList<>();
@@ -411,7 +444,7 @@ public class CircuitRewriter {
     }
 
     /** ⊖(⊕_{P1}(μ1), ⊕_{sub}(μ1)) feeding the answer ⊕, keyed by the projection. */
-    private String minusRoot(List<StatementPattern> L, LinkedHashSet<String> V1, List<String> W,
+    private String minusRoot(Block L, LinkedHashSet<String> V1, List<String> W,
                              String p1Tag, String opFp) {
         List<String> ta = new ArrayList<>();
         StringBuilder where = reify(L, "a", ta);
@@ -436,9 +469,9 @@ public class CircuitRewriter {
 
     // --------------------------- OPTIONAL = (P1 AND P2) UNION (P1 DIFF P2) ---------------------------
     private List<CircuitConstructionPlan.Step> optionalPlan(LeftJoin lj, List<String> W) {
-        List<StatementPattern> L = collect(lj.getLeftArg());
-        List<StatementPattern> R = collect(lj.getRightArg());
-        List<StatementPattern> both = new ArrayList<>(L); both.addAll(R);
+        Block L = collectBlock(lj.getLeftArg());
+        Block R = collectBlock(lj.getRightArg());
+        Block both = Block.concat(L, R);
 
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         plan.addAll(bgpSteps(both, W));                                  // AND-branch: ⊗ over P1∪P2 -> answer (factored)
@@ -447,7 +480,7 @@ public class CircuitRewriter {
         // in one WHERE, so disjoint operands cross-product and every P2 feeds every P1 subtrahend
         // (⊖(⊕_{P1}, ⊕ all P2)); a shared variable instead makes it a natural join. Guarding this on
         // shared variables (as MINUS does) would leave a bare P1 present even when P2 matches — wrong.
-        LinkedHashSet<String> V1 = vars(L), V2 = vars(R);
+        LinkedHashSet<String> V1 = vars(L.patterns), V2 = vars(R.patterns);
         String p1Tag = "P1@" + bgpFingerprint(L);
         String p2Tag = "P2@" + bgpFingerprint(R);
         String opFp = diffFingerprint(L, Collections.singletonList(R));
@@ -465,19 +498,31 @@ public class CircuitRewriter {
      * unchanged and the ⊖ leaves (reified statement ids) are identical — the difference semantics are
      * preserved, only the minuend/subtrahend polynomial is factored. FLAT mode: one-⊗-per-derivation.
      */
-    private List<CircuitConstructionPlan.Step> marginalPlus(List<StatementPattern> sps, String tokPrefix,
+    private List<CircuitConstructionPlan.Step> marginalPlus(Block block, String tokPrefix,
             String plusPrefix, String groupTag, LinkedHashSet<String> groupVars) {
-        if (constructionMode == ConstructionMode.FACTORED && !sps.isEmpty()) {
+        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
             return new ArrayList<>(FactoredBgpRewriter.buildMarginal(
-                    scheme, generatedPrefix, workspaceId, sps, canonicalVars(groupVars),
+                    scheme, generatedPrefix, workspaceId, block.patterns, canonicalVars(groupVars),
                     plusPrefix, groupTag).steps());
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
-        plan.add(flatStep(productPlus(sps, tokPrefix, plusPrefix, groupTag, groupVars), "marg-flat"));
+        plan.add(flatStep(productPlus(block, tokPrefix, plusPrefix, groupTag, groupVars), "marg-flat"));
         return plan;
     }
 
     // --------------------------- helpers ---------------------------
+    /**
+     * Reified group of a BGP operand: its patterns followed by its FILTERs. Appending the conditions
+     * after the patterns is where Def. 4.5 puts them ("everything else, filters included, left in
+     * place"): every variable a condition mentions is bound by this group ({@link Filters#of}
+     * enforces that), so the position inside the group does not change its value.
+     */
+    private StringBuilder reify(Block block, String tokPrefix, List<String> toksOut) {
+        StringBuilder w = reify(block.patterns, tokPrefix, toksOut);
+        w.append(Filters.emit(block.filters));
+        return w;
+    }
+
     private StringBuilder reify(List<StatementPattern> sps, String tokPrefix, List<String> toksOut) {
         StringBuilder w = new StringBuilder();
         for (int i = 0; i < sps.size(); i++) {
@@ -590,9 +635,9 @@ public class CircuitRewriter {
         }
     }
 
-    /** Canonical fingerprint of one BGP (independent of the physical leaf-reification syntax). */
-    private String bgpFingerprint(List<StatementPattern> patterns) {
-        return sha256hex(bgpSemanticKey(patterns));
+    /** Canonical fingerprint of one BGP operand (independent of the physical leaf-reification syntax). */
+    private String bgpFingerprint(Block block) {
+        return sha256hex(bgpSemanticKey(block));
     }
 
     /**
@@ -601,9 +646,9 @@ public class CircuitRewriter {
      * {@code {A MINUS P} UNION {A MINUS Q}} collision) necessarily gets a different SUB/M identity.
      * Right UNION alternatives are sorted because Boolean union is associative/commutative/idempotent.
      */
-    private String diffFingerprint(List<StatementPattern> left, List<List<StatementPattern>> rights) {
+    private String diffFingerprint(Block left, List<Block> rights) {
         List<String> rkeys = new ArrayList<>();
-        for (List<StatementPattern> right : rights) rkeys.add(bgpSemanticKey(right));
+        for (Block right : rights) rkeys.add(bgpSemanticKey(right));
         Collections.sort(rkeys);
         StringBuilder key = new StringBuilder("DIFF|").append(part(bgpSemanticKey(left)));
         String previous = null;
@@ -612,6 +657,18 @@ public class CircuitRewriter {
             previous = rkey;
         }
         return sha256hex(key.toString());
+    }
+
+    /**
+     * Semantic key of a BGP operand: its pattern key plus its FILTER conditions. The filters must be
+     * in the key — two operands differing only by a filter denote different relations, so their ⊕/⊖
+     * gates must not hash-cons (e.g. {@code A MINUS (P FILTER φ1)} and {@code A MINUS (P FILTER φ2)}
+     * inside one query). The condition list is already canonically sorted by {@link Filters#of}.
+     */
+    private static String bgpSemanticKey(Block block) {
+        StringBuilder out = new StringBuilder(bgpSemanticKey(block.patterns));
+        for (String condition : block.filters) out.append("FLT").append(part(condition));
+        return out.toString();
     }
 
     /** BGP conjunction is order/association independent, so sort its fully typed pattern keys. */
@@ -704,6 +761,38 @@ public class CircuitRewriter {
         return StatementPatternCollector.process(te);
     }
 
+    /**
+     * A BGP operand as the rewriting consumes it: its triple patterns together with the FILTER
+     * conditions scoping over them (Def. 4.5, clause 6). The filters build no gate and leave every
+     * gate identity unchanged — they only remove the matches whose annotation is 0 — but they are
+     * part of the operand, so they enter both the reified group and the operand's fingerprint.
+     */
+    private static final class Block {
+        final List<StatementPattern> patterns;
+        final List<String> filters;              // rendered, canonically sorted; empty if unfiltered
+
+        Block(List<StatementPattern> patterns, List<String> filters) {
+            this.patterns = patterns;
+            this.filters = filters;
+        }
+
+        boolean isEmpty()     { return patterns.isEmpty(); }
+        boolean isFiltered()  { return !filters.isEmpty(); }
+
+        /** The operand of an OPTIONAL's AND-branch: the conjunction of both operands. */
+        static Block concat(Block a, Block b) {
+            List<StatementPattern> p = new ArrayList<>(a.patterns); p.addAll(b.patterns);
+            List<String> f = new ArrayList<>(a.filters);
+            for (String c : b.filters) if (!f.contains(c)) f.add(c);   // conjunction, idempotent
+            Collections.sort(f);
+            return new Block(p, f);
+        }
+    }
+
+    private static Block collectBlock(TupleExpr te) {
+        return new Block(collect(te), Filters.of(te));
+    }
+
     /** DISTINCT and RDF4J's path-expansion Projection are set-semantic wrappers, not BGP operators. */
     private static TupleExpr unwrapSetWrappers(TupleExpr body) {
         TupleExpr current = body;
@@ -726,26 +815,39 @@ public class CircuitRewriter {
 
     /**
      * Fail fast if a subtree we are about to treat as a BGP contains anything
-     * outside the supported fragment — FILTER, BIND/Extension, a subquery, a
+     * outside the supported fragment — BIND/Extension, a subquery, a
      * nested UNION/OPTIONAL/MINUS operand, or a property path. Without this,
      * {@link StatementPatternCollector} would silently ignore such a node and we
-     * would emit a circuit for the WRONG query (e.g. dropping a FILTER, or — as a
-     * fixed past bug — compiling UNION as a join). Mirrors NpcsRewriter's guard.
+     * would emit a circuit for the WRONG query (e.g. — as a
+     * fixed past bug — compiling UNION as a join).
+     *
+     * <p>FILTER is inside the fragment (Def. 4.5, clause 6) and is therefore admitted here; the
+     * condition itself is validated and rendered by {@link Filters}, which rejects anything it
+     * cannot reproduce, so a filter is still never silently dropped. Note that {@code Filter} nodes
+     * are transparent to {@link StatementPatternCollector}, so the pattern list is unaffected.
+     * The NPCS string rewriter keeps its own, stricter guard: it has no filter rule.
      */
     private static void assertPureBgp(TupleExpr body) {
         String[] bad = {null};
         body.visit(new AbstractQueryModelVisitor<RuntimeException>() {
             @Override protected void meetNode(QueryModelNode node) {
                 if (bad[0] != null) return;
-                if (node instanceof StatementPattern) return;               // leaf — fine
-                if (node instanceof Join) { super.meetNode(node); return; } // recurse into args
-                bad[0] = node.getClass().getSimpleName();                   // anything else: reject
+                if (node instanceof StatementPattern) return;                 // leaf — fine
+                if (node instanceof Join) { super.meetNode(node); return; }   // recurse into args
+                if (node instanceof Filter) {
+                    // σ builds no gate. Recurse into the pattern only: the CONDITION is validated and
+                    // rendered by Filters, which knows which expressions it can reproduce (and which,
+                    // like EXISTS, carry a pattern of their own).
+                    ((Filter) node).getArg().visit(this);
+                    return;
+                }
+                bad[0] = node.getClass().getSimpleName();                     // anything else: reject
             }
         });
         if (bad[0] != null) {
             throw new UnsupportedOperationException(
                 "Unsupported operator in BGP position: " + bad[0] + ". Supported fragment = "
-                + "BGP/AND, UNION, OPTIONAL, MINUS (no FILTER/BIND/subquery/property paths).");
+                + "BGP/AND, FILTER, UNION, OPTIONAL, MINUS (no BIND/subquery/property paths).");
         }
     }
 

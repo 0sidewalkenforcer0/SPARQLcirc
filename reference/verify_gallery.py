@@ -244,7 +244,9 @@ def answers_rdflib(op, T):
         out.add(anskey({v: canon_rdflib(row[rdflib.Variable(v)]) for v in pvars}))
     return out
 
-RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct", "opt_disjoint"}  # complex: oracle via rdflib
+# complex shapes (and every FILTER shape): oracle via rdflib's own W3C evaluation of the .sparql
+RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct", "opt_disjoint",
+              "filter", "filter_optional", "filter_minus"}
 
 def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
     if op in RDFLIB_OPS:
@@ -303,8 +305,13 @@ def check_guard():
     def circ(f): return rejects(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
                                  f"{G}/gallery.ttl", f"{G}/{f}"])
     def npcs(f): return rejects(["java", "-jar", JAR, "Standard", "path", f"{G}/{f}"])
-    r = {"FILTER (NpcsRewriter)":        npcs("filter_unsupported.sparql"),
-         "FILTER (CircuitRewriter)":     circ("filter_unsupported.sparql"),
+    # FILTER itself is INSIDE the circuit rewriter's fragment (Def. 4.5, clause 6) and is checked
+    # positively by the WMC == PWE loop below; what must still be refused is a condition the
+    # rewriting cannot render into an operand's group (EXISTS carries provenance of its own), and a
+    # left-join condition spanning both operands. The NPCS string rewriter has no filter rule at all.
+    r = {"FILTER (NpcsRewriter, no filter rule)": npcs("filter_unsupported.sparql"),
+         "FILTER EXISTS (NpcsRewriter)":  npcs("filter_exists_unsupported.sparql"),
+         "FILTER EXISTS (CircuitRewriter)": circ("filter_exists_unsupported.sparql"),
          "LIMIT (CircuitRewriter)":      circ("limit.sparql"),
          "right-nested MINUS (Circuit)": circ("minus_rnested.sparql"),
          "x-product OPT-in-MINUS (Circ)": circ("opt_xprod.sparql")}
@@ -315,7 +322,8 @@ def check_guard():
 if __name__ == "__main__":
     allok = check_nested_evaluator()
     for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
-               "minus_chain", "opt_left", "opt_right", "distinct", "optional", "opt_disjoint"]:
+               "minus_chain", "opt_left", "opt_right", "distinct", "optional", "opt_disjoint",
+               "filter", "filter_optional", "filter_minus"]:
         cw, tw = circuit_wmc(op), pwe(op)
         keys = sorted(set(cw) | set(tw))
         ok = all(abs(cw.get(k, 0.0) - tw.get(k, 0.0)) < 1e-9 for k in keys)

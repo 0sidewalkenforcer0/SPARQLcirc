@@ -7,8 +7,13 @@ left uncovered: every engine builds the same circuit as RDF4J for every E1 shape
 == PWE. Keep this list in sync with verify_gallery.py's `answers()` + `RDFLIB_OPS`.
 
 Excluded here: path shapes (pathplus/pathstar/... need the writable iterative protocol -> verified on
-writable engines separately), and rejection guards (filter_unsupported/limit/minus_rnested/opt_xprod,
-which must ERROR rather than be equality-checked)."""
+writable engines separately), and rejection guards (filter_exists_unsupported/limit/minus_rnested/
+opt_xprod, which must ERROR rather than be equality-checked).
+
+Also not yet listed: the FILTER shapes (filter/filter_optional/filter_minus). They are part of E1's
+correctness battery in verify_gallery.py, but the recorded cross-engine byte-identity artifacts
+(reference/paper/rq3/) predate them, so adding them here would widen a claim no committed run covers.
+Add them together with a byte-identity re-run."""
 
 E1_NONPATH = [
     "atom", "join", "union",

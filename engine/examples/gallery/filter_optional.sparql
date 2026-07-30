@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# FILTER inside an OPTIONAL group. The W3C algebra lifts it to the LeftJoin condition;
+# since it mentions only variables the OPTIONAL's own pattern binds, the rewriting pushes
+# it back onto that operand (LeftJoin(A,B,f) = LeftJoin(A, sigma_f(B))). Here the only
+# city IS :Rome, so every OPTIONAL match is filtered away and ?c must come back UNBOUND
+# through the negative (minus) branch.
+SELECT ?y ?c WHERE { :Alice :knows ?y OPTIONAL { ?y :city ?c FILTER(?c != :Rome) } }

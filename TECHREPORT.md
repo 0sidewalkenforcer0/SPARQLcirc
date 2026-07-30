@@ -51,9 +51,19 @@ deduplicates shared gates automatically.
 
 - **Data:** ABox only (no TBox/reasoning), one default graph. `GRAPH`, `FROM`, and `FROM NAMED`
   are rejected fail-fast; the current token layouts do not encode graph context.
-- **Queries:** `SELECT`; the algebra fragment **BGP/AND, UNION, OPTIONAL, MINUS**, **property paths**
-  (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6).
-- **Excluded (by design):** `FILTER`, `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
+- **Queries:** `SELECT`; the algebra fragment **BGP/AND, FILTER, UNION, OPTIONAL, MINUS**, **property
+  paths** (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6).
+- **`FILTER`:** supported in the circuit rewriter. It builds no gate and renames none (`g_{σφ(P)} = g_P`),
+  so the rewriting carries each operand's conditions into that operand's reified group and a filtered
+  circuit is a **sub-circuit** of the unfiltered one. Two limits, both fail-fast: a condition outside the
+  renderable SPARQL 1.1 core (notably `EXISTS`/`NOT EXISTS`, which carry a pattern — hence provenance —
+  of their own) and a condition referencing a variable its own group does not bind. A `FILTER` inside an
+  `OPTIONAL` group becomes the W3C left-join condition; when it mentions only the OPTIONAL's own
+  variables it is pushed back onto that operand, and otherwise (the genuine **filtered left join**, whose
+  condition spans both operands) it is rejected. Filtered BGPs use the flat plan (the factored passes
+  have no single group for the condition). The **NPCS string rewriter has no filter rule** and rejects
+  `FILTER` outright.
+- **Excluded (by design):** `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
   property sets `!(...)` — **rejected** (fail-fast, never silently mis-handled).
 - **Solution modifiers:** `LIMIT`/`OFFSET`/`ORDER BY` are **rejected** (they do not apply to a
   materialized circuit of all answers); `DISTINCT` is an **implicit no-op** (answer gates are a set).
@@ -310,9 +320,11 @@ removing derivation holds" — exactly W3C MINUS/OPTIONAL under the possible-wor
 - **Litmus test for "unmodified engine":** point the system at a fresh, unpatched store (or a
   different vendor) and it works with standard SPARQL; no plugin/UDF/patch/recompile. ProvSQL fails
   this (it forks PostgreSQL); we pass.
-- **Fail-fast guard** (`assertPureBgp`): anything outside {Join, StatementPattern} in a BGP position
-  (FILTER, BIND/Extension, subquery, property path, an unsupported nested operand) throws
+- **Fail-fast guard** (`assertPureBgp`): anything outside {Join, Filter, StatementPattern} in a BGP
+  position (BIND/Extension, subquery, property path, an unsupported nested operand) throws
   `UnsupportedOperationException` rather than being silently dropped by `StatementPatternCollector`.
+  `Filter` is admitted, and its *condition* is validated separately by `Filters`, which rejects any
+  expression it cannot render back into the group — so a filter is never silently dropped either.
   This is what prevents the class of silent-semantics bugs (e.g. a dropped FILTER, or the historical
   UNION-as-join). **[impl, verified]**
 
@@ -418,8 +430,10 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
   minus_union, minus_p2union, minus_chain, opt_left, opt_right, distinct, optional) it builds the
   engine circuit, WMCs each answer over all `2^6` worlds, and checks **`circuit WMC == possible-world
   enumeration`**. The composite MINUS/OPTIONAL shapes are checked against **rdflib's own W3C
-  MINUS/OPTIONAL evaluation** (an independent oracle). Plus 4 **rejection guards** (FILTER on both
-  rewriters, LIMIT, right-nested MINUS). **[impl — all pass]**
+  MINUS/OPTIONAL evaluation** (an independent oracle). The three **FILTER** shapes (filter,
+  filter_optional, filter_minus) are checked the same way, against rdflib. Plus 6 **rejection guards**
+  (FILTER on the string rewriter, FILTER EXISTS on both, LIMIT, right-nested MINUS,
+  cross-product OPTIONAL-in-MINUS). **[impl — all pass]**
 - **`verify_engine_native.py`** — the drug running example on the deployed-engine circuit:
   `Clopidogrel = 0.358800`, `Omeprazole = 0.774298`, both equal to possible-world enumeration
   (note `Omeprazole ≠ 0.8308` — the shared edge `p3` is counted once). **[impl]**

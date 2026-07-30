@@ -11,8 +11,11 @@ Wikidata (E8, `reference/wikidata/`).
    aggregation (out of scope — TECHREPORT §2). We run only the **non-aggregate SPJ + MINUS skeleton** —
    joins/selections/anti-joins without the final GROUP BY/SUM — directly comparable to SPARQLprov's
    **"base non-aggregate"** (their Fig. 3), not to their aggregate numbers.
-2. **No FILTER.** SPARQLprov's `*_non_aggregate` queries still carry range/date FILTERs; our rewrite has no
-   FILTER, so we run the **pure BGP-join skeleton** (FILTERs dropped) — thinner still. Say so explicitly.
+2. **No FILTER in the recorded runs.** SPARQLprov's `*_non_aggregate` queries still carry range/date
+   FILTERs; the runs recorded here drop them and use the **pure BGP-join skeleton** — thinner still.
+   Say so explicitly. (The circuit rewriter *does* support FILTER now — TECHREPORT.md §2 — so this is a
+   property of these committed measurements, not of the system; re-running with the FILTERs restored
+   would make the comparison tighter.)
 3. **Per-row provenance** (see below) — the uncertain unit is a *row*, not a triple.
 
 Wikidata (`reference/wikidata/`) is the full-fit large-scale dataset; TPC-H here is comparability-only.

@@ -283,7 +283,8 @@ cd engine
 | `minus_union.sparql`, `minus_p2union.sparql`, `minus_chain.sparql` | composite and chained MINUS operands |
 | `minus_rnested.sparql` | right-nested MINUS, the fail-fast rejection case |
 | `pathalt.sparql`, `pathcompound.ttl` | property-path operators |
-| `distinct.sparql`, `limit.sparql`, `filter_unsupported.sparql` | modifier handling and rejections |
+| `filter.sparql`, `filter_optional.sparql`, `filter_minus.sparql` | FILTER in a BGP, an OPTIONAL operand, and a MINUS subtrahend |
+| `distinct.sparql`, `limit.sparql`, `filter_exists_unsupported.sparql` | modifier handling and rejections |
 
 ---
 
@@ -349,6 +350,7 @@ Dependency-free smoke tests invoke it explicitly with `--oracle`.
 | `OPTIONAL` | `OPTIONAL(P1,P2) = (P1 AND P2) ∪ (P1 DIFF P2)`; bare cross-product OPTIONAL included |
 | `MINUS` | `MINUS(P1,P2) = P1 DIFF P2` when the operands share a variable, else a no-op (W3C domain-intersection guard) |
 | Composite `MINUS` operands | BGPs, UNIONs, or OPTIONALs, on either side, nested, and **chained** (`A MINUS P MINUS Q`) |
+| `FILTER` | builds no gate and renames none, so a filtered circuit is a **sub-circuit** of the unfiltered one; each operand's conditions are carried into that operand's reified group. A filtered BGP uses the flat plan |
 | Property paths | `+`/`*` arbitrary length plus `/`, `\|`, `^`, `?` in the absorptive semiring PosBool; reachability is a level-indexed fixpoint whose gates stay an acyclic polynomial DAG even on cyclic graphs |
 | `DISTINCT` | implicit no-op, since answer gates are already a set |
 
@@ -368,6 +370,10 @@ Non-monotone support rests entirely on one ⊖ (monus / anti-join) primitive, **
 | right-nested `MINUS` `A MINUS (P MINUS Q)` | introduces a join; the string rewriter handles it |
 | cross-product `OPTIONAL` **as a MINUS operand** | `(A OPT B) MINUS P` with `A`, `B` sharing no variable |
 | a MINUS operand sharing an OPTIONAL's *inner* variable | not reducible to the verified plan |
+| `FILTER EXISTS` / `NOT EXISTS`, and any condition outside the SPARQL 1.1 core | the condition carries a pattern, hence provenance, of its own; a condition the rewriting cannot render back into the group is refused rather than dropped |
+| a `FILTER` referencing a variable its own group does not bind | hoisting it to the enclosing group would change its value |
+| the W3C **filtered left join** | an `OPTIONAL`'s condition spanning *both* operands. A condition over the OPTIONAL's own variables is pushed onto that operand and supported |
+| `BIND`, aggregation, sub-`SELECT`, `VALUES` | out of scope |
 | negated property sets `!(...)` | out of scope |
 
 Engine-side property paths are currently `+`/`*` over a single predicate with an **IRI frontier

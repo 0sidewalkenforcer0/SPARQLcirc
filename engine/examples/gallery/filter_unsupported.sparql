@@ -1,4 +1,8 @@
 PREFIX : <http://example.org/paper#>
-# Out of the supported fragment (FILTER). Both rewriters MUST reject this
-# rather than silently drop the FILTER. Used by reference/verify_gallery.py.
+# Out of the supported fragment of the NPCS STRING rewriter (npcs.rewrite), which has no
+# filter rule: it MUST reject this rather than silently drop the FILTER.
+# The circuit rewriter (npcs.circuit) DOES support FILTER (Def. 4.5, clause 6) and builds a
+# circuit for this query -- see filter.sparql for the positive test, and
+# filter_exists_unsupported.sparql for a condition BOTH rewriters still reject.
+# Used by reference/verify_gallery.py.
 SELECT ?y WHERE { :Alice :knows ?y . FILTER(?y != :Bob) }
