@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: >-
+  SPARQLcirc: Native-SPARQL Provenance Circuits for Exact
+  Probabilistic Query Evaluation
+message: >-
+  If you use this software, please cite it using these metadata. The
+  paper describing the approach is under submission; this entry will be
+  updated to point at it once it appears.
+type: software
+authors:
+  - family-names: Wu
+    given-names: Jingcheng
+    affiliation: University of Stuttgart
+repository-code: https://github.com/0sidewalkenforcer0/SPARQLcirc
+license: Apache-2.0
+abstract: >-
+  SPARQLcirc rewrites a SPARQL query so that an unmodified SPARQL 1.1
+  engine materializes a single shared, content-addressed provenance
+  circuit as ordinary RDF. The circuit is then compiled and
+  weighted-model-counted for exact probabilistic query evaluation over a
+  fragment that includes non-monotone OPTIONAL and MINUS and recursive
+  property paths, without modifying the database engine.
+keywords:
+  - SPARQL
+  - RDF
+  - provenance
+  - probabilistic databases
+  - knowledge compilation
+  - weighted model counting

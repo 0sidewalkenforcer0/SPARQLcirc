@@ -1,5 +1,6 @@
 # SPARQLcirc: Native-SPARQL Provenance Circuits for Exact Probabilistic Query Evaluation
 
+[![CI](https://github.com/0sidewalkenforcer0/SPARQLcirc/actions/workflows/ci.yml/badge.svg)](https://github.com/0sidewalkenforcer0/SPARQLcirc/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-11%2B-orange.svg)
 ![Maven](https://img.shields.io/badge/Maven-3.6%2B-blue.svg)
@@ -20,25 +21,41 @@ growing with the number of derivations), and with ProvSQL, which requires a **mo
 engine. Here the engine is stock, and the circuit is a normal RDF graph, so RDF set semantics
 deduplicates shared gates automatically.
 
----
+```mermaid
+flowchart LR
+    Q["SPARQL query<br/>+ probabilistic ABox"] -->|"γ rewrite"| C["CONSTRUCT plan<br/>plain SPARQL 1.1"]
+    C -->|"unmodified engine"| G["shared provenance circuit<br/>⊕ ⊗ ⊖ gates, as RDF"]
+    G -->|"knowledge compilation"| B["OBDD / SDD / d-DNNF"]
+    B -->|"weighted model counting"| P["exact answer<br/>probabilities"]
+```
 
-## Table of Contents
+### What has been measured
 
-- [Requirements](#requirements)
-- [Health Check (Recommended)](#health-check-recommended)
-- [Installation](#installation)
-- [Quick Verification](#quick-verification)
-- [Running Against a Deployed SPARQL Endpoint](#running-against-a-deployed-sparql-endpoint)
-- [Usage Examples](#usage-examples)
-- [Available Commands](#available-commands)
-- [Supported SPARQL Fragment](#supported-sparql-fragment)
-- [Probabilistic Data Formats](#probabilistic-data-formats)
-- [From Circuit Back to Answers](#from-circuit-back-to-answers)
-- [Benchmark Reproduction](#benchmark-reproduction)
-- [Project Structure](#project-structure)
-- [Troubleshooting](#troubleshooting)
-- [Citing and Attribution](#citing-and-attribution)
-- [License](#license)
+- **Exact, not approximate.** 171/171 answer probabilities match brute-force possible-world
+  enumeration, and on the *real* WatDiv / TPC-H / Wikidata circuits the compiled WMC matches
+  enumeration on every sampled answer — enumeration uses no compilation and no variable order, so the
+  numbers do not depend on the compiler.
+- **The circuit is a property of the rewriting, not of one engine.** GraphDB, Oxigraph, QLever and
+  MillenniumDB — Java, Rust and two C++ codebases — emit the **byte-identical** content-addressed
+  circuit, at both 10M and 100M.
+- **It runs at knowledge-graph scale on stock software.** A circuit over reified WatDiv 100M
+  (327M triples), and a property path over a **2.13-billion-triple** Wikidata graph with a 161 MB
+  client footprint, because the client only ever sees the reachable subgraph.
+- **Against the closest baseline, the same probabilities without forking the database.** Exact parity
+  with ProvSQL (a modified PostgreSQL) on TPC-H. The shared circuit's size and compile advantage over
+  per-answer provenance strings is **co-extensive with reconvergence**: up to 201× on recursive
+  workloads, and ≤ 1× on tree-shaped joins, which we state rather than average away.
+
+Details and caveats: [reference/RESULTS.md](reference/RESULTS.md) ·
+[reference/CANONICAL_TIMINGS.md](reference/CANONICAL_TIMINGS.md).
+
+### Scope and limits
+
+ABox only (no TBox), one default graph. Engine-side property paths are `+`/`*` over a single
+predicate with an IRI frontier; the Python reference covers every path operator. Anything the
+rewriting cannot answer **exactly** is [rejected with a loud error](#rejected-loud-error-never-mis-answered)
+rather than silently mis-answered. This is a research prototype: the correctness gates are CI-enforced,
+the operational polish is not.
 
 ---
 
@@ -49,12 +66,14 @@ deduplicates shared gates automatically.
 | Java (JDK)  | **11 or higher** | `java -version` |
 | Maven       | **3.6 or higher** | `mvn -version` |
 | Python (core: circuit, ROBDD oracle, WMC, benchmarks) | **3.9 or higher**, standard library only | `python3 --version` |
+| Python (`quick_verify.py`) | the above **plus rdflib** — see Optional Components | `python3 -c "import rdflib"` |
 | Python (production CUDD compile and WMC) | **3.11 or higher** | `python3 --version` |
 
 ### Optional Components
 
 | Component | Needed for | How to obtain |
 |-----------|------------|---------------|
+| rdflib | `quick_verify.py`'s composition differential — it is the *independent* oracle for the FILTER cases, so a missing rdflib fails the check rather than skipping it | `pip install "rdflib>=6.3,<8"` |
 | CUDD (`dd==0.6.0`) | production BDD compilation and batch WMC | `pip install -r reference/requirements-production.txt` |
 | PySDD | SDD compilation baseline | `pip install pysdd` |
 | d4 | d-DNNF compilation baseline (Linux/x86 only) | see [reference/D4_ON_LINUX.md](reference/D4_ON_LINUX.md) |
@@ -81,36 +100,12 @@ Download from [Adoptium](https://adoptium.net/temurin/releases/?version=11)
 
 ---
 
-## Health Check (Recommended)
-
-After building the JAR, run the one-command smoke verifier:
-
-```bash
-mvn -q -f engine/pom.xml package        # -> engine/target/npcs-rewrite.jar
-python3 reference/quick_verify.py       # expect: QUICK VERIFY ALL OK
-```
-
-What it checks:
-
-- the standard-library reference correctness battery and the WMC self-test
-- an offline `pqe.py` CLI regression
-- a live `CircuitRun` invocation, consuming the N-Triples emitted by *that* invocation
-- structured answer-binding parsing, then compilation of each fresh answer circuit
-- WMC against possible-world enumeration on the freshly built circuit
-- the documented `pqe.py --jar ...` path end to end, covering the fat-JAR dispatcher
-
-It deliberately does **not** read the checked-in `reference/data/*.circuit.nt` fixtures, so a pass
-means the current Java sources really do produce correct circuits. Both `reference/tests.py` and
-`reference/wmc.py` exit non-zero on a mismatch, so the same commands are safe CI gates.
-
----
-
 ## Installation
 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/0sidewalkenforcer0/SPARQLcirc.git
 cd SPARQLcirc
 ```
 
@@ -144,36 +139,45 @@ Optional extra baselines (SDD) are listed in `reference/requirements-optional.tx
 
 ---
 
-## Quick Verification
+## Verification
 
-### Reference Correctness Battery
+### One command
+
+```bash
+mvn -q -f engine/pom.xml package        # -> engine/target/npcs-rewrite.jar
+python3 -m pip install "rdflib>=6.3,<8" # the composition differential's independent oracle
+python3 reference/quick_verify.py       # expect: QUICK VERIFY ALL OK
+```
+
+What it covers:
+
+- the standard-library correctness battery (171/171 vs possible-world enumeration) and the WMC self-test
+- an offline `pqe.py` CLI regression
+- a live `CircuitRun` invocation, consuming the N-Triples emitted by *that* invocation
+- structured answer-binding parsing, then compilation of each fresh answer circuit
+- WMC against possible-world enumeration on the freshly built circuit
+- the composition differential: 16 composed shapes against two independent oracles, the Python
+  reference and rdflib evaluating the plain query over every possible world
+- the documented `pqe.py --jar ...` path end to end, covering the fat-JAR dispatcher
+
+It deliberately does **not** read the checked-in `reference/data/*.circuit.nt` fixtures, so a pass
+means the current Java sources really do produce correct circuits.
+
+### Individual batteries
 
 ```bash
 python3 reference/tests.py       # 171/171 answer-probability checks vs possible-world enumeration
 python3 reference/wmc.py         # standalone WMC self-test
-```
+mvn -f engine/pom.xml test       # Java unit tests, incl. a sweep over operator compositions
 
-### Full Fresh-Circuit Smoke Test
-
-```bash
-python3 reference/quick_verify.py
-```
-
-### Java Unit Tests
-
-```bash
-mvn -f engine/pom.xml test
-```
-
-### Non-Monotone and Gallery Verification
-
-```bash
 cd reference
 python3 verify_nonmono.py        # OPTIONAL / MINUS via the single ⊖ primitive, vs enumeration
 python3 verify_gallery.py        # circuit WMC == possible-world enumeration on the query gallery
 python3 verify_answer_keys.py    # term-aware answer-key injectivity
 ```
 
+Each exits non-zero on a mismatch, so all of them are safe CI gates; the workflow behind the badge
+above runs them on Python 3.9 and 3.12, plus a native-CUDD job and a clean Maven build.
 `verify_gallery.py` checks the composite MINUS and OPTIONAL cases against rdflib's own W3C
 evaluation, so the algebraic normalization is validated against a third-party implementation, not
 only against itself.
@@ -222,7 +226,8 @@ and then compile and count locally.
 
 > **Note:** the default `factored` construction mode needs a **writable** endpoint for its private,
 > per-invocation `urn:sc:*` message rows (removed after the plan completes; gate identities stay
-> deterministic and session-independent). On a read-only endpoint use `--construction=flat`.
+> deterministic and session-independent). On a read-only endpoint pass `--construction flat`, to
+> `pqe.py` or to the engine CLI as `--construction=flat`; both routes emit the same circuit.
 
 ---
 
@@ -261,7 +266,33 @@ python3 pqe.py --jar ../engine/target/npcs-rewrite.jar \
   --probabilities data/drug.probabilities.json
 ```
 
-Output is JSON with term-aware RDF bindings, probabilities, and compiled BDD sizes.
+Output is JSON: term-aware RDF bindings, the exact probability, and the compiled size per answer.
+
+```json
+{
+  "answer_count": 2,
+  "answers": [
+    {
+      "binding": { "z": { "type": "iri", "value": "urn:d:Clopidogrel" } },
+      "probability": 0.3588,
+      "bdd_nodes": 3,
+      "root": "urn:g:a:ae36bfce546381bd6bf9b49e38018deb3ade971ea1bd4db55fa415b513bd0c3a"
+    },
+    {
+      "binding": { "z": { "type": "iri", "value": "urn:d:Omeprazole" } },
+      "probability": 0.774297708,
+      "bdd_nodes": 8,
+      "root": "urn:g:a:aa73e46b90b3c91e730ff228c9d11d8487bae06064b3cf5a5782aa9f3df9651a"
+    }
+  ],
+  "compilation": { "backend": "cudd", "mode": "shared", "root_count": 2, "sharing_ratio": 1.0 }
+}
+```
+
+`binding` keeps the RDF term kind, so an IRI and a same-lexical literal never collapse into one
+answer; `root` is the content-addressed gate IRI, which is the identity to use downstream. The
+`compilation` block is abbreviated above: it also reports node counts, per-stage timings, the
+variable-order hash, and CUDD manager statistics.
 
 ### Run the Bundled Example Scripts
 
@@ -315,6 +346,7 @@ cd engine
 | `--probabilities FILE` | **required.** JSON object mapping complete token IRIs to probabilities in [0, 1] |
 | `--scheme {Standard,SPARQL_Star}` | reification scheme |
 | `--endpoint ENDPOINT` | optional remote SPARQL query endpoint |
+| `--construction {factored,flat}` | construction mode forwarded to the engine (with `--jar`); `flat` is the read-only-endpoint route |
 | `--compile-mode {shared,per-root}` | one shared CUDD manager (default) or one manager per answer root |
 | `--oracle` | testing only: use the bundled pure-Python ROBDD instead of production CUDD |
 
@@ -495,34 +527,25 @@ All commands run from `reference/`.
 | **Per-answer vs. shared** representation at scale | `python3 e11_per_answer_vs_shared.py` | seconds |
 | **Reification-scheme** cost (`Standard` vs. `SPARQL_Star`) | `python3 g7_reification.py` | seconds |
 
-### 2. Deployed Engine (needs GraphDB)
+### 2. Everything else
 
-| Result | Command | ~time |
-|--------|---------|-------|
-| Deployed-engine construction timings | `python3 bench_engine.py` → `bench_engine/results.csv` | minutes |
-| PQE latency breakdown | `python3 g3_pqe_latency.py` | minutes |
-| Per-instance rigor sweep | `python3 g4_rigor.py` | minutes |
-
-### 3. Real-KG and Compiler Baselines
+Anything that needs a deployed engine, a real KG, or an external baseline is driven from
+**[docs/REPRODUCE.md](docs/REPRODUCE.md)**, which also states the measurement contract a number must
+satisfy before it is citable (frozen commit, five timed runs, disclosed host). The shortest deployed
+path is:
 
 ```bash
 cd reference
-# a) reify a WatDiv N-Triples file into statement form
-python3 watdiv/reify.py /path/to/base.nt watdiv/base.reified.nt
-# b) start GraphDB on localhost:7200, create a repo "watdiv", load watdiv/base.reified.nt
-#    (see watdiv/repo.ttl for the repository config)
-# c) run the star / path / snowflake shapes through the full pipeline
-python3 watdiv_run.py                  # -> build_ms, wmc_ms, sizes per shape
+python3 watdiv/reify.py /path/to/base.nt watdiv/base.reified.nt   # reify a WatDiv N-Triples file
+# start GraphDB on localhost:7200, create a repo "watdiv" (watdiv/repo.ttl), load the reified file
+python3 watdiv_run.py                    # star / path / snowflake shapes, end to end
 ```
 
-| Result | Command | Needs |
-|--------|---------|-------|
-| Real-KG WatDiv, flat vs. factored | `WATDIV_NT=/path/to/base.nt python3 watdiv_factor.py` | WatDiv data |
-| Real-KG WatDiv, end-to-end | `python3 watdiv_run.py` | GraphDB + data |
-| d4 d-DNNF scaling | `python3 export_cnf.py`, then follow [reference/D4_ON_LINUX.md](reference/D4_ON_LINUX.md) | Linux/x86 |
-| Compiler portfolio comparison (OBDD / SDD / d-DNNF) | `python3 compile_portfolio.py` | PySDD, d4 (optional) |
-| ProvSQL head-to-head | see [provsql/README.md](provsql/README.md) | PostgreSQL + ProvSQL |
-| NPCS-baseline head-to-head | `python3 g2b_npcs_vs_ours.py` | — |
+From there: `bench_engine.py` and `g3_pqe_latency.py` for deployed construction and PQE latency,
+`g4_rigor.py` for the five-run protocol, `export_cnf.py` plus
+[reference/D4_ON_LINUX.md](reference/D4_ON_LINUX.md) for d4, `compile_portfolio.py` for the
+OBDD/SDD/d-DNNF comparison, `g2b_npcs_vs_ours.py` for the NPCS baseline, and
+[provsql/README.md](provsql/README.md) for the ProvSQL head-to-head.
 
 Expected numbers and their interpretation live in [reference/RESULTS.md](reference/RESULTS.md)
 (baselines, rigor, space, correctness), [reference/CANONICAL_TIMINGS.md](reference/CANONICAL_TIMINGS.md)
@@ -649,6 +672,19 @@ WATDIV_NT=/path/to/base.nt python3 reference/watdiv_factor.py
 ---
 
 ## Citing and Attribution
+
+The paper describing SPARQLcirc is under submission. Until it appears, cite the software:
+
+```bibtex
+@software{wu_sparqlcirc,
+  author  = {Wu, Jingcheng},
+  title   = {{SPARQLcirc}: Native-{SPARQL} Provenance Circuits for Exact
+             Probabilistic Query Evaluation},
+  url     = {https://github.com/0sidewalkenforcer0/SPARQLcirc},
+  license = {Apache-2.0},
+  note    = {Paper under submission}
+}
+```
 
 The rewriter in `engine/` is an independent **clean-room reimplementation** of the query rewriting
 from **NPCS** (Asma et al., *NPCS: Native Provenance Computation for SPARQL*, WWW 2024). It is

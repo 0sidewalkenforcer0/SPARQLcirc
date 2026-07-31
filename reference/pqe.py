@@ -36,6 +36,9 @@ def _parser() -> argparse.ArgumentParser:
                    help="JSON object mapping complete token IRIs to probabilities")
     p.add_argument("--scheme", default="Standard", choices=("Standard", "SPARQL_Star"))
     p.add_argument("--endpoint", help="optional remote SPARQL query endpoint")
+    p.add_argument("--construction", choices=("factored", "flat"),
+                   help="construction mode passed to the engine (default: the engine's own "
+                        "default, factored); flat is the read-only-endpoint route")
     p.add_argument("--compile-mode", default="shared", choices=("shared", "per-root"),
                    help="one shared CUDD manager (default) or one manager per answer root")
     p.add_argument("--oracle", action="store_true",
@@ -60,14 +63,18 @@ def _load_probabilities(path: Path) -> dict[str, float]:
 
 def _build_circuit(args: argparse.Namespace) -> str:
     if args.circuit is not None:
-        if args.data is not None or args.query is not None or args.endpoint is not None:
-            raise ValueError("--data, --query and --endpoint are only valid with --jar")
+        if (args.data is not None or args.query is not None or args.endpoint is not None
+                or args.construction is not None):
+            raise ValueError(
+                "--data, --query, --endpoint and --construction are only valid with --jar")
         return args.circuit.read_text(encoding="utf-8")
 
     if args.data is None or args.query is None:
         raise ValueError("--jar requires both --data and --query")
-    cmd = ["java", "-jar", str(args.jar), "circuit", args.scheme,
-           str(args.data), str(args.query)]
+    cmd = ["java", "-jar", str(args.jar), "circuit"]
+    if args.construction is not None:
+        cmd.append(f"--construction={args.construction}")
+    cmd += [args.scheme, str(args.data), str(args.query)]
     if args.endpoint:
         cmd.append(args.endpoint)
     # Keep the construction plan/progress visible on stderr; capture only the
