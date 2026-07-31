@@ -102,3 +102,25 @@ NPCS. It requires the original artifact, which is **not** included (see `NOTICE`
 - `reference/compile_bdd.py` is the portable correctness oracle used by smoke tests.
 - `d4` bundles the PATOH partitioner, which is x86_64-only; run the d4 figure on a
   Linux/x86 machine (`D4_ON_LINUX.md`). PySDD stands in on Apple Silicon.
+
+## Verification guard rails
+
+Three checks protect the parts that are easy to break silently. Run all three after any
+change to the rewriting.
+
+| check | command | what it protects |
+|---|---|---|
+| unit + regression | `mvn -f engine/pom.xml test` | operator semantics, gate identity, fail-fast guards; includes a sweep over every composition of up to three constructors |
+| plan identity | `engine/verify/plan-identity.sh` | the CONSTRUCT plan of all 36 evaluation queries, byte for byte, against a checked-in baseline — i.e. the published node counts and the cross-engine gallery |
+| end to end | `python3 reference/quick_verify.py` | fresh circuits vs possible-world enumeration, and `verify_composition.py`: composed shapes against the Python reference AND an independent rdflib possible-world oracle |
+
+Two are opt-in because they are slow:
+
+```
+mvn -f engine/pom.xml test -Dsparqlcirc.deepSweep=true   # 93,896 plans, ~30 s
+engine/verify/plan-identity.sh --update                  # accept moved circuits, deliberately
+```
+
+`plan-identity.sh` failing is not automatically a bug: it means an already-measured circuit
+would change. Decide whether that is intended, and if it is, commit the new baseline together
+with the change and say why.

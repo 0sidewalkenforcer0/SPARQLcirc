@@ -58,6 +58,12 @@ def _run_python_checks() -> None:
         subprocess.run([sys.executable, script], cwd=REFERENCE, check=True)
 
 
+def _check_composition() -> None:
+    """Composed shapes against two independent oracles. Needs the jar, so it runs after it."""
+    print("# running reference/verify_composition.py", flush=True)
+    subprocess.run([sys.executable, "verify_composition.py"], cwd=REFERENCE, check=True)
+
+
 def _fresh_engine_circuit() -> str:
     if shutil.which("java") is None:
         raise RuntimeError("java was not found; install Java 11+ before running the engine smoke test")
@@ -155,6 +161,7 @@ def main() -> int:
         _run_python_checks()
         _check_fresh_circuit(_fresh_engine_circuit())
         _check_pqe_jar_cli()
+        _check_composition()
     except (AssertionError, json.JSONDecodeError, KeyError, RuntimeError,
             TypeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"QUICK VERIFY FAILED: {exc}", file=sys.stderr)

@@ -13,8 +13,8 @@ differ from each other as well as from the paper:
 | **engine** | the artifact §5 evaluates: SPARQL 1.1 CONSTRUCT plans on an unmodified endpoint | `engine/src/main/java/npcs/` (4.1k lines) |
 | **reference** | the Python algebraic reference + oracle | `reference/{gamma,gates,factor,wmc,circuit_io,export_cnf,compiler}.py` (~2k lines of semantic core) |
 
-Claim IDs (P1.1 … P6.6) index the paper's atomic statements; §3 and §4 are the
-semantic sections (pp. 2–6). Verdicts: **OK** · **DIFFERS** (semantics preserved,
+Claim IDs (P1.1 … P6.6) index the paper's atomic statements and are defined in
+[PAPER_CLAIMS.md](PAPER_CLAIMS.md); §3 and §4 are the semantic sections (pp. 2–6). Verdicts: **OK** · **DIFFERS** (semantics preserved,
 structure/mechanism differs) · **GAP** (paper claims more than the code does) ·
 **BEYOND** (code does more than the paper covers) · **CONTRADICTS** (the two
 disagree on an answer's Boolean function or gate identity).

@@ -613,6 +613,33 @@ public class CircuitRewriterTest {
                 + String.join("\n   ", rejected), rejected.isEmpty());
     }
 
+    /**
+     * The same sweep, deeper. 86,016 binary-operator trees is too slow for every build, so it is
+     * opt-in: {@code mvn test -Dsparqlcirc.deepSweep=true}. Run it after any change to normalize or
+     * to the operand machinery — the three-constructor sweep would not have caught the depth-3 gap.
+     */
+    @Test
+    public void deepCompositionSweep() {
+        if (!Boolean.getBoolean("sparqlcirc.deepSweep")) return;      // opt-in
+        int planned = 0;
+        for (int n = 1; n <= 5; n++) {
+            for (String shape : compositions(n, false)) {
+                String query = "SELECT ?x WHERE " + materialize(shape);
+                for (ConstructionMode mode : ConstructionMode.values()) {
+                    try {
+                        new CircuitRewriter(Reification.STANDARD, mode, "junit-deep")
+                                .constructionPlan(query);
+                        planned++;
+                    } catch (RuntimeException failure) {
+                        throw new AssertionError(mode + " rejected " + query + ": "
+                                + failure.getMessage(), failure);
+                    }
+                }
+            }
+        }
+        assertEquals("46,948 trees (4+32+320+3584+43008) x 2 construction modes", 93896, planned);
+    }
+
     /** Every group expression with exactly {@code n} constructors; FILTER counts as a unary one. */
     private static List<String> compositions(int n, boolean withFilter) {
         List<String> out = new java.util.ArrayList<>();
