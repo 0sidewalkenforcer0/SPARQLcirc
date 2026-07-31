@@ -675,6 +675,77 @@ public class CircuitRewriterTest {
         return out.toString();
     }
 
+    /**
+     * A closure atom as a join operand — Def. 4.7 clause 2 finally used for what it describes. The
+     * atom's level-indexed fixpoint runs as its own plan step, publishes {@code reif(C, g_C)} as a
+     * private row relation, and the join reads it like a triple pattern's gate. Before, a property
+     * path had to BE the whole query pattern.
+     *
+     * <p>Over all 2^3 worlds: {@code { <a> :p+ ?y . ?y :q ?z }} has one answer, {@code ?y=c ?z=z},
+     * and it holds exactly when the whole chain does — {@code t1 ∧ t2 ∧ t3}.
+     */
+    @Test
+    public void aClosureAtomMayBeAJoinOperandAndDenotesTheRightEvent() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:a", "urn:p", "urn:b");
+            reify(con, "urn:r:t2", "urn:b", "urn:p", "urn:c");
+            reify(con, "urn:r:t3", "urn:c", "urn:q", "urn:z");
+            String[] tokens = {"urn:r:t1", "urn:r:t2", "urn:r:t3"};
+            String query = "SELECT ?y ?z WHERE { <urn:a> <urn:p>+ ?y . ?y <urn:q> ?z }";
+
+            CircuitConstructionPlan plan = new CircuitRewriter(
+                    Reification.STANDARD, ConstructionMode.FLAT, "junit-path").constructionPlan(query);
+            boolean hasPathStep = false;
+            for (CircuitConstructionPlan.Step step : plan.steps()) {
+                if (step.path() != null) hasPathStep = true;
+            }
+            assertTrue("the atom must be planned as its own iterative step", hasPathStep);
+            assertTrue("a materialized atom needs a writable endpoint", plan.requiresFeedback());
+
+            Model circuit = executePlan(con, query, ConstructionMode.FLAT);
+            Set<Resource> roots = answerRoots(circuit);
+            assertEquals("one answer: ?y=c ?z=z", 1, roots.size());
+            Resource root = roots.iterator().next();
+            for (int bits = 0; bits < 8; bits++) {
+                Set<String> world = new LinkedHashSet<>();
+                for (int i = 0; i < 3; i++) if ((bits & (1 << i)) != 0) world.add(tokens[i]);
+                assertEquals("world " + world, world.size() == 3,
+                        evaluate(circuit, root, world, new HashMap<>()));
+            }
+            assertNoFactoredMetadata(con);          // the atom's private rows are cleaned up
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** The other compositions a closure atom can appear in; probabilities are checked by
+     *  {@code reference/verify_composition.py} against an rdflib possible-world oracle. */
+    @Test
+    public void closureAtomsComposeWithEveryOperator() {
+        String[][] shapes = {
+            {"UNION branch",  "SELECT ?y WHERE { { <urn:a> <urn:p>+ ?y } UNION { <urn:a> <urn:q> ?y } }"},
+            {"MINUS minuend", "SELECT ?y WHERE { <urn:a> <urn:p>+ ?y MINUS { ?y <urn:q> ?z } }"},
+            {"MINUS subtrahend", "SELECT ?y WHERE { ?y <urn:q> ?z MINUS { <urn:a> <urn:p>+ ?y } }"},
+            {"OPTIONAL",      "SELECT ?y ?z WHERE { <urn:a> <urn:p>+ ?y OPTIONAL { ?y <urn:q> ?z } }"},
+            {"FILTER",        "SELECT ?y WHERE { <urn:a> <urn:p>+ ?y FILTER(?y != <urn:zz>) }"},
+            {"variable source", "SELECT ?x ?y WHERE { ?x <urn:p>+ ?y . ?x <urn:q> ?w }"},
+            {"zero-or-more",  "SELECT ?y ?z WHERE { <urn:a> <urn:p>* ?y . ?y <urn:q> ?z }"},
+            {"two atoms",     "SELECT ?y WHERE { <urn:a> <urn:p>+ ?y . <urn:a> <urn:r>+ ?y }"},
+        };
+        for (String[] shape : shapes) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                try {
+                    new CircuitRewriter(Reification.STANDARD, mode, "junit-path")
+                            .constructionPlan(shape[1]);
+                } catch (RuntimeException failure) {
+                    throw new AssertionError(shape[0] + " (" + mode + "): " + failure.getMessage(),
+                            failure);
+                }
+            }
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

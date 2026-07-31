@@ -78,6 +78,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install the rdflib oracle (quick_verify runs the composition differential)
+        run: python -m pip install "rdflib>=6.3,<8"
       - name: Build the shaded engine JAR
         run: mvn -q -f engine/pom.xml package
       - name: Generate, parse, compile, and WMC a fresh circuit

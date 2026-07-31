@@ -238,6 +238,13 @@ public final class CircuitRun {
                     // Trailing SPARQL comment keeps each regex-delimited chunk starting at PREFIX.
                     System.err.println("# step label: " + step.label());
                 }
+                if (step.path() != null) {
+                    // A closure atom: not one CONSTRUCT but a data-dependent fixpoint. Its gates go to
+                    // the circuit; its urn:sc: rows are workspace, fed back so the enclosing operators
+                    // can read them and removed with the rest of the workspace afterwards.
+                    buildPathCircuit(con, step.path(), circuit, workspace);
+                    continue;
+                }
                 Model emitted;
                 try (GraphQueryResult result = con.prepareGraphQuery(step.query()).evaluate()) {
                     emitted = QueryResults.asModel(result);
@@ -296,6 +303,16 @@ public final class CircuitRun {
      *  the PathIsoSeq harness, which runs two path queries on ONE shared connection to prove the per-path
      *  fingerprint prevents cross-query contamination on a real persistent store. */
     static void buildPathCircuit(RepositoryConnection con, CircuitRewriter.PathQuery pathq, Model circuit) {
+        buildPathCircuit(con, pathq, circuit, null);
+    }
+
+    /**
+     * @param workspace when non-null, private {@code urn:sc:} rows (the atom's materialized
+     *     {@code reif(C, g_C)}) are collected here instead of into the circuit, so the caller can
+     *     feed them back and clean them up. Null for a whole-pattern path query, which emits none.
+     */
+    static void buildPathCircuit(RepositoryConnection con, CircuitRewriter.PathQuery pathq,
+                                 Model circuit, Model workspace) {
         // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round bound. A
         // simple path in the reachable subgraph has <= |V_s|-1 edges, so |V_s|-1 rounds capture every
         // simple path -> exact provenance -- while |V_s| << the global node count keeps it feasible.
@@ -328,14 +345,14 @@ public final class CircuitRun {
             cap = Math.max(1, nGlobal - 1);
         }
         java.util.Set<String> reachNodes = new java.util.HashSet<>();
-        for (String c : pathq.init()) runFeed(con, circuit, reachNodes, c);
+        for (String c : pathq.init()) runFeed(con, circuit, workspace, reachNodes, c);
         int k = 0, lastLevel = 0;
         while (k < cap) {
-            for (String c : pathq.step(k)) runFeed(con, circuit, reachNodes, c);
+            for (String c : pathq.step(k)) runFeed(con, circuit, workspace, reachNodes, c);
             lastLevel = ++k;
             if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
         }
-        for (String c : pathq.projectAnswers(lastLevel)) runFeed(con, circuit, reachNodes, c);
+        for (String c : pathq.finish(lastLevel)) runFeed(con, circuit, workspace, reachNodes, c);
         System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
             + ", rounds=" + lastLevel + " (cap=" + cap + "), path fp=" + pathq.fingerprint() + " ----");
         System.err.println("# reach/base gates are fingerprinted (urn:g:r: + c:rpath) so distinct path "
@@ -345,14 +362,21 @@ public final class CircuitRun {
     /** Run one path-round CONSTRUCT, add its triples to the accumulated circuit AND back into the
      *  store (feedback for the next round), and record any reach-gate endpoints (c:rfrom/c:rto) so the
      *  caller can bound the loop by the live reachable-set size |V_s|. */
-    private static void runFeed(RepositoryConnection con, Model circuit,
+    private static void runFeed(RepositoryConnection con, Model circuit, Model workspace,
                                 java.util.Set<String> reachNodes, String construct) {
         System.err.println("# --- path CONSTRUCT ---\n" + construct);   // emit the plan (stderr)
         Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
         try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
             m.addAll(QueryResults.asModel(res));
         }
-        circuit.addAll(m);
+        for (Statement st : m) {
+            if (workspace != null
+                    && st.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
+                workspace.add(st);                         // private row, not part of the circuit
+            } else {
+                circuit.add(st);
+            }
+        }
         con.add(m);
         // reachable-subgraph nodes = endpoints of the reach LEVEL gates (rlvl 0,1,2,...); the base
         // relation (rlvl "base") is all-pairs over the WHOLE graph, so exclude it from the bound.

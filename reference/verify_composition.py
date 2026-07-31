@@ -134,18 +134,19 @@ def _as_iris(mapping):
             for key, probability in mapping.items()}
 
 
-def _rdflib_pwe(query, selected):
+def _rdflib_pwe(query, selected, tokens=None):
     """Every possible world, the plain query, a third-party SPARQL engine."""
     import rdflib
 
-    names = list(TOKENS)
+    tokens = TOKENS if tokens is None else tokens
+    names = list(tokens)
     weight = P ** len(names)                 # uniform: every token has probability P
     accumulated = {}
     for bits in itertools.product((0, 1), repeat=len(names)):
         graph = rdflib.Graph()
         for name, bit in zip(names, bits):
             if bit:
-                s, p, o = TOKENS[name]
+                s, p, o = tokens[name]
                 graph.add((rdflib.URIRef(D + s), rdflib.URIRef(D + p), rdflib.URIRef(D + o)))
         seen = set()                          # set semantics: one answer, one event
         for row in graph.query(query):
@@ -174,15 +175,16 @@ def _gamma_circuit(query, selected):
                             for k, g in gamma.project(circuit, table, selected).items()}))
 
 
-def _engine(sparql, selected, mode, workdir):
+def _engine(sparql, selected, mode, workdir, tokens=None, datafile="data.ttl"):
+    tokens = TOKENS if tokens is None else tokens
     query_file = workdir / "query.sparql"
     query_file.write_text(sparql + "\n", encoding="utf-8")
     completed = subprocess.run(
         ["java", "-cp", str(JAR), "npcs.circuit.CircuitRun", "--construction=" + mode,
-         "Standard", str(workdir / "data.ttl"), str(query_file)],
+         "Standard", str(workdir / datafile), str(query_file)],
         capture_output=True, text=True, check=True)
     circ, answers, bindings = circuit_io.parse(completed.stdout)
-    weights = {D + name: P for name in TOKENS}
+    weights = {D + name: P for name in tokens}
     out = {}
     for gate in answers:
         key = tuple(sorted((("?" + v), value.split(circuit_io.US)[-1])
@@ -191,12 +193,45 @@ def _engine(sparql, selected, mode, workdir):
     return _round(out)
 
 
-def _write_data(workdir):
+def _write_data(workdir, tokens, filename):
     lines = ["@prefix d: <urn:d:> .",
              "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ."]
-    for name, (s, p, o) in TOKENS.items():
+    for name, (s, p, o) in tokens.items():
         lines.append(f"d:{name} rdf:subject d:{s} ; rdf:predicate d:{p} ; rdf:object d:{o} .")
-    (workdir / "data.ttl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (workdir / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# A chain plus two side edges, so a closure atom has something to compose with.
+PATH_TOKENS = {
+    "t1": ("a", "p", "b"),
+    "t2": ("b", "p", "c"),
+    "t3": ("c", "q", "z"),
+    "t4": ("b", "q", "y"),
+}
+
+# Def. 4.7 clause 2 says an atom's materialized relation is consumed "in the same manner as
+# triple-pattern gates". rdflib is the oracle: it implements property paths natively, and the
+# Python DSL's path support does not model composition with the rest of the algebra.
+PATH_CASES = [
+    ("closure atom alone",
+     "SELECT ?y WHERE { <urn:d:a> <urn:d:p>+ ?y }", ["?y"]),
+    ("closure JOIN bgp",
+     "SELECT ?y ?z WHERE { <urn:d:a> <urn:d:p>+ ?y . ?y <urn:d:q> ?z }", ["?y", "?z"]),
+    ("closure UNION bgp",
+     "SELECT ?y WHERE { { <urn:d:a> <urn:d:p>+ ?y } UNION { <urn:d:a> <urn:d:q> ?y } }", ["?y"]),
+    ("closure MINUS bgp",
+     "SELECT ?y WHERE { <urn:d:a> <urn:d:p>+ ?y MINUS { ?y <urn:d:q> ?z } }", ["?y"]),
+    ("closure OPTIONAL bgp",
+     "SELECT ?y ?z WHERE { <urn:d:a> <urn:d:p>+ ?y OPTIONAL { ?y <urn:d:q> ?z } }", ["?y", "?z"]),
+    ("bgp MINUS closure",
+     "SELECT ?y WHERE { ?y <urn:d:q> ?z MINUS { <urn:d:a> <urn:d:p>+ ?y } }", ["?y"]),
+    ("closure with FILTER",
+     "SELECT ?y WHERE { <urn:d:a> <urn:d:p>+ ?y FILTER(?y != <urn:d:c>) }", ["?y"]),
+    ("variable-source closure JOIN bgp",
+     "SELECT ?x ?y WHERE { ?x <urn:d:p>+ ?y . ?x <urn:d:q> ?w }", ["?x", "?y"]),
+    ("zero-or-more closure JOIN bgp",
+     "SELECT ?y ?z WHERE { <urn:d:a> <urn:d:p>* ?y . ?y <urn:d:q> ?z }", ["?y", "?z"]),
+]
 
 
 def main() -> int:
@@ -206,10 +241,20 @@ def main() -> int:
         print("verify_composition: engine/target/npcs-rewrite.jar is missing; run "
               "mvn -q -f engine/pom.xml package", file=sys.stderr)
         return 1
+    try:
+        import rdflib  # noqa: F401
+    except ImportError:
+        # The FILTER cases have no second oracle, so a missing rdflib is a
+        # weaker gate, not a passing one. Fail closed, and say what to install.
+        print("verify_composition: rdflib is missing and it is the only oracle for "
+              "the FILTER cases; run python -m pip install 'rdflib>=6.3,<8'",
+              file=sys.stderr)
+        return 1
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
-        _write_data(workdir)
+        _write_data(workdir, TOKENS, "data.ttl")
+        _write_data(workdir, PATH_TOKENS, "paths.ttl")
         for name, sparql, query, selected in CASES:
             oracles = {"rdflib-pwe": _rdflib_pwe(sparql, selected)}
             if query is not None:
@@ -229,6 +274,18 @@ def main() -> int:
             else:
                 print(f"  [OK ] {name:32} {len(oracles)} oracle(s), "
                       f"{len(results['flat'])} answers")
+        for name, sparql, selected in PATH_CASES:
+            truth = _rdflib_pwe(sparql, selected, PATH_TOKENS)
+            results = {mode: _engine(sparql, selected, mode, workdir, PATH_TOKENS, "paths.ttl")
+                       for mode in ("flat", "factored")}
+            if any(truth != got for got in results.values()):
+                failures += 1
+                print(f"  [FAIL] {name}")
+                for mode, got in results.items():
+                    print(f"           engine {mode:8} {got}")
+                print(f"           rdflib-pwe       {truth}")
+            else:
+                print(f"  [OK ] {name:32} rdflib oracle, {len(truth)} answers")
     print("COMPOSITION DIFFERENTIAL " + ("ALL OK" if failures == 0 else f"{failures} FAILED"))
     return 0 if failures == 0 else 1
 

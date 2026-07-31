@@ -41,7 +41,7 @@ tag. Item 1 is to be corrected on the paper side.
 | **2** | ~~Answer-gate identifier drops the pattern tag θ ⇒ distinct queries mint identical answer gates~~ | **FIXED** | code |
 | **3** | W3C MINUS is implemented and evaluated; the paper proves only algebraic Diff and disclaims the domain-disjointness rewriting | GAP | paper |
 | **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **FIXED in code** | code |
-| **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12, `I_C`, bind-join) are not implemented | GAP | paper |
+| **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12) | **FIXED in code**; the `I_C` bind-join remains an optimization | code |
 | **6** | Skolemization of blank nodes (Def. §4.2) is not implemented anywhere | GAP | code (or paper) |
 | **7** | Tseitin `T(C)` compiled once + conditioned on `y_r`; the d4 path compiles one CNF **per answer root** | GAP | paper |
 | **8** | ⊖ minuend child *set* (Def. 4.2) is never built; both implementations interpose a ⊕ marginal | DIFFERS | paper |
@@ -309,60 +309,43 @@ anything else — would also remove the special-case feel of clause 2.
 
 ---
 
-## 5. Closure atoms in context — GAP
+## 5. Closure atoms in context — GAP → FIXED
 
-**Paper.** Def. 4.7 clause 2 defines a closure atom against an input relation
-`I_C` supplied by its bind-join predecessor; §4.3 says "a source variable from an
-enclosing pattern invokes the same construction for each source binding"; the
-materialized `reif(C, g_C)` "lets the enclosing cases consume path roots in the
-same manner as triple-pattern gates" (Lem. 4.12, then Thm. 4.13).
+**Paper.** Def. 4.7 clause 2 defines a closure atom against an input relation `I_C`
+supplied by its bind-join predecessor; the materialized `reif(C, g_C)` "lets the
+enclosing cases consume path roots in the same manner as triple-pattern gates"
+(Lem. 4.12, then Thm. 4.13).
 
-**Code (engine).** A path must be the entire query pattern:
+**Code, before.** A path had to be the entire query pattern:
 
 ```java
 if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath))
-    throw new UnsupportedOperationException(
-        "Property path must be the whole pattern for now (no join/union/minus with a path yet).");
+    throw new UnsupportedOperationException("Property path must be the whole pattern for now");
 ```
-[CircuitRewriter.java:938-939](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L938-L939)
 
-There is no `I_C`, no bind-join, and no per-source-binding invocation. The
-subject either is a constant (then a client-side BFS discovers `V_s`
-and restricts the base relation) or is a free variable (then the base relation is
-all-pairs) — [CircuitRun.java:298-343](engine/src/main/java/npcs/circuit/CircuitRun.java#L298-L343).
+### The fix
 
-**Code (reference).** `eval_path` composes freely, but by evaluating the full
-all-pairs relation and filtering — not by the paper's bind-join construction
-([gamma.py:211-222](reference/gamma.py#L211-L222)).
+Clause 2 already describes the mechanism the rest of the rewriting now has: a
+relation with binding columns and a gate column. A closure atom is therefore just
+another materialized operand. What made it awkward is that its plan is not one
+CONSTRUCT but a data-dependent fixpoint, so `CircuitConstructionPlan.Step` gained a
+second shape: a step carrying the atom's plan, which `CircuitRun` drives, ending in a
+`urn:sc:` row relation instead of answer gates. Everything downstream —
+`RelationOperand`, `productAnswer`, `subFeeds`, `minusRows` — consumes it unchanged.
 
-**Assessment.** §5 is consistent with the artifact (all reported path queries are
-standalone: `Q7397 wdt:P279+ ?y`, `Q60 wdt:P131+ ?y`, `p+`/`p*` on a WatDiv
-subgraph). §4.2/§4.3's `I_C` machinery, the bound-source condition of §3
-(P1.5/P1.6), and Lem. 4.12's role in Thm. 4.13 describe a construction that does
-not exist yet. §5's "the implementation does not yet stratify nested closures"
-caveat covers strictly less than the actual gap.
+Composition is now unrestricted: a closure atom may be a JOIN operand, a UNION
+branch, either side of a MINUS, either side of an OPTIONAL, carry a FILTER, or sit
+beside another atom. Verified against an rdflib possible-world oracle (which
+implements property paths natively) in both construction modes, with `+` and `*`,
+and with a constant or a variable source.
 
-Related **BEYOND** items in the same area:
-
-- **Unbound source.** §3 excludes "closure atoms that violate the bound-source
-  condition". The engine supports a variable source by materializing the
-  all-pairs base ([CircuitRewriter.java:1110-1111](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L1110-L1111)),
-  and the Python reference always computes all-pairs. Both go outside the fragment
-  the theorems cover.
-- **Compound `e` in the engine.** §4.3 states "the implementation evaluated in
-  Section 5 specializes to `e = p`". It does not: `pathQuery` decomposes a compound
-  sub-path into UNION branches of statement patterns with the endpoints substituted
-  by `?u`/`?v`, and builds one ⊗ per branch derivation
-  ([CircuitRewriter.java:945-990](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L945-L990)).
-  That covers `/`, `|`, `^`, but it is *not* the `b^e_uv` recursion of Eq. (4) —
-  no midpoint enumeration over `D_G`, so Lem. 4.10's `O(|e||D_G|³)` bound does not
-  describe it.
-- **Nested closure.** §3 excludes it and the engine rejects it fail-fast (via
-  `unionBranches → collect → assertPureBgp`). The Python reference **accepts** it —
-  `eval_pexpr('plus', …)` recurses into any sub-expression including another
-  closure ([gamma.py:203-206](reference/gamma.py#L203-L206)).
-- **Zero-or-one `e?`.** §3 excludes it. Both implementations support it
-  (`zeroLengthPlan`; `gamma` `('opt', e)`).
+**What is still not the paper's construction.** For a *variable* source the engine
+materializes the all-pairs base rather than invoking the fixpoint once per source
+binding. The answers and probabilities are right — that is what the oracle checks —
+but `I_C` and the bind-join of §3's bound-source condition are an efficiency
+mechanism the engine does not have, and an unbound source is outside the fragment
+§3 defines. A bound source still restricts the base to the source-reachable subgraph
+`V_s`, as before.
 
 ---
 

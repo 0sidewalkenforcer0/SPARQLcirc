@@ -399,7 +399,7 @@ public class CircuitRewriter {
         List<ValueExpr> conditions = new ArrayList<>();
         flattenJoin(body, parts, conditions);
         boolean composite = false;
-        for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
+        for (TupleExpr part : parts) if (isComposite(part)) { composite = true; break; }
         if (!composite) {
             return bgpSteps(collectBlock(body), W);           // pure BGP branch: factored in FACTORED mode
         }
@@ -409,6 +409,11 @@ public class CircuitRewriter {
         plan.add(flatStep(productAnswer(operands, joinConditions(conditions, operands), W),
                 "join-operands"));
         return plan;
+    }
+
+    /** An operand that cannot be reified inline and must be materialized as a relation first. */
+    private static boolean isComposite(TupleExpr node) {
+        return node instanceof Difference || node instanceof ArbitraryLengthPath;
     }
 
     /** A join's operands, with the Join spine flattened away (⋈ is associative and commutative). */
@@ -637,6 +642,22 @@ public class CircuitRewriter {
      * minuend and is inlined, so no relation is materialized for it.
      */
     private Operand planOperand(TupleExpr node, List<CircuitConstructionPlan.Step> plan) {
+        if (node instanceof ArbitraryLengthPath) {
+            PathQuery atom = pathPlan((ArbitraryLengthPath) node, new ArrayList<>());
+            List<String> columns = canonicalVars(scopeOf(node));
+            if (columns.isEmpty()) {
+                throw new UnsupportedOperationException(
+                    "Unsupported: a closure atom with both endpoints constant contributes no binding, "
+                  + "so it cannot be joined with anything. Use it as the whole pattern, or leave an "
+                  + "endpoint free.");
+            }
+            String gateVar = generated("opg" + (operandSerial++));
+            String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
+                               + ":path:" + atom.fingerprint();
+            atom.asOperand(relationIri, gateVar, columns);
+            plan.add(CircuitConstructionPlan.Step.path(atom, "path-operand"));
+            return new RelationOperand(relationIri, columns, gateVar);
+        }
         if (!(node instanceof Difference)) {
             // A JOIN can also be an operand — of a difference, or of another join one level up (three
             // nested OPTIONALs produce exactly that). If any of its parts is composite the whole
@@ -645,7 +666,7 @@ public class CircuitRewriter {
             List<ValueExpr> conditions = new ArrayList<>();
             flattenJoin(node, parts, conditions);
             boolean composite = false;
-            for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
+            for (TupleExpr part : parts) if (isComposite(part)) { composite = true; break; }
             if (!composite) return new BgpOperand(collectBlock(node));
             List<Operand> operands = new ArrayList<>();
             for (TupleExpr part : parts) operands.add(planOperand(part, plan));
@@ -1066,6 +1087,16 @@ public class CircuitRewriter {
     private static LinkedHashSet<String> scopeOf(TupleExpr node) {
         if (node instanceof Difference) return scopeOf(((Difference) node).getLeftArg());
         if (node instanceof Filter)     return scopeOf(((Filter) node).getArg());
+        if (node instanceof ArbitraryLengthPath) {
+            // A closure atom binds its ENDPOINTS. The sub-path's internal variables are existential
+            // and never leave the atom, so varsOf would over-report them.
+            ArbitraryLengthPath alp = (ArbitraryLengthPath) node;
+            LinkedHashSet<String> out = new LinkedHashSet<>();
+            for (Var end : new Var[]{alp.getSubjectVar(), alp.getObjectVar()}) {
+                if (end != null && !end.hasValue() && !end.isAnonymous()) out.add(end.getName());
+            }
+            return out;
+        }
         if (node instanceof Join) {
             LinkedHashSet<String> out = scopeOf(((Join) node).getLeftArg());
             out.addAll(scopeOf(((Join) node).getRightArg()));
@@ -1519,9 +1550,22 @@ public class CircuitRewriter {
                                                                  // (a Slice can wrap the Projection above the path)
         if (scheme != Reification.STANDARD)
             throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
-        if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath))
-            throw new UnsupportedOperationException("Property path must be the whole pattern for now (no join/union/minus with a path yet).");
+        if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath)) {
+            // The path is composed with other operators. constructionPlan() handles that route,
+            // planning the atom as a materialized operand (Def. 4.7 clause 2), so hand it over.
+            return null;
+        }
         ArbitraryLengthPath alp = found[0];
+        return pathPlan(alp, projectedNames(outerProjection(te)));
+    }
+
+    /**
+     * Build the level-indexed plan for one closure atom. Called both for a whole-pattern path query
+     * and, through {@link #planOperand}, for an atom composed with other operators.
+     */
+    private PathQuery pathPlan(ArbitraryLengthPath alp, List<String> W) {
+        if (scheme != Reification.STANDARD)
+            throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
         Var s = alp.getSubjectVar(), o = alp.getObjectVar();
         String subjName = s.getName(), objName = o.getName();
         if (subjName.equals(objName))
@@ -1536,9 +1580,6 @@ public class CircuitRewriter {
                 nb.add(subst(sp, subjName, objName, generated("u"), generated("v")));
             branches.add(nb);
         }
-        List<String> W = new ArrayList<>();
-        for (ProjectionElem pe : outerProjection(te).getProjectionElemList().getElements())
-            if (!W.contains(pe.getName())) W.add(pe.getName());
         boolean star = alp.getMinLength() == 0;
         // Materialize the all-pairs BASE relation (rlvl "base") here (reify needs the instance): one
         // CONSTRUCT per UNION alternative, each a ⊗ over the branch's reified patterns. reach^0 is then
@@ -1577,6 +1618,14 @@ public class CircuitRewriter {
         answerTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
         return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
                 star, W, fp, generatedPrefix, answerTag);
+    }
+
+    private static List<String> projectedNames(Projection projection) {
+        List<String> out = new ArrayList<>();
+        for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
+            if (!out.contains(pe.getName())) out.add(pe.getName());
+        }
+        return out;
     }
 
     private static PathQuery.End endOf(Var v, String name) {
@@ -1621,6 +1670,8 @@ public class CircuitRewriter {
         private final String gp;                                 // capture-avoiding generated-variable prefix
         private final String answerTag;                          // Def. 4.6 θ for the answer ⊕ (isolates roots)
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
+        private String operandRelation, operandGate;             // set when the atom is an OPERAND
+        private List<String> operandColumns;
         PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj,
                   boolean star, List<String> W, String fp, String generatedPrefix, String answerTag) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
@@ -1725,6 +1776,43 @@ public class CircuitRewriter {
                   + reachIri(u, vv, k1, fp, gp) + "}\n");
             return out;
         }
+        /**
+         * Consume this atom as {@code reif(C, g_C)} instead of as the query's answer: Def. 4.7
+         * clause 2's "relation whose ordinary columns contain the extensions and whose gate column
+         * contains the corresponding path root". The enclosing join, difference or projection then
+         * reads it exactly like a triple pattern's gate.
+         */
+        void asOperand(String relationIri, String gateVar, List<String> columns) {
+            this.operandRelation = relationIri;
+            this.operandGate = gateVar;
+            this.operandColumns = columns;
+        }
+
+        /** The last round's output: answer gates for a whole-pattern query, rows for an operand. */
+        public List<String> finish(int lastLevel) {
+            return operandRelation == null ? projectAnswers(lastLevel) : materializeRows(lastLevel);
+        }
+
+        /** Publish reach^{lastLevel} as the atom's row relation, keyed by its free endpoints. */
+        private List<String> materializeRows(int lastLevel) {
+            String fromPat = subj.isVar ? "?" + subj.var : subj.iri;
+            String toPat = obj.isVar ? "?" + obj.var : obj.iri;
+            String row = v("prow"), rg = v("rg");
+            StringBuilder q = new StringBuilder(PRE).append("CONSTRUCT {\n  ").append(row)
+                    .append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <").append(operandRelation)
+                    .append("> ; <").append(FactoredBgpRewriter.GATE).append("> ").append(rg);
+            for (String column : operandColumns) {
+                q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(column)).append("> ?").append(column);
+            }
+            q.append(" .\n}\nWHERE {\n  ").append(rg).append(" a c:Plus ; c:rlvl \"").append(lastLevel)
+             .append("\"").append(rpathGuard()).append(" ; c:rfrom ").append(fromPat)
+             .append(" ; c:rto ").append(toPat).append(" .\n")
+             .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
+                     idKey(operandColumns, "PATHROW@" + fp)))
+             .append("}\n");
+            return java.util.Collections.singletonList(q.toString());
+        }
+
         /** Project reach^{lastLevel} to answer gates, filtering bound endpoints and keying by the free ones. */
         public List<String> projectAnswers(int lastLevel) {
             String fromPat = subj.pat(v("u")), toPat = obj.pat(v("v"));
