@@ -101,7 +101,7 @@ compilation.
 
 > **Measurement correction.** The pre-registered comparison below is against the original query, but the
 > legacy `e3_run.py` implementation calls `get_npcs()` for its `plain_ms` column. Existing ratios are
-> therefore CONSTRUCT/NPCS-provenance-SELECT, not CONSTRUCT/B. `SERVER_TASK.md` ROUND 9 introduces
+> therefore CONSTRUCT/NPCS-provenance-SELECT, not CONSTRUCT/B. The R9 construction matrix introduces
 > separate B (base), R (reification-only), N (NPCS), and C (circuit CONSTRUCT) measurements.
 
 - **Proves:** A + deployability.
@@ -116,7 +116,7 @@ compilation.
 - **Prediction:** sub-second→low-seconds at 10⁶–10⁷ (pilot: 420 ms / 13.5k triples); **byte-identical circuits across engines** (deterministic content-addressing); `c` a small constant.
 - **Success:** near-linear scaling, `c` reported explicitly. **Risk:** if `SHA256` in SPARQL is slow on an engine, `c` could be several×; measure and report per engine.
 
-## E4 — Compilation + WMC vs treewidth  *(status: DONE on synthetic families — `watdiv/e4_results.csv`, run with **d4** on the Linux/x86 server. Shows the predicted scaling: at bounded treewidth the d-DNNF stays small (≤ 5 270 nodes at n = 254) while the fixed-order OBDD blows up (299 k nodes at n = 94, `obdd-timeout` by n ≥ 126); at growing treewidth both hit the #P wall; `d4_wmc == expected` on every tractable instance. This is the public-compiler / knowledge-compilation win, and it delivered. Open follow-ups: (a) d4-**v1** over-counts LARGE real reconvergent cones, so G6 keeps d4 size-only there — refresh those with **d4-v2**; (b) pin the ProvSQL comparison to the same compiler stack. See SERVER_TASK "E4 / compiler".)*
+## E4 — Compilation + WMC vs treewidth  *(status: DONE on synthetic families — `watdiv/e4_results.csv`, run with **d4** on the Linux/x86 server. Shows the predicted scaling: at bounded treewidth the d-DNNF stays small (≤ 5 270 nodes at n = 254) while the fixed-order OBDD blows up (299 k nodes at n = 94, `obdd-timeout` by n ≥ 126); at growing treewidth both hit the #P wall; `d4_wmc == expected` on every tractable instance. This is the public-compiler / knowledge-compilation win, and it delivered. Open follow-ups: (a) d4-**v1** over-counts LARGE real reconvergent cones, so G6 keeps d4 size-only there — refresh those with **d4-v2**; (b) pin the ProvSQL comparison to the same compiler stack. See `reference/RESULTS.md` §5.)*
 
 - **Proves:** D — treewidth is the tractability parameter; a real d-DNNF compiler realizes it.
 - **Families (from `reference/gen_families.py`):** bounded-tw growing-n (`layered(depth↑, width=2)`, `chain`); growing-tw (`layered(depth=3, width=k↑)`, `grid(k)`).
@@ -169,7 +169,7 @@ decoupled from KG size). Each experiment lives on one axis.
 | E8 | Wikidata truthy dump / WDBench graph | **10⁸–10⁹** triples | real-KG scale; comparability with SPARQLprov (942M) & NPCS; property paths on `P279`/`P131` hierarchies (single-source, bounded reach). Queries: `reference/wikidata/*.rq` |
 | E9 | TPC-H → RDF (direct mapping) | 1.2M–123M (SF `10^{i/4-2}`) | comparability with SPARQLprov & ProvSQL **only (NPCS never ran TPC-H)**; **non-aggregate, filter-free SPJ/MINUS only**; **per-row (`naryrel`) provenance**. Plan: `reference/tpch/README.md` |
 | E10 | WatDiv slice + Wikidata | 10⁷ / 10⁹ | engine-agnostic Claim A across independent engines — GraphDB, Fuseki (SPARQLprov's), Oxigraph (Rust), QLever (scale), MillenniumDB (paths). Plan: `reference/engines/` |
-| E11 | E2 families + shared-prefix N-sweep | N≤1000 | compile-time win at scale (Θ(N+S) vs Θ(N·S), ~9× at N=1000) + representation win up to 13× (201× in E2); correctness parity; SPARQLprov MINUS wrong. Plan: `reference/E11_RESULTS.md` |
+| E11 | E2 families + shared-prefix N-sweep | N≤1000 | compile-time win at scale (Θ(N+S) vs Θ(N·S), ~9× at N=1000) + representation win up to 13× (201× in E2); correctness parity; SPARQLprov MINUS wrong. Plan: `reference/RESULTS.md` §4 |
 
 - **`base.nt` (51K) is retired** to a CI/smoke correctness fixture — it is *not* an experiment dataset (3–4 orders below the VLDB bar).
 - **In-memory `watdiv_factor.py` is small-scale only** (can't hold 100M in RAM); the 100M E5 runs through the engine (CONSTRUCT on GraphDB), not the Python in-memory factor.

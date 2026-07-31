@@ -322,7 +322,7 @@ collapses the per-user existential cross-product, WMC provably unchanged:
 2.9× on star / 1.8× on snowflake, scaling with how existential the shape is — the
 factored contribution motivated on real WatDiv, not just synthetic layered graphs.
 
-## Not yet (next steps)  — gap IDs defined in `SERVER_TASK.md` (ROUND 6/8)
+## Not yet (next steps)
 1. **Scale study — remaining**: ~~real KGs (WatDiv)~~ ✅; ~~Wikidata 2.13B statement graph~~ ✅ (E8);
    still open — **property paths at Wikidata scale = G1** (the frontier-only reachable-subgraph loop has
    landed; the large-reachable-set run is still pending — current path results are on *small* reachable

@@ -1,6 +1,6 @@
 # Construction cost is engine-dependent, not method-dependent
 
-_RQ3/RQ5 supporting analysis. Reified WatDiv 100M. Single measured run per cell (`--warmups 0 --runs 1`); construction time is `cell_wall_ms`. Circuit is byte-identical across engines (see `oxigraph-100m/BYTEID_100M.md`), so any time difference is the host engine's query evaluation, not the SPARQLcirc circuit._
+_RQ3/RQ5 supporting analysis. Reified WatDiv 100M. Single measured run per cell (`--warmups 0 --runs 1`); construction time is `cell_wall_ms`. Circuit is byte-identical across engines (see `BYTEID_100M_SUMMARY.md`), so any time difference is the host engine's query evaluation, not the SPARQLcirc circuit._
 
 ## Same circuit, same cell, two engines (GraphDB vs Oxigraph, 100M)
 

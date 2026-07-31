@@ -10,8 +10,8 @@ on the same 2.13 B-triple Wikidata graph, same `P279+` query (16 answers).
 | variant | reach/answer-gate keying | correctness | WD-path cones | OBDD compile | source |
 |---|---|:--:|--:|--:|---|
 | **merged** (pre-`1e67021`) | raw `CONCAT("A\|x=",STR(?x),…)` — erases term type/datatype/lang/bound; unescaped `\|` delimiter | **✗ WRONG** | (small — wrongly) | ~1 ms | `verify_answer_keys.py` (6 counterexamples) |
-| **shared** (`1e67021`) | `termHash()` — kind-tagged (i/l/b/u), keeps lexical+datatype+lang; but reach gates **shared across paths** | ✓ OBDD==PWE | **19 → 233 tok** | **5.75 s** | `HISTORICAL_TIMINGS.md` |
-| **isolated** (`7882a1e` `PathIsoSeq`) | `termHash()` **+ per-path fingerprint** on reach/base gates | ✓ OBDD==PWE | **1 → 20 tok** | **~1 ms** | `CANONICAL_TIMINGS.md`, G6 |
+| **shared** (`1e67021`) | `termHash()` — kind-tagged (i/l/b/u), keeps lexical+datatype+lang; but reach gates **shared across paths** | ✓ OBDD==PWE | **19 → 233 tok** | **5.75 s** | measured pre-`PathIsoSeq` (git history) |
+| **isolated** (`7882a1e` `PathIsoSeq`) | `termHash()` **+ per-path fingerprint** on reach/base gates | ✓ OBDD==PWE | **1 → 20 tok** | **~1 ms** | `CANONICAL_TIMINGS.md`, `RESULTS.md` §5 |
 
 ## What each variant shows
 
@@ -41,8 +41,8 @@ Content-addressing a property-path circuit correctly needs **two independent pro
 
 Neither alone suffices: merged is fast+wrong, shared is correct+slow, isolated is correct+fast. This is
 why the final engine carries both, and it is the honest provenance of the WD-path number moving
-8.04 s → 2.14 s across the session (the intermediate rows live in `HISTORICAL_TIMINGS.md`, not discarded
-but reinterpreted as this ablation).
+8.04 s → 2.14 s across the session (the intermediate rows are recorded in this table, not discarded but
+reinterpreted as this ablation).
 
 ## Caveats
 

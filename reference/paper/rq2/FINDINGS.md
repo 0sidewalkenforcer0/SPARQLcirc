@@ -139,3 +139,47 @@ factoring gives no compaction on WatDiv OPTIONAL at either scale; the OPTIONAL c
 (OO1 hit a ConstructionProtocolError at 100M — a single-cell fallback edge case, 4/5 confirm the trend.)
 **E-C1b conclusion (final): on WatDiv, factored O/M = flat; use flat for the figure's O/M bars; factoring's
 compaction win is exclusively the synthetic reconvergent sweep.**
+
+---
+
+## How these numbers are produced (run spec)
+
+Node = each leaf and each ⊗/⊕/⊖ once, edges excluded. Size is deterministic (content-addressed), so
+`--warmups 0 --runs 1` is enough; use the 1/5 defaults only when the same run must also yield citable
+construction timing (that feeds RQ3/RQ5, not this figure).
+
+| series | value | source |
+|---|---|---|
+| NPCS | `npcs_token_occurrences + npcs_oplus + npcs_ominus + npcs_leaves` | method **N** columns |
+| flat | `structure_signature.nodes` (= leaves + operators) | method **C**, `construction_effective=flat`, `notes` JSON |
+| factored | `structure_signature.nodes` | method **C**, `construction_effective=factored`, `notes` JSON |
+
+Prerequisites: `cd engine && mvn -q package`; `cd reference && python3 verify_all.py` green; GraphDB with
+WatDiv 10M and 100M reified (Standard) loaded. The factored pass additionally needs a **writable** repo
+and UPDATE endpoint (factored construction uses feedback INSERT). Endpoint env vars follow
+`PCM_<ENGINE>_<SCALE>_<ROLE>_ENDPOINT`.
+
+```bash
+# (a) NPCS + flat — read-only, force flat
+export PCM_JAVA_BIN=java PCM_FORCE_FLAT=1
+export PCM_GRAPHDB_10M_BASE_ENDPOINT=http://localhost:7200/repositories/watdiv10m
+export PCM_GRAPHDB_10M_REIFIED_ENDPOINT=$PCM_GRAPHDB_10M_BASE_ENDPOINT
+export PCM_GRAPHDB_100M_BASE_ENDPOINT=http://localhost:7200/repositories/watdiv100m
+export PCM_GRAPHDB_100M_REIFIED_ENDPOINT=$PCM_GRAPHDB_100M_BASE_ENDPOINT
+python3 reference/paper/paper_construction_matrix.py \
+    --engines graphdb --scales 10M,100M --classes C,F,L,O,S --methods N,C \
+    --warmups 0 --runs 1 --out reference/paper/nodecount_flat_10m_100m.csv
+
+# (b) factored — needs the UPDATE endpoints, no force-flat
+unset PCM_FORCE_FLAT
+export PCM_GRAPHDB_10M_UPDATE_ENDPOINT=http://localhost:7200/repositories/watdiv10m/statements
+export PCM_GRAPHDB_100M_UPDATE_ENDPOINT=http://localhost:7200/repositories/watdiv100m/statements
+python3 reference/paper/paper_construction_matrix.py \
+    --engines graphdb --scales 10M,100M --classes C,F,L,O,S --methods C \
+    --warmups 0 --runs 1 --out reference/paper/nodecount_factored_10m_100m.csv
+```
+
+Swap `--classes` for `O` or `M` to reproduce the non-monotone cells above. Expect empty cells for C3 and
+the biggest O/M templates — that is honest data, not a run failure. The reconvergence half of the figure
+comes from `reference/watdiv/unbound_factored_vs_flat.csv` plus the analytic NPCS count
+`D·(k+1)+answers` with `D = answers·W^(k−1)`, exact for the fully-specified layered family.

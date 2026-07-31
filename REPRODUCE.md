@@ -103,6 +103,39 @@ NPCS. It requires the original artifact, which is **not** included (see `NOTICE`
 - `d4` bundles the PATOH partitioner, which is x86_64-only; run the d4 figure on a
   Linux/x86 machine (`D4_ON_LINUX.md`). PySDD stands in on Apple Silicon.
 
+## Measurement contract (what makes a timing citable)
+
+A performance batch is publishable only if all applicable items hold before the first warm-up and
+remain unchanged through the last measured run. `reference/paper/capture_environment.py` writes the
+machine-readable record (`environment.json`) that is stored next to the raw results and is
+authoritative for commit, binary hashes, runtime values and endpoint probes.
+
+1. The worktree is clean and its 40-character commit is recorded.
+2. Python, `dd`, native `dd.cudd`, Java, Maven, GraphDB and every external compiler or baseline used by
+   the cell have an exact version, source revision, or SHA-256 in `environment.json`.
+3. `<production-python> reference/verify_compiler.py` passes in the same Python environment as the
+   batch. Installing pure-Python `dd` is not sufficient: `dd.cudd` must import and be exercised.
+4. Every input file is non-empty with a separately frozen checksum manifest, and every endpoint responds
+   from the harness's own network namespace and passes an expected-count/sentinel query. A store
+   directory is not evidence that the right dataset is loaded.
+5. GraphDB edition, heap, repository id, worker/core policy, JVM, warm-cache policy, CPU affinity and
+   thread-control variables are fixed, and identical across the methods being compared in a cell.
+6. One unreported warm-up followed by five measured runs; report median, min, max, mean and sd. Query
+   cells get one **300 s** budget and each compile attempt **120 s** (`reference/experiment_timeouts.py`).
+7. The batch runs in a quiescent allocation with no concurrent load/index/compile jobs. Capture the
+   volatile fields before and after each group. **If the host is shared, disclose it** and treat absolute
+   wall-clock as non-isolated rather than mixing it with dedicated runs.
+
+An inapplicable gate must be stated as such; it must not silently become a zero, a timeout, or a
+substituted implementation.
+
+**Reference host** (the environment behind the committed numbers): AlmaLinux 9.7, kernel 5.14 x86_64,
+AMD EPYC 7302 16-core (1 socket, 32 logical CPUs, 1 NUMA node, 128 MiB L3), 125 GiB RAM, 48 GiB swap,
+NFS repository filesystem with local `/tmp` for scratch. Keep compiler scratch and per-run CNFs **off
+NFS**. Some historical timings came from a shared management node with other users' processes and
+GraphDB at `-Xms60g -Xmx60g`; those are context, not a dedicated-host measurement, and the Wikidata
+*load* needed an 80 GiB heap that must not be mixed into a 60 GiB query-timing cell.
+
 ## Verification guard rails
 
 Three checks protect the parts that are easy to break silently. Run all three after any

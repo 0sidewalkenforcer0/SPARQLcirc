@@ -1,6 +1,6 @@
 """ProvSQL-inspired exact-probability portfolio for a provenance circuit.
 
-Motivation (see SERVER_TASK "E4 / compiler"). ProvSQL, the strongest baseline, computes exact probability
+Motivation: ProvSQL, the strongest baseline, computes exact probability
 with a cost-ranked exact portfolio. This module provides a portable subset for our own evaluation, but it
 is NOT claimed to be the same portfolio: ProvSQL also has tree-decomposition and different selection logic.
 The controlled head-to-head therefore uses the separate Level-1 harness (`level1_d4_headtohead.py`), which

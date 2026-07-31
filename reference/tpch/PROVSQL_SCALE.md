@@ -1,6 +1,6 @@
 # ProvSQL vs ours — TPC-H Q3 PQE scale sweep (r9.7)
 
-Extends the G2a head-to-head (`reference/G2a_RESULTS.md`) from 2 scale factors to a **scale trend**, and
+Extends the G2a head-to-head (`../RESULTS.md` §1) from 2 scale factors to a **scale trend**, and
 replaces the superseded ProvSQL timing (a `count(*)` planner-pruning artifact) with the **honest
 per-answer PQE** (materialized `probability_evaluate(provenance())` over every Q3 answer).
 

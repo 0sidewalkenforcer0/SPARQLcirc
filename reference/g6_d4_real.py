@@ -12,7 +12,7 @@ circuits (same as G3), on a sample of answers it computes
 **Primary result = OBDD == PWE on the real circuits, incl. reconvergent property paths.** That is the
 order-INDEPENDENT correctness check the paper needs (PWE does not depend on any variable order).
 
-d4 caveat (verified, see G6_RESULTS.md): d4-v1's weighted MC (`-mc -wFile`) agrees on low-treewidth
+d4 caveat (verified, see RESULTS.md): d4-v1's weighted MC (`-mc -wFile`) agrees on low-treewidth
 tree/star circuits but OVER-counts on the larger reconvergent path CNFs — its equivalence/gate
 preprocessing interferes with the external token weights (the CNF itself is correct: evaluating its
 clauses against the circuit assignment reproduces PWE exactly). So we report d4's d-DNNF SIZE and its WMC
@@ -114,7 +114,7 @@ def main():
     print("PRIMARY: OBDD-WMC == brute-force PWE on every real circuit (incl. reconvergent paths) — "
           "order-independent correctness for G3/G4.")
     print("d4: d-DNNF compiles all; d4 -mc matches OBDD on tree/star, over-counts on large path CNFs "
-          "(d4-v1 preprocessing vs external weights) -> OBDD+PWE trusted (G6_RESULTS.md).")
+          "(d4-v1 preprocessing vs external weights) -> OBDD+PWE trusted (RESULTS.md).")
 
 if __name__ == "__main__":
     main()

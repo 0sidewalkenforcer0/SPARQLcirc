@@ -4,7 +4,7 @@ Standard: 1 fact `s p o` -> 3 triples (t rdf:subject s ; rdf:predicate p ; rdf:o
 SPARQL-star: 1 fact -> 1 quoted triple `<< s p o >> occ:occurrenceOf t`.
 Circuit-equivalence (the emitted RDF CIRCUIT is byte-identical under both schemes) is verified separately
 by `verify_g7_circuit_equiv.py`, which runs the full CircuitRun pipeline (not the NpcsRewriter string) and
-canonical-diffs the circuits. See G7_RESULTS.md.
+canonical-diffs the circuits. See RESULTS.md.
   python3 verify_g7_circuit_equiv.py
 
   python3 g7_reification.py [raw.nt] [N]     # default: WatDiv 100M sample, 100k facts

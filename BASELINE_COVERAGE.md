@@ -4,7 +4,8 @@ The baselines' experiments measure one thing: the cost + correctness of *produci
 (per-answer strings). SPARQL_circ has that layer **plus** a PQE layer (compile → WMC → probability) they
 do not have. So the shared dimensions map across, a few of theirs are irrelevant to us, and ~half of
 *our* experiments have no baseline analogue at all. Companion to `TECHREPORT.md §14` (related-work table)
-and `EVALUATION.md`; gap IDs (G1–G10) are defined in `SERVER_TASK.md` ROUND 6.
+and `EVALUATION.md`. The G1–G10 gap IDs are the working codenames of the result notes now collected in
+`reference/RESULTS.md`.
 
 ## SPARQLprov dimensions → us
 
@@ -14,7 +15,7 @@ and `EVALUATION.md`; gap IDs (G1–G10) are defined in `SERVER_TASK.md` ROUND 6.
 | reification: named-graph / Wikidata / standard | yes | Standard (E1–E10), Wikidata (E8), SPARQL\* (piloted) | ◑ clean cmp (G7) |
 | query versions B / R / P | B vs P | E3 `c_overhead` = circuit / plain | ✓ (R not essential) |
 | engine: Virtuoso / Fuseki | yes | E10 — 4 engines + byte-identity | ✓ exceeded |
-| query types L / S / F / **C** / O | yes | E3 (S/L/F), E6/R2A (O), **C1 built at WatDiv 10M (G10, `G10_RESULTS.md`)** | ✓ full L/S/F/C/O taxonomy (C at 10M; 200M-C pending) |
+| query types L / S / F / **C** / O | yes | E3 (S/L/F), E6/R2A (O), **C1 built at WatDiv 10M (`reference/RESULTS.md` §8)** | ✓ full L/S/F/C/O taxonomy (C at 10M; 200M-C pending) |
 | TPC-H, **aggregate** vs non-aggregate | non-agg only | E9 (non-agg, SF 0.01–1) | ✗ agg out-of-scope (G9) |
 | baselines: SPARQLprov / **TripleProv / GProM** | no | our distinguishing baseline is ProvSQL (PQE) | ✗ don't need — same class |
 

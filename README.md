@@ -524,8 +524,9 @@ python3 watdiv_run.py                  # -> build_ms, wmc_ms, sizes per shape
 | ProvSQL head-to-head | see [provsql/README.md](provsql/README.md) | PostgreSQL + ProvSQL |
 | NPCS-baseline head-to-head | `python3 g2b_npcs_vs_ours.py` | — |
 
-Expected numbers and their interpretation live in the per-experiment result files next to each
-script (`reference/*_RESULTS.md`, `reference/watdiv/RESULTS.md`). Figures for the paper are
+Expected numbers and their interpretation live in [reference/RESULTS.md](reference/RESULTS.md)
+(baselines, rigor, space, correctness), [reference/CANONICAL_TIMINGS.md](reference/CANONICAL_TIMINGS.md)
+(the one table to cite for timings) and `reference/watdiv/RESULTS.md`. Figures for the paper are
 regenerated from `presentation/` (`make_figures.py`, `make_matrix_figures.py`, and friends).
 
 ### Data Acquisition
@@ -565,6 +566,9 @@ SPARQLcirc/
 │   ├── tests.py verify_*.py      # correctness batteries and regression gates
 │   ├── bench*.py e*.py g*.py     # evaluation harnesses (compactness, timings, scaling)
 │   ├── watdiv/ wikidata/ tpch/   # dataset harnesses and repo configs
+│   ├── RESULTS.md                # result notes: baselines, rigor, space, correctness
+│   ├── CANONICAL_TIMINGS.md      # the single citable timing table
+│   ├── EVALUATION_MAP.md         # research question -> experiment -> artifact -> takeaway
 │   └── paper/                    # paper-facing harnesses and frozen-input regressions
 ├── presentation/                 # figure and table generation for the paper
 ├── provsql/                      # external ProvSQL baseline (PostgreSQL schema + runner)
@@ -575,6 +579,7 @@ SPARQLcirc/
 ├── REIFICATION.md                # Standard vs. SPARQL_Star reification trade-off
 ├── FACTORED_CONSTRUCTION.md      # the factored construction plan in detail
 ├── BASELINE_COVERAGE.md          # what each baseline does and does not cover
+├── CONFORMANCE.md                # audit of the paper's claims against both implementations
 ├── LICENSE                       # Apache-2.0
 └── NOTICE                        # attribution (clean-room NPCS reimplementation) + dependencies
 ```

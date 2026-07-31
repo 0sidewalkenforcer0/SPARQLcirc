@@ -1,4 +1,4 @@
--- G2a — ProvSQL PQE on TPC-H Q3 (head-to-head vs ours; see reference/G2a_RESULTS.md).
+-- G2a — ProvSQL PQE on TPC-H Q3 (head-to-head vs ours; see reference/RESULTS.md §1).
 -- Reproducible SQL for the ProvSQL side. Run against a PostgreSQL with the ProvSQL extension:
 --   PGHOST=$WS/pgsock PGPORT=54320 psql -d provsqltest -f g2a_provsql.sql
 -- Prereq (once): the .tbl files loaded into schema g2a (SF0.01) / g2a1 (SF0.1) with trailing

@@ -100,6 +100,6 @@ with `DATA PENDING` on sub-panels awaiting the ROUND-9 server run. The per-templ
 ## Provenance / reproduce
 
 - Numbers are the committed results in `reference/*.csv`, `reference/watdiv/*.csv`, and the per-experiment
-  `reference/*_RESULTS.md`. Timing is the **canonical 5-run table** (`reference/CANONICAL_TIMINGS.md`,
-  current HEAD, post-`PathIsoSeq`); older timing tables are superseded (`HISTORICAL_TIMINGS.md`).
+  `reference/RESULTS.md`. Timing is the **canonical 5-run table** (`reference/CANONICAL_TIMINGS.md`,
+  current HEAD, post-`PathIsoSeq`) and is the only place headline wall-clock numbers live.
 - Figures regenerate from those CSVs: `cd presentation && python3 make_figures.py`.

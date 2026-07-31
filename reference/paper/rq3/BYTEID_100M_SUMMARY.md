@@ -20,3 +20,21 @@ Construction *time* is a per-engine property, not the method's: e.g. all F/L/O/S
 evaluation does not scale) — see `CONSTRUCTION_COST_ENGINE.md`. MillenniumDB emits the non-standard
 `\'` N-Triples escape; `circuit_cache.canonical_bytes` normalizes it so identity is serialization-
 agnostic. Data: `{graphdb,oxigraph,qlever,millenniumdb}-100m/`.
+
+## Per-class detail — Oxigraph 0.5.x (Rust/RocksDB) vs GraphDB 10.7.6 (Java/RDF4J)
+
+| class | oxi built | both-built (comparable) | byte-identical |
+|---|---|---|---|
+| F | 5/5 | 5 | **5/5** |
+| L | 4/5 (rest timeout) | 4 | **4/4** |
+| O | 5/5 | 5 | **5/5** |
+| S | 7/7 | 7 | **7/7** |
+| M | 0/5 (rest timeout) | 0 | **0/0** |
+
+**MINUS timed out on Oxigraph at 100M** (1200 s/cell cap) — a *construction-cost* limit, not a
+correctness one: MINUS circuits are the heaviest to build and Oxigraph's join evaluation is far slower
+than GraphDB's. At 10M the writable-pair MINUS circuits were byte-identical (GraphDB = Oxigraph); at
+100M Oxigraph cannot build them within the cap.
+
+_Data: `oxigraph-100m/oxi_100m_byteid.csv` (F,L) + `oxigraph-100m/oxi_100m_byteid_losm.csv` (L,O,S,M),
+single measured run per cell; GraphDB reference `graphdb-100m/graphdb_100m_assembled.csv`._

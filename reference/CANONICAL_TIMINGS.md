@@ -1,8 +1,9 @@
 # Canonical timing table (current HEAD, 5-run) — the ONE table to cite
 
 **Single authoritative source for every headline timing (R8.1).** Regenerated on **current HEAD** under
-the corrected timer boundaries. Older tables in `G3_RESULTS.md`, `G4_RESULTS.md`, `G2a_RESULTS.md` are
-superseded → `HISTORICAL_TIMINGS.md` (do not cite). No query appears with two different totals across the repo.
+the corrected timer boundaries. The narrative result notes (`RESULTS.md`) deliberately carry no
+wall-clock numbers; every superseded pre-`1e67021` or single-run table was removed rather than kept as a
+second source (they remain in git history). No query appears with two different totals across the repo.
 
 ## Provenance of these numbers
 
@@ -59,7 +60,7 @@ per-query at this scale — but the contribution is the unforked/broader-fragmen
 - **WatDiv S-star × 5 users**: median-of-medians **131 ms** (20 → 665 ms, tracking answer count);
   within-instance sd 0–8 ms.
 
-## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `R8_3_RESULTS.md`
+## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `RESULTS.md`
 
 `SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust }` — per-answer provenance
 `⊕ₖ(cust⊗orderₖ)` with a **shared** cust token (reconvergent; p ∈ [0.375, 0.5], not Q3's 0.125).
