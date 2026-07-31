@@ -129,7 +129,7 @@ public class CircuitRewriter {
         }
         TupleExpr body = normalize(projection.getArg());
         answerTag = answerTag(body, W);              // Def. 4.6 θ; must precede every emitted step
-        TupleExpr bgpCandidate = unwrapSetWrappers(body);
+        TupleExpr bgpCandidate = unwrapSetWrappers(body, W);
         // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
         // operand's group, and the factored plan has no single group for it (its passes exchange
         // materialized relations). Same answer gate either way, so this is a plan choice only.
@@ -259,7 +259,10 @@ public class CircuitRewriter {
         // Look through the Distinct + inner Projection that a property-path `?` expansion wraps around
         // its Union (both are no-ops for our content-addressed, set-semantics answer gates).
         if (body instanceof Distinct)   return branchPlan(normalize(((Distinct) body).getArg()), W);
-        if (body instanceof Projection) return branchPlan(normalize(((Projection) body).getArg()), W);
+        if (body instanceof Projection) {
+            assertProjectionKeepsInScope((Projection) body, W);   // a scope-restricting subquery is rejected
+            return branchPlan(normalize(((Projection) body).getArg()), W);
+        }
         if (body instanceof Union) {
             Union u = (Union) body;
             List<CircuitConstructionPlan.Step> plan = new ArrayList<>(branchPlan(u.getLeftArg(), W));
@@ -900,15 +903,53 @@ public class CircuitRewriter {
         return new Block(collect(te), Filters.of(te));
     }
 
-    /** DISTINCT and RDF4J's path-expansion Projection are set-semantic wrappers, not BGP operators. */
-    private static TupleExpr unwrapSetWrappers(TupleExpr body) {
+    /**
+     * Strip the set-semantic wrappers that are transparent to a content-addressed circuit: DISTINCT
+     * (answers are already a set) and an inner {@link Projection} that does not restrict scope.
+     *
+     * <p>An inner Projection is NOT always transparent. RDF4J wraps a property-path {@code ?}
+     * expansion in {@code Distinct(Projection(Union(...)))}, and that one exports both endpoints, so
+     * looking through it is right. A SPARQL <em>subquery</em> parses to the same node kind but can
+     * project a variable away, and then the outer query must not see it. Looking through such a
+     * projection would silently answer a DIFFERENT query — {@code SELECT ?y WHERE {{ SELECT ?x WHERE
+     * { ?x :p ?y }}}} has no solution binding {@code ?y}, but the stripped body binds it. Everything
+     * else outside the fragment fails fast, so a wrong answer here would be the one silent
+     * miscompile; reject instead.
+     *
+     * <p>The test is against {@code W} at every level: a projection can only export what the level
+     * below handed it, so an inner level that drops a projected variable is caught even when an outer
+     * level still lists the name.
+     */
+    private static TupleExpr unwrapSetWrappers(TupleExpr body, List<String> W) {
         TupleExpr current = body;
         while (current instanceof Distinct || current instanceof Projection) {
-            current = current instanceof Distinct
-                    ? ((Distinct) current).getArg()
-                    : ((Projection) current).getArg();
+            if (current instanceof Distinct) {
+                current = ((Distinct) current).getArg();
+                continue;
+            }
+            Projection projection = (Projection) current;
+            assertProjectionKeepsInScope(projection, W);
+            current = projection.getArg();
         }
         return current;
+    }
+
+    /** Reject an inner projection that drops a variable the enclosing query still projects. */
+    private static void assertProjectionKeepsInScope(Projection projection, List<String> W) {
+        Set<String> exported = new LinkedHashSet<>();
+        for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
+            exported.add(pe.getName());
+        }
+        LinkedHashSet<String> dropped = new LinkedHashSet<>(W);
+        dropped.removeAll(exported);
+        if (!dropped.isEmpty()) {
+            throw new UnsupportedOperationException(
+                "Unsupported subquery: an inner SELECT projects away " + dropped + ", which the outer "
+              + "query still selects. Those variables are out of scope outside the subquery, so a "
+              + "circuit built through it would answer a different query. Project them from the "
+              + "subquery too, or drop them from the outer SELECT. (Subqueries are outside the "
+              + "supported fragment; only a scope-preserving projection is transparent.)");
+        }
     }
 
     private static boolean isPureBgp(TupleExpr body) {

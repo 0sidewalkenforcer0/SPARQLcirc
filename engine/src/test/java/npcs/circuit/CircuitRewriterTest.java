@@ -296,6 +296,29 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * A SPARQL subquery parses to the same {@code Projection} node RDF4J wraps around a property-path
+     * {@code ?} expansion, but unlike that wrapper it can restrict scope. Looking through one that
+     * does was the single place the rewriting answered a DIFFERENT query instead of failing fast:
+     * {@code SELECT ?y WHERE {{ SELECT ?x WHERE { ?x :p ?y }}}} has no solution binding {@code ?y}
+     * (rdflib: 0 rows), yet the stripped body bound it and a probability came out.
+     */
+    @Test
+    public void aSubqueryThatProjectsAwayAnOuterVariableIsRejected() {
+        assertRejected(() -> new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-sub")
+                        .constructionPlan("SELECT ?y WHERE { { SELECT ?x WHERE { ?x <urn:p> ?y } } }"),
+                "projects away");
+        assertRejected(() -> new CircuitRewriter(Reification.STANDARD, ConstructionMode.FACTORED, "junit-sub")
+                        .constructionPlan("SELECT ?y WHERE { { SELECT ?x WHERE { ?x <urn:p> ?y } } }"),
+                "projects away");
+        // A scope-PRESERVING subquery stays transparent, and so does the Distinct+Projection that
+        // RDF4J wraps around a `:p?` path expansion -- rejecting those would be over-correction.
+        assertNotNull(new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-sub")
+                .constructionPlan("SELECT ?y WHERE { { SELECT ?y WHERE { ?x <urn:p> ?y } } }"));
+        assertNotNull(new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-sub")
+                .constructionPlan("SELECT ?x ?y WHERE { ?x <urn:p>? ?y }"));
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());
