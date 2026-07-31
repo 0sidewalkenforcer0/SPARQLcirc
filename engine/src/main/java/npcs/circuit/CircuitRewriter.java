@@ -405,10 +405,32 @@ public class CircuitRewriter {
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         List<Operand> operands = new ArrayList<>();
-        for (TupleExpr part : parts) operands.add(planOperand(part, plan));
+        for (TupleExpr part : parts) operands.add(planOperand(part, parts, plan));
         plan.add(flatStep(productAnswer(operands, joinConditions(conditions, operands), W),
                 "join-operands"));
         return plan;
+    }
+
+    /**
+     * §3 excludes "closure atoms that violate the bound-source condition" — a variable source that no
+     * preceding operand binds. The engine can still evaluate one, by materializing the all-pairs base
+     * relation, but that is the construction the paper rules out and its cost grows as
+     * |D_G| / |V_s|: on two disjoint 10-edge chains it is 28x the reach gates of the same query with
+     * the source bound. Composing atoms made such a query easy to write by accident, so it is opt-in.
+     */
+    private static boolean unboundPathsAllowed() {
+        return Boolean.getBoolean("sparqlcirc.unboundPaths")
+                || "1".equals(System.getenv("CIRCUIT_UNBOUND_PATHS"));
+    }
+
+    private static UnsupportedOperationException unboundSource(String sourceVar) {
+        return new UnsupportedOperationException(
+            "Unsupported: closure atom with an UNBOUND source ?" + sourceVar + ". No operand "
+          + "evaluated before it binds that variable, so the atom violates the bound-source condition "
+          + "and the construction would have to traverse the full property relation instead of the "
+          + "source-reachable subgraph. Join it with a pattern that binds ?" + sourceVar + ", or set "
+          + "CIRCUIT_UNBOUND_PATHS=1 (or -Dsparqlcirc.unboundPaths=true) to build the all-pairs "
+          + "relation deliberately.");
     }
 
     /** An operand that cannot be reified inline and must be materialized as a relation first. */
@@ -642,8 +664,19 @@ public class CircuitRewriter {
      * minuend and is inlined, so no relation is materialized for it.
      */
     private Operand planOperand(TupleExpr node, List<CircuitConstructionPlan.Step> plan) {
+        return planOperand(node, java.util.Collections.<TupleExpr>emptyList(), plan);
+    }
+
+    /**
+     * @param siblings the other operands of the enclosing join — the candidates for the bind-join
+     *     predecessor of a variable-source closure atom (§3). Empty when there is no join to draw one
+     *     from, e.g. an operand of a difference.
+     */
+    private Operand planOperand(TupleExpr node, List<TupleExpr> siblings,
+                                List<CircuitConstructionPlan.Step> plan) {
         if (node instanceof ArbitraryLengthPath) {
             PathQuery atom = pathPlan((ArbitraryLengthPath) node, new ArrayList<>());
+            bindSource((ArbitraryLengthPath) node, siblings, atom);
             List<String> columns = canonicalVars(scopeOf(node));
             if (columns.isEmpty()) {
                 throw new UnsupportedOperationException(
@@ -669,7 +702,7 @@ public class CircuitRewriter {
             for (TupleExpr part : parts) if (isComposite(part)) { composite = true; break; }
             if (!composite) return new BgpOperand(collectBlock(node));
             List<Operand> operands = new ArrayList<>();
-            for (TupleExpr part : parts) operands.add(planOperand(part, plan));
+            for (TupleExpr part : parts) operands.add(planOperand(part, parts, plan));
             LinkedHashSet<String> scope = new LinkedHashSet<>();
             for (Operand operand : operands) scope.addAll(operand.scope());
             List<String> columns = canonicalVars(scope);
@@ -694,6 +727,36 @@ public class CircuitRewriter {
         plan.add(new CircuitConstructionPlan.Step(
                 minusRows(core, relationIri, gateVar), true, "operand-rows"));
         return new RelationOperand(relationIri, canonicalVars(core.scope), gateVar);
+    }
+
+    /**
+     * Give a variable-source atom its {@code I_C}: a SELECT over the sibling operands that bind the
+     * source, yielding the values the construction is then replayed for. The predecessor is read as a
+     * pattern rather than waiting for it to be materialized, which is sound because I_C only has to
+     * cover the sources the join can produce — a superset merely builds gates the final join drops.
+     *
+     * <p>Only a BGP sibling is used. If the source is bound solely by a MINUS/OPTIONAL/path operand
+     * the atom is treated as unbound, since reading I_C from a relation that does not exist yet would
+     * need a step-ordering dependency the plan has no way to express.
+     */
+    private void bindSource(ArbitraryLengthPath alp, List<TupleExpr> siblings, PathQuery atom) {
+        Var subject = alp.getSubjectVar();
+        if (subject.hasValue()) return;                       // constant source: nothing to bind
+        String sourceVar = subject.getName();
+        List<StatementPattern> binders = new ArrayList<>();
+        for (TupleExpr sibling : siblings) {
+            if (sibling == alp || isComposite(sibling)) continue;
+            Block block = collectBlock(sibling);
+            if (vars(block.patterns).contains(sourceVar)) binders.addAll(block.patterns);
+        }
+        if (binders.isEmpty()) {
+            if (!unboundPathsAllowed()) throw unboundSource(sourceVar);
+            return;                                           // deliberate all-pairs construction
+        }
+        List<String> tokens = new ArrayList<>();
+        StringBuilder where = reify(binders, "ic", tokens);
+        atom.bindSourceFrom(PRE + "SELECT DISTINCT ?" + sourceVar + " WHERE {\n" + where + "}\n",
+                sourceVar);
     }
 
     /** The ⊖'s minuend operand and the gate tags naming its three gates, once its inputs are planned. */
@@ -1556,6 +1619,9 @@ public class CircuitRewriter {
             return null;
         }
         ArbitraryLengthPath alp = found[0];
+        if (!alp.getSubjectVar().hasValue() && !unboundPathsAllowed()) {
+            throw unboundSource(alp.getSubjectVar().getName());   // nothing precedes a whole-pattern atom
+        }
         return pathPlan(alp, projectedNames(outerProjection(te)));
     }
 
@@ -1672,6 +1738,11 @@ public class CircuitRewriter {
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
         private String operandRelation, operandGate;             // set when the atom is an OPERAND
         private List<String> operandColumns;
+        // §3's bound-source condition. `sourceValues` is a SELECT over the bind-join predecessor
+        // yielding I_C's source column; CircuitRun runs it and replays the whole construction once
+        // per value, pinning `pinnedSource` — Def. 4.7 clause 2's "for each ρ ∈ I_C … invoke the
+        // path plan γ_path(s, e⋄)". Each run is then single-source and confined to its own V_s.
+        private String sourceValues, sourceValuesBinding, pinnedSource;
         PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj,
                   boolean star, List<String> W, String fp, String generatedPrefix, String answerTag) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
@@ -1683,8 +1754,20 @@ public class CircuitRewriter {
         /** The per-path fingerprint (for logging / cross-checking gate isolation). */
         public String fingerprint() { return fp; }
         /** G1: is the path source a bound constant? (only then can we restrict the base to a reachable subgraph). */
-        public boolean boundSource() { return !subj.isVar; }
-        public String sourceValue() { return subj.iri.replaceAll("^<|>$", ""); }   // bare source IRI
+        void bindSourceFrom(String selectQuery, String binding) {
+            this.sourceValues = selectQuery;
+            this.sourceValuesBinding = binding;
+        }
+        /** The SELECT yielding I_C's source column, or null when the source is a constant. */
+        public String sourceValuesQuery() { return sourceValues; }
+        public String sourceValuesBinding() { return sourceValuesBinding; }
+        /** Pin the construction to one source from I_C, and reset the per-source state. */
+        public void pinSource(String iri) { this.pinnedSource = iri; this.reachable = null; }
+
+        public boolean boundSource() { return !subj.isVar || pinnedSource != null; }
+        public String sourceValue() {
+            return pinnedSource != null ? pinnedSource : subj.iri.replaceAll("^<|>$", "");
+        }
         public void setReachable(java.util.Set<String> r) { this.reachable = r; }
         /** Binding names consumed by CircuitRun; generated names must not be hard-coded by the client. */
         public String frontierValueBinding() { return gp + "v"; }
@@ -1708,7 +1791,10 @@ public class CircuitRewriter {
         }
         // A BOUND source restricts reach^0 (and zero-length) to (source, .) -> single-source
         // O(|V_s|.|E_s|); a variable source keeps all pairs. The from-var in reach heads is ?u.
-        private String sourceFilter() { return subj.isVar ? "" : "  FILTER(" + v("u") + " = " + subj.iri + ")\n"; }
+        private String sourceFilter() {
+            if (pinnedSource != null) return "  FILTER(" + v("u") + " = <" + pinnedSource + ">)\n";
+            return subj.isVar ? "" : "  FILTER(" + v("u") + " = " + subj.iri + ")\n";
+        }
         static String reachIri(String from, String to, String lvl, String fp, String gp) {  // reach gate IRI = f(path fp, level, from, to)
             return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|\", \"" + fp + "|\", SHA256(\"" + lvl + "\"), \"|\", "
                  + termHash("f", from) + ", " + termHash("t", to) + ")))) AS " + pv(gp, "rg") + ")\n";
@@ -1795,7 +1881,8 @@ public class CircuitRewriter {
 
         /** Publish reach^{lastLevel} as the atom's row relation, keyed by its free endpoints. */
         private List<String> materializeRows(int lastLevel) {
-            String fromPat = subj.isVar ? "?" + subj.var : subj.iri;
+            boolean pinned = subj.isVar && pinnedSource != null;
+            String fromPat = pinned ? "<" + pinnedSource + ">" : (subj.isVar ? "?" + subj.var : subj.iri);
             String toPat = obj.isVar ? "?" + obj.var : obj.iri;
             String row = v("prow"), rg = v("rg");
             StringBuilder q = new StringBuilder(PRE).append("CONSTRUCT {\n  ").append(row)
@@ -1807,6 +1894,7 @@ public class CircuitRewriter {
             q.append(" .\n}\nWHERE {\n  ").append(rg).append(" a c:Plus ; c:rlvl \"").append(lastLevel)
              .append("\"").append(rpathGuard()).append(" ; c:rfrom ").append(fromPat)
              .append(" ; c:rto ").append(toPat).append(" .\n")
+             .append(pinned ? "  BIND(<" + pinnedSource + "> AS ?" + subj.var + ")\n" : "")
              .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
                      idKey(operandColumns, "PATHROW@" + fp)))
              .append("}\n");

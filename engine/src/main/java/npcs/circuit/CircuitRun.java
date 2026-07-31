@@ -313,6 +313,33 @@ public final class CircuitRun {
      */
     static void buildPathCircuit(RepositoryConnection con, CircuitRewriter.PathQuery pathq,
                                  Model circuit, Model workspace) {
+        if (pathq.sourceValuesQuery() == null) {
+            buildFromOneSource(con, pathq, circuit, workspace);
+            return;
+        }
+        // §3's bound-source condition: a preceding operand binds the atom's source, so read I_C's
+        // source column and replay the construction once per value, as Def. 4.7 clause 2 says. Every
+        // run is then single-source and confined to its own reachable subgraph -- which is what
+        // Thm. 4.11's O(n(n+|E_s|)) bounds -- and the all-pairs base is never built.
+        java.util.List<String> sources = new java.util.ArrayList<>();
+        try (TupleQueryResult r = con.prepareTupleQuery(pathq.sourceValuesQuery()).evaluate()) {
+            while (r.hasNext()) {
+                org.eclipse.rdf4j.model.Value value = r.next().getValue(pathq.sourceValuesBinding());
+                if (value instanceof IRI && !sources.contains(value.stringValue())) {
+                    sources.add(value.stringValue());
+                }
+            }
+        }
+        System.err.println("# ---- bound-source closure atom: |I_C| = " + sources.size() + " source(s) ----");
+        for (String source : sources) {
+            pathq.pinSource(source);
+            buildFromOneSource(con, pathq, circuit, workspace);
+        }
+    }
+
+    /** One source: discover its reachable subgraph, run the level-indexed fixpoint, then finish. */
+    private static void buildFromOneSource(RepositoryConnection con, CircuitRewriter.PathQuery pathq,
+                                           Model circuit, Model workspace) {
         // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round bound. A
         // simple path in the reachable subgraph has <= |V_s|-1 edges, so |V_s|-1 rounds capture every
         // simple path -> exact provenance -- while |V_s| << the global node count keeps it feasible.

@@ -7,7 +7,13 @@ enumeration on a TINY subgraph. Full-scale single-user reach is a giant friendOf
 
 Usage: python3 e_paths.py <subgraph.reified.nt> <SRC-localname> [<tiny.reified.nt> <tiny-SRC>]
 """
+import os
 import subprocess, time, re, sys, os, itertools, random
+
+# P-plus-all is the all-pairs (free-endpoint) query this experiment exists to contrast with
+# the single-source ones, and §3 excludes that construction, so the engine gates it behind an
+# opt-in. Request it explicitly rather than letting the harness fail.
+PATH_ENV = dict(os.environ, CIRCUIT_UNBOUND_PATHS="1")
 from experiment_timeouts import QUERY_TIMEOUT_S
 JAR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "engine", "target", "npcs-rewrite.jar"))
 C = "urn:circuit:"; RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -18,7 +24,7 @@ def circuit_run(data, qtext, timeout=QUERY_TIMEOUT_S):
     qf = "/tmp/_p.rq"; open(qf, "w").write(qtext)
     t = time.time()
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", data, qf],
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, timeout=timeout, env=PATH_ENV)
     return (time.time() - t) * 1000, r.stdout, r.stderr
 
 def counts(nt):

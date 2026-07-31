@@ -41,7 +41,7 @@ tag. Item 1 is to be corrected on the paper side.
 | **2** | ~~Answer-gate identifier drops the pattern tag θ ⇒ distinct queries mint identical answer gates~~ | **FIXED** | code |
 | **3** | W3C MINUS is implemented and evaluated; the paper proves only algebraic Diff and disclaims the domain-disjointness rewriting | GAP | paper |
 | **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **FIXED in code** | code |
-| **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12) | **FIXED in code**; the `I_C` bind-join remains an optimization | code |
+| **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12, `I_C` bind-join) | **FIXED in code** | code |
 | **6** | Skolemization of blank nodes (Def. §4.2) is not implemented anywhere | GAP | code (or paper) |
 | **7** | Tseitin `T(C)` compiled once + conditioned on `y_r`; the d4 path compiles one CNF **per answer root** | GAP | paper |
 | **8** | ⊖ minuend child *set* (Def. 4.2) is never built; both implementations interpose a ⊕ marginal | DIFFERS | paper |
@@ -49,9 +49,9 @@ tag. Item 1 is to be corrected on the paper side.
 | **10** | Python reference: `⊕` keeps duplicate children (bag), paper Def. 4.3 uses child sets | DIFFERS | reference |
 | **11** | TPC-H/ProvSQL comparison runs at **per-row** provenance granularity, not the per-triple model of §1/§3 | GAP | paper |
 
-Plus four **BEYOND** items (code supports what the paper excludes): zero-or-one
-`e?`, nested closure in the Python reference, unbound-source closure, and
-compound closure-free `e` in the engine.
+Plus three **BEYOND** items (code supports what the paper excludes): zero-or-one
+`e?`, nested closure in the Python reference, and compound closure-free `e` in the
+engine. A fourth, unbound-source closure, is now rejected unless explicitly requested.
 
 ---
 
@@ -339,39 +339,43 @@ beside another atom. Verified against an rdflib possible-world oracle (which
 implements property paths natively) in both construction modes, with `+` and `*`,
 and with a constant or a variable source.
 
-**What is still not the paper's construction: the bound-source condition.** §3
-distinguishes a BOUND variable source — bound by an operand evaluated before the
-atom, so Def. 4.7 clause 2 runs the path plan once per `ρ ∈ I_C`, each confined to
-that source's reachable subgraph — from an UNBOUND one, which it excludes outright.
-The engine does not distinguish them: any variable source materializes the all-pairs
-base. Answers and probabilities stay correct (the oracle checks that), but the
-construction is the one §3 excludes, and Thm. 4.11's `O(n(n + |E_s|))` then holds
-only when the source is a constant.
+**The bound-source condition, now implemented.** §3 distinguishes a BOUND variable
+source — bound by an operand evaluated before the atom, so Def. 4.7 clause 2 runs the
+path plan once per `ρ ∈ I_C`, each confined to that source's reachable subgraph — from
+an UNBOUND one, which it excludes. The engine used to collapse the two: any variable
+source materialized the all-pairs base. Answers stayed correct, but the construction
+was the one §3 rules out, and Thm. 4.11's `O(n(n + |E_s|))` then held only for a
+constant source.
 
-The cost is not marginal. On 20 triples forming two disjoint 10-edge chains, with a
-predecessor pinning the source to one chain's head — the paper's case exactly:
+`I_C` is now read as a `SELECT DISTINCT` over the sibling operands that bind the
+source, and `CircuitRun` replays the whole construction once per value with the source
+pinned. On 20 triples forming two disjoint 10-edge chains, with a predecessor pinning
+the source to one chain's head:
 
-| | circuit triples | reach gates | rounds |
-|---|---|---|---|
-| constant source | 737 | 75 | 10 |
-| bound variable source (`I_C` = one value) | 19,330 | 2,110 | 21 |
-| unbound variable source | 20,200 | 2,110 | 21 |
+| | circuit triples | reach gates |
+|---|---|---|
+| constant source | 737 | 75 |
+| bound variable source, before | 19,330 | 2,110 |
+| bound variable source, after | 797 | **75** |
 
-26× on a toy graph, growing as `|D_G| / |V_s|`. No §5 measurement is affected — every
-reported path query uses a constant source — but composing atoms, which this change
-enabled, makes such a query easy to write.
+The reach gates are not merely as few as the constant source's — they are the *same
+gates*, which is what `CircuitRewriterTest.aBoundVariableSourceIsConstructedPerSourceBinding`
+asserts. Gate identity cooperated without change: `reachIri` keys on
+`(fingerprint, level, from, to)`, exactly §4.3's "gate keys contain e, s, i, and the
+endpoint".
 
-Pinned by `CircuitRewriterTest.aBoundVariableSourceIsConstructedPerSourceBinding`,
-currently `@Ignore`d: with `?x` pinned to `a0` the atom must build exactly the reach
-gates the constant `a0` builds, and none mentioning the unreachable chain.
+Reading `I_C` from the predecessor's *pattern* rather than from its materialized
+relation is sound and avoids a step-ordering dependency: `I_C` only has to cover the
+sources the join can produce, and a superset merely builds gates the final join drops.
+A source bound solely by a MINUS/OPTIONAL/path operand is still treated as unbound.
 
-Closing it needs two things the engine lacks, both now within reach: a plan step that
-declares a dependency on a predecessor's materialized relation (that relation *is*
-`I_C`), and a minimal bind-join rule choosing which sibling operand binds the source —
-rejecting the atom when none does, which is what §3 says to do. Gate identity already
-cooperates: `reachIri` keys on `(fingerprint, level, from, to)`, matching §4.3's "gate
-keys contain e, s, i, and the endpoint", so per-source runs mint distinct gates with
-no change.
+**An unbound source is now rejected by default** (`CIRCUIT_UNBOUND_PATHS=1` or
+`-Dsparqlcirc.unboundPaths=true` to opt in), which is what §3 says to do — the code
+previously accepted it silently, and composing atoms had made such a query easy to
+write by accident. The two harnesses that exercise the all-pairs construction
+deliberately, `reference/verify_engine_paths.py` (the cross-engine gallery's
+free-endpoint shape) and `reference/e_paths.py` (which exists to contrast it with the
+single-source ones), request the flag explicitly.
 
 ---
 

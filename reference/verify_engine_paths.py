@@ -8,7 +8,13 @@ enumeration is infinite; the emitted circuit is finite and its compile+WMC termi
 cycle in the gate graph would make compile_bdd recurse forever -- so this also checks the
 level-indexing kept the DAG acyclic). Covers +, *, all endpoint modes, and closures over
 compound sub-paths (sequence /, alternative |, inverse ^)."""
+import os
 import subprocess, os, sys
+
+# pathplus_free.sparql has FREE endpoints: the all-pairs construction §3 excludes and the
+# engine now gates behind an opt-in. Exercising it here is deliberate -- it is what the
+# gallery compares across engines -- so ask for it explicitly.
+PATH_ENV = dict(os.environ, CIRCUIT_UNBOUND_PATHS="1")
 import compile_bdd, wmc, circuit_io
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +33,7 @@ CMP_P = {EX + "e1": .9, EX + "e2": .8, EX + "e3": .7, EX + "e4": .6}
 def engine(query_file, data_file, P):
     nt = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
                          f"{G}/{data_file}", f"{G}/{query_file}"],
-                        capture_output=True, text=True, check=True).stdout
+                        capture_output=True, text=True, check=True, env=PATH_ENV).stdout
     return circuit_io.answer_probs(nt, P, compile_bdd.probability)     # term-aware answer keys via c:binding
 
 def oracle(expr, subj, obj, sel, data, P):

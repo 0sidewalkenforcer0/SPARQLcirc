@@ -757,15 +757,14 @@ public class CircuitRewriterTest {
      * construction to that reachable subgraph rather than the full property relation". An UNBOUND one
      * is excluded from the fragment outright.
      *
-     * <p>The engine does not distinguish them: any variable source materializes the all-pairs base.
-     * The answers stay correct, but the construction is the one §3 excludes. On two disjoint chains,
-     * where the source's component is half the graph, the paper's case costs 26x what it should.
+     * <p>The engine used to collapse the two: any variable source materialized the all-pairs base.
+     * Answers stayed correct, but the construction was the one §3 excludes — on two disjoint chains,
+     * where the source's component is half the graph, 28x the reach gates it should build.
      *
      * <p>The assertion is deliberately semantic rather than a gate count: with {@code ?x} pinned to
      * {@code a0} by its predecessor, the atom must build exactly the reach gates it would build from
      * the constant {@code a0}, and none mentioning the unreachable {@code b} chain.
      */
-    @org.junit.Ignore("bound-source condition not implemented; see CONFORMANCE.md item 5")
     @Test
     public void aBoundVariableSourceIsConstructedPerSourceBinding() {
         Repository repo = new SailRepository(new MemoryStore());
