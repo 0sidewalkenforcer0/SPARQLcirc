@@ -302,7 +302,7 @@ cd engine
 | `<Standard\|SPARQL_Star> query\|path <arg>` | Historical three-argument baseline form, still accepted |
 
 `Standard` uses RDF reification; `SPARQL_Star` uses quoted triples. See
-[REIFICATION.md](REIFICATION.md) for the trade-off.
+[docs/REIFICATION.md](docs/REIFICATION.md) for the trade-off.
 
 ### `pqe.py` Options
 
@@ -378,7 +378,7 @@ Non-monotone support rests entirely on one ⊖ (monus / anti-join) primitive, **
 
 Engine-side property paths are currently `+`/`*` over a single predicate with an **IRI frontier
 only** (blank-node and literal path nodes are not yet supported) on any writable SPARQL 1.1
-endpoint; the Python reference covers all operators. See [TECHREPORT.md](TECHREPORT.md) §4.6.
+endpoint; the Python reference covers all operators. See [docs/TECHREPORT.md](docs/TECHREPORT.md) §4.6.
 
 ### Engine vs. Reference Semantics
 
@@ -386,7 +386,7 @@ The engine output is specifically a **Boolean event circuit for PQE**. Because i
 are set-deduplicated, it does not preserve free-semiring coefficients (`x²`, `2x`), whereas the
 Python algebraic reference does preserve that multiplicity. The distinction is immaterial to exact
 Boolean WMC, where repeated event operands are idempotent, and is documented in
-[TECHREPORT.md](TECHREPORT.md) §3.2.
+[docs/TECHREPORT.md](docs/TECHREPORT.md) §3.2.
 
 ---
 
@@ -480,8 +480,8 @@ answers** — use the gate IRI or `c:binding`. `reference/verify_gallery.py` and
 ## Benchmark Reproduction
 
 Step-by-step instructions, expected outputs, and hardware notes are in
-**[REPRODUCE.md](REPRODUCE.md)**; the experiment-to-claim map is in
-**[EVALUATION.md](EVALUATION.md)**.
+**[docs/REPRODUCE.md](docs/REPRODUCE.md)**; the experiment-to-claim map is in
+**[docs/EVALUATION.md](docs/EVALUATION.md)**.
 
 ### 1. No External Services
 
@@ -572,20 +572,36 @@ SPARQLcirc/
 │   └── paper/                    # paper-facing harnesses and frozen-input regressions
 ├── presentation/                 # figure and table generation for the paper
 ├── provsql/                      # external ProvSQL baseline (PostgreSQL schema + runner)
-├── HOWITWORKS.md                 # narrative walkthrough of the construction
-├── TECHREPORT.md                 # formal semantics, proofs, engine/reference divergences
-├── REPRODUCE.md                  # step-by-step reproduction instructions
-├── EVALUATION.md                 # evaluation plan and claim-to-experiment map
-├── REIFICATION.md                # Standard vs. SPARQL_Star reification trade-off
-├── FACTORED_CONSTRUCTION.md      # the factored construction plan in detail
-├── BASELINE_COVERAGE.md          # what each baseline does and does not cover
-├── CONFORMANCE.md                # audit of the paper's claims against both implementations
+├── docs/                         # everything documentation, one level down
+│   ├── HOWITWORKS.md             # narrative walkthrough of the construction
+│   ├── TECHREPORT.md             # formal semantics, proofs, engine/reference divergences
+│   ├── REPRODUCE.md              # step-by-step reproduction instructions
+│   ├── EVALUATION.md             # evaluation plan and claim-to-experiment map
+│   ├── CONFORMANCE.md            # audit of the paper's claims against both implementations
+│   ├── PAPER_CLAIMS.md           # the paper's semantic claims, one checkable row each
+│   ├── REIFICATION.md            # Standard vs. SPARQL_Star reification trade-off
+│   ├── FACTORED_CONSTRUCTION.md  # the factored construction plan in detail
+│   └── BASELINE_COVERAGE.md      # what each baseline does and does not cover
 ├── LICENSE                       # Apache-2.0
 └── NOTICE                        # attribution (clean-room NPCS reimplementation) + dependencies
 ```
 
 Module-level documentation lives in [engine/README.md](engine/README.md) and
 [reference/README.md](reference/README.md).
+
+### Documentation index
+
+| Document | Read it for |
+|---|---|
+| [docs/HOWITWORKS.md](docs/HOWITWORKS.md) | the mechanism end to end, on one running example |
+| [docs/TECHREPORT.md](docs/TECHREPORT.md) | formal semantics, proofs, engine vs. reference divergences |
+| [docs/REPRODUCE.md](docs/REPRODUCE.md) | reproducing the results, and what makes a timing citable |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | the pre-registered evaluation plan (predictions fixed before running) |
+| [docs/CONFORMANCE.md](docs/CONFORMANCE.md) · [docs/PAPER_CLAIMS.md](docs/PAPER_CLAIMS.md) | whether the code does what the paper says, claim by claim |
+| [docs/FACTORED_CONSTRUCTION.md](docs/FACTORED_CONSTRUCTION.md) | what factoring can and cannot do, and how it is implemented |
+| [docs/REIFICATION.md](docs/REIFICATION.md) | why the reification scheme is a parameter, and what it costs |
+| [docs/BASELINE_COVERAGE.md](docs/BASELINE_COVERAGE.md) | which baseline covers which experimental dimension |
+| [reference/RESULTS.md](reference/RESULTS.md) · [reference/CANONICAL_TIMINGS.md](reference/CANONICAL_TIMINGS.md) · [reference/EVALUATION_MAP.md](reference/EVALUATION_MAP.md) | the measured results, the one citable timing table, and the RQ index |
 
 ---
 

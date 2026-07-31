@@ -160,7 +160,7 @@ file** that both this JAR and the original reject identically.
   BGP operands, and MINUS with a UNION subtrahend, *are* supported and verified.)
   **`FILTER` is the one place the two rewriters differ:** the circuit rewriter supports it
   (a filter builds no gate, so its condition is carried into the operand's reified group —
-  see `npcs.circuit.Filters` and `TECHREPORT.md` §2), while this string baseline has no
+  see `npcs.circuit.Filters` and `docs/TECHREPORT.md` §2), while this string baseline has no
   filter rule and keeps rejecting it.
 - **Default graph only:** `GRAPH`, `FROM`, and `FROM NAMED` are rejected rather than
   silently losing their graph/dataset semantics. The circuit rewriter has the same guard.

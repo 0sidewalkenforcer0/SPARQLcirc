@@ -13,7 +13,7 @@ Wikidata (E8, `reference/wikidata/`).
    **"base non-aggregate"** (their Fig. 3), not to their aggregate numbers.
 2. **No FILTER in the recorded runs.** SPARQLprov's `*_non_aggregate` queries still carry range/date
    FILTERs; the runs recorded here drop them and use the **pure BGP-join skeleton** — thinner still.
-   Say so explicitly. (The circuit rewriter *does* support FILTER now — TECHREPORT.md §2 — so this is a
+   Say so explicitly. (The circuit rewriter *does* support FILTER now — docs/TECHREPORT.md §2 — so this is a
    property of these committed measurements, not of the system; re-running with the FILTERs restored
    would make the comparison tighter.)
 3. **Per-row provenance** (see below) — the uncertain unit is a *row*, not a triple.

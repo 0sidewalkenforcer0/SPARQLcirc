@@ -1,6 +1,6 @@
 # SPARQL_circ — experiment designs, predictions & results (E1–E7)
 
-*Precursor to VLDB '27. Every experiment was **pre-registered** in `EVALUATION.md` (setup + predicted
+*Precursor to VLDB '27. Every experiment was **pre-registered** in `docs/EVALUATION.md` (setup + predicted
 result fixed before running); this document pairs each design with the numbers measured on the server,
 so a surprising value reads as a finding, not a moving target.*
 

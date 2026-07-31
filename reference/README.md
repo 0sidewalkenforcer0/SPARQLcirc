@@ -4,7 +4,7 @@ Implementation of the VLDB draft's core: build a **shared, content-addressed
 provenance circuit** for a SPARQL query over a token-labeled probabilistic ABox,
 then do exact **probabilistic query evaluation** on it. The Python reference covers
 the non-monotone fragment plus property-path operators `/ | ^ + * ?`; the engine
-scope and its endpoint restrictions are documented in `TECHREPORT.md` §4.6.
+scope and its endpoint restrictions are documented in `docs/TECHREPORT.md` §4.6.
 
 ## Modules
 - `gates.py` — the circuit DAG + **collision-resistant content-addressed** gate

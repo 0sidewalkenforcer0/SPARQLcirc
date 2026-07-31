@@ -5,7 +5,7 @@ provenance circuit with the FACTORED builder (factor.py; polynomial in tw -- the
 flat gamma builder is ~2^depth), exports the weighted CNF, and compiles it with d4
 to a d-DNNF -- recording d-DNNF size vs our OBDD size against (n, tw).
 
-Prediction (EVALUATION.md E4): bounded tw -> d-DNNF linear in n while OBDD is
+Prediction (docs/EVALUATION.md E4): bounded tw -> d-DNNF linear in n while OBDD is
 n^{O(tw)}; growing tw -> both blow up (2^{Theta(tw)}). The blow-up is REAL and would
 OOM the box, so each instance runs in a subprocess under an address-space cap
 (E4_MEM_GB, default 8) + the canonical 120 s compilation timeout; an instance

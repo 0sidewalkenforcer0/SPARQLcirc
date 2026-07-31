@@ -66,8 +66,8 @@ Thm. 4.11: "Adding the zero-length root yields the analogous equivalence."
 `u` occurs in the graph, so the zero-length gate is the ⊕ of the tokens of all
 triples mentioning `u`.
 
-- engine — [CircuitRewriter.java:1089-1096](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L1089-L1096) (`zeroLenConstruct`), [CircuitRewriter.java:290-331](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L290-L331) (`zeroLengthPlan` for `e?`)
-- reference — [gamma.py:172-183](reference/gamma.py#L172-L183) (`_zerolen`)
+- engine — [CircuitRewriter.java:1089-1096](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L1089-L1096) (`zeroLenConstruct`), [CircuitRewriter.java:290-331](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L290-L331) (`zeroLengthPlan` for `e?`)
+- reference — [gamma.py:172-183](../reference/gamma.py#L172-L183) (`_zerolen`)
 
 **Evidence.** `G = {t1 = (A,p,B)}`, `Pr(t1) = 0.9`, query `A p* ?y`:
 
@@ -78,7 +78,7 @@ answer {'?y': 'A'} -> Pr = 0.9      # paper requires 1.0
 
 **Why the validation misses it.** §5's correctness check (P6.6) compares against
 exhaustive possible-world enumeration, but the oracle
-[wmc.py:68-83](reference/wmc.py#L68-L83) encodes *the same* terms-in-graph
+[wmc.py:68-83](../reference/wmc.py#L68-L83) encodes *the same* terms-in-graph
 convention (`clo |= {(u,u) for tr in T ...}` over the world's **active** triples).
 The check therefore cannot separate the two readings.
 
@@ -104,8 +104,8 @@ no pattern tag:
 ```java
 q.append(bindIri(ans, "urn:g:a:", idKey(W, "A")));   // CircuitRewriter.java:348, 464
 ```
-[CircuitRewriter.java:732-737](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L732-L737),
-same key in [FactoredBgpRewriter.java:329](engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L329).
+[CircuitRewriter.java:732-737](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L732-L737),
+same key in [FactoredBgpRewriter.java:329](../engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L329).
 
 So the answer-gate IRI is a function of `(projected variable names, bound terms)`
 alone. Two semantically unrelated queries mint the same root.
@@ -207,11 +207,11 @@ user-level `MINUS`, and unguarded `Diff` only as OPTIONAL's negative branch:
 
 - engine — `minusPlan` skips right branches that share no variable with `P1`, and
   makes MINUS a no-op when none overlap
-  ([CircuitRewriter.java:362-387](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L362-L387));
+  ([CircuitRewriter.java:362-387](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L362-L387));
   `optionalPlan` is explicitly unguarded
-  ([CircuitRewriter.java:471-492](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L471-L492))
+  ([CircuitRewriter.java:471-492](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L471-L492))
 - reference — `eval_minus(..., guard=True)` by default, `guard=False` from
-  `eval_optional` ([gamma.py:86-119](reference/gamma.py#L86-L119))
+  `eval_optional` ([gamma.py:86-119](../reference/gamma.py#L86-L119))
 
 The reduction is sound (`MINUS = Diff` behind a shared-variable guard for BGP
 operands, since every variable is then always bound) and is written up in
@@ -232,16 +232,16 @@ source-bound closure atoms **by the supported operators**". Def. 4.7 clause 3
 allows `Join(P1,…,Pn)` over arbitrary subpatterns.
 
 **Code (engine).** Join operands must be pure BGPs. `assertPureBgp`
-([CircuitRewriter.java:830-852](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L830-L852))
+([CircuitRewriter.java:830-852](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L830-L852))
 rejects a nested `Union`/`LeftJoin`/`Difference`/`Extension`/subquery/property
 path in BGP position. Composite MINUS operands are first rewritten by four
 algebraic identities in `normalize`
-([CircuitRewriter.java:153-226](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L153-L226)),
+([CircuitRewriter.java:153-226](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L153-L226)),
 and three residual shapes are rejected outright: right-nested
 `A MINUS (P MINUS Q)`, and two OPTIONAL-as-MINUS-operand shapes.
 
 **Code (reference).** `gamma.eval_q` **is** fully compositional
-([gamma.py:225-233](reference/gamma.py#L225-L233)) — `eval_join`/`eval_union`/
+([gamma.py:225-233](../reference/gamma.py#L225-L233)) — `eval_join`/`eval_union`/
 `eval_minus` recurse into arbitrary subqueries. So the Python reference matches
 Thm. 4.13 and the engine does not.
 
@@ -452,19 +452,19 @@ of answer root `r` **without recompilation**."
 
 - **d-DNNF / d4 path.** `export_cnf.export(circ, root, P)` walks the cone of **one**
   root and appends a unit clause asserting it
-  ([export_cnf.py:20-77](reference/export_cnf.py#L20-L77)). Every caller
+  ([export_cnf.py:20-77](../reference/export_cnf.py#L20-L77)). Every caller
   (`compile_portfolio`, `g6_d4_real`, `e4_sweep`, `level1_d4_headtohead`,
   `paper/treewidth_evidence`) calls it once per answer. This is precisely the
   per-answer-cone scheme §5.4 Fig. 8(c) is supposed to be the *baseline* for.
 - **OBDD / CUDD path (production).** `compile_many(mode="shared")` uses one CUDD
   manager and one memo over the source DAG, keeping the roots as separate BDD
-  outputs ([compiler.py:405-536](reference/compiler.py#L405-L536)). This does
+  outputs ([compiler.py:405-536](../reference/compiler.py#L405-L536)). This does
   achieve "compile once for all answers", but by BDD-node sharing, not by Tseitin
   conditioning. No `y_r` conditioning exists anywhere.
 
 **Consequence for §5.3.** `tw_T(C)`, "the treewidth of the primal graph of the
 specified Tseitin encoding", is measured on the **per-root** CNF that
-`export_cnf` produces ([paper/treewidth_evidence.py](reference/paper/treewidth_evidence.py)),
+`export_cnf` produces ([paper/treewidth_evidence.py](../reference/paper/treewidth_evidence.py)),
 not on `T(C)` for the whole circuit. The quantity plotted in Fig. 7 is well
 defined, but it is not the one §4.1 defines.
 
@@ -486,9 +486,9 @@ accumulate in `pos(g)`.
 single minuend:
 
 - engine — `marginalPlus` builds `⊕_{P1}(V1)`, `minusRoot` emits
-  `⊖(⊕_{P1}, ⊕_{sub})` ([CircuitRewriter.java:446-511](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L446-L511))
+  `⊖(⊕_{P1}, ⊕_{sub})` ([CircuitRewriter.java:446-511](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L446-L511))
 - reference — `minus(m, s)` is strictly binary
-  ([gates.py:71-76](reference/gates.py#L71-L76)), consumed as
+  ([gates.py:71-76](../reference/gates.py#L71-L76)), consumed as
   `('minus', (m, s))` by `circuit_io`, `export_cnf` and `compiler`
 
 Semantically identical (`⊖({⊕(C)}, d) ≡ ⊖(C, d)` under Eq. (3)) but one extra gate
@@ -499,13 +499,13 @@ changing the node counts Fig. 3 / Fig. 4 report:
 
 - **n-ary ⊗ in the factored plan.** Prop. 4.9's `q_z(α,a) = ⊗{F(α ∪ {z↦a})}` is
   n-ary; both implementations fold the involved factors with **binary** joins
-  ([FactoredBgpRewriter.java:199-201](engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L199-L201),
-  [factor.py:89-94](reference/factor.py#L89-L94)), producing a chain of 2-child ⊗
+  ([FactoredBgpRewriter.java:199-201](../engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L199-L201),
+  [factor.py:89-94](../reference/factor.py#L89-L94)), producing a chain of 2-child ⊗
   gates.
 - **Base factor rows.** §4.2 says a base factor's row "points to the leaf gate
   `x_{θ(t_j)}`". Both wrap it in a ⊕ first
-  ([FactoredBgpRewriter.java:217-244](engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L217-L244),
-  [factor.py:41](reference/factor.py#L41)) — necessary only when one binding has
+  ([FactoredBgpRewriter.java:217-244](../engine/src/main/java/npcs/circuit/FactoredBgpRewriter.java#L217-L244),
+  [factor.py:41](../reference/factor.py#L41)) — necessary only when one binding has
   several occurrence tokens.
 
 ---
@@ -516,7 +516,7 @@ changing the node counts Fig. 3 / Fig. 4 report:
 `{g_P a c:Plus ; c:in g_{P_i}}`. The implementation emits `c:in` for ⊗ only, and
 reverses the edge for ⊕: `g_{P_i} c:feeds g_P`. `circuit_io.parse` reads ⊕
 children from the inverted `feeds` index
-([circuit_io.py:100-115](reference/circuit_io.py#L100-L115)). `c:minuend` and
+([circuit_io.py:100-115](../reference/circuit_io.py#L100-L115)). `c:minuend` and
 `c:subtrahend` do match. Undocumented in the paper: `c:feeds`, `c:answer`,
 `c:binding`, `c:var`, `c:val`, `c:rlvl`, `c:rpath`, `c:rfrom`, `c:rto`, and the
 private `urn:sc:*` factor-message relations.
@@ -525,7 +525,7 @@ private `urn:sc:*` factor-message relations.
 then colon, then component bytes", with a literal's lexical form, datatype and
 language tag as three separate length-prefixed components. That framing appears in
 the code only in the *compile-time* fingerprints (`part(v) = v.length() + ":" + v`,
-[CircuitRewriter.java:694-696](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L694-L696)).
+[CircuitRewriter.java:694-696](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L694-L696)).
 The keys that actually name gates are built inside SPARQL as concatenations of
 fixed-width SHA-256 hashes of each part:
 
@@ -558,14 +558,14 @@ The Python reference deliberately keeps duplicates:
 ```python
 cs = sorted(cs)   # commutative; duplicates KEPT (no idempotence: g⊕g = 2g in N[X])
 ```
-[gates.py:62-69](reference/gates.py#L62-L69)
+[gates.py:62-69](../reference/gates.py#L62-L69)
 
 Harmless for WMC (`a ∨ a = a`), but it means the two implementations do not count
 the same nodes — relevant wherever the reference produces the sizes in Fig. 3/4.
 Two related reference-only divergences: `⊕` gates are content-addressed **by their
 children** rather than by `(θ, binding)` as in Def. 4.6, so the reference merges
 strictly more than the paper's scheme; and the path constructors apply absorption
-`a + (a·b) = a` ([gates.py:85-96](reference/gates.py#L85-L96)), a simplification
+`a + (a·b) = a` ([gates.py:85-96](../reference/gates.py#L85-L96)), a simplification
 Eq. (4)–(6) do not contain.
 
 ---
@@ -581,7 +581,7 @@ row shares that row's token:
 ```java
 NARYREL: "s p o . BIND(s AS ?prov)"   // Reification.java:70-79
 ```
-[e9_tpch.py](reference/e9_tpch.py), [r8_3_reconvergent.py:37](reference/r8_3_reconvergent.py#L37),
+[e9_tpch.py](../reference/e9_tpch.py), [r8_3_reconvergent.py:37](../reference/r8_3_reconvergent.py#L37),
 documented in [REIFICATION.md](REIFICATION.md).
 
 This is the right call for a fair comparison — it matches SPARQLprov's n-ary
@@ -635,7 +635,7 @@ For the record, the following were checked and match.
 One caveat on P3.17: the paper says `g_{Filter_φ(P')} = g_{P'}`, i.e. a filter
 leaves gate identity untouched. The engine folds an operand's rendered filters into
 the `bgpSemanticKey` that tags the `⊕_{P1}` / `⊕_{P2}` / `SUB` / `M` gates
-([CircuitRewriter.java:668-672](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L668-L672)),
+([CircuitRewriter.java:668-672](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L668-L672)),
 and now into the answer gate's θ as well. That is *required*, not incidental: two
 operands differing only by a filter denote different relations, so pouring both into
 one ⊕ would be wrong — inside one query for `A MINUS (P FILTER φ1)` against
@@ -648,10 +648,10 @@ should not be read as saying an enclosing ⊕'s pattern tag ignores the filter.
 ## Also outside the paper
 
 Rejections the engine performs that §3's exclusion list does not mention:
-`LIMIT`/`OFFSET`/`ORDER BY` ([CircuitRewriter.java:891-906](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L891-L906)),
+`LIMIT`/`OFFSET`/`ORDER BY` ([CircuitRewriter.java:891-906](../engine/src/main/java/npcs/circuit/CircuitRewriter.java#L891-L906)),
 `FROM`/`FROM NAMED` and `GRAPH` patterns
-([QueryGuard.java](engine/src/main/java/npcs/rewrite/QueryGuard.java)),
+([QueryGuard.java](../engine/src/main/java/npcs/rewrite/QueryGuard.java)),
 `EXISTS`/`NOT EXISTS` and any FILTER expression outside a rendered SPARQL-1.1 core
-([Filters.render](engine/src/main/java/npcs/circuit/Filters.java#L126-L174)),
+([Filters.render](../engine/src/main/java/npcs/circuit/Filters.java#L126-L174)),
 a path whose subject and object are the same variable, and a path under any
 reification scheme other than `Standard`. `DISTINCT` is accepted as a no-op.

@@ -21,7 +21,7 @@ values). Property paths connect their (subject, object) endpoints; constants are
 
 **Every real workload query is tw ≤ 2** — squarely inside E4's bounded-treewidth regime where d-DNNF stays
 polynomial and PQE is tractable. The single tw-2 case is a MINUS query with a small cycle. This is exactly
-the pre-registered prediction (EVALUATION.md: "WatDiv S/L/F/C are low tw 1–3 → compile uniformly cheap; the
+the pre-registered prediction (docs/EVALUATION.md: "WatDiv S/L/F/C are low tw 1–3 → compile uniformly cheap; the
 wall appears only in synthetic grid/clique — why E4 is synthetic-only").
 
 ## Honest scope

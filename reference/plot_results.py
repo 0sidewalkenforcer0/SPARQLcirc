@@ -143,7 +143,7 @@ def fig_construction():
 
 # ---------------------------------------------------------------- E7 vs ProvSQL
 def fig_provsql():
-    """E7 is a *deployability* result, not a speed race (EVALUATION.md: 'do NOT claim we count
+    """E7 is a *deployability* result, not a speed race (docs/EVALUATION.md: 'do NOT claim we count
     faster' -- and the two timings are not comparable: ProvSQL builds+compiles in-DB, our client
     compiles a tiny circuit). So we show the measured fact -- EXACT probability parity -- and the
     qualitative axis, as a comparison matrix in the idiom of the ProvSQL/SPARQLprov feature tables."""

@@ -185,7 +185,7 @@ Disjoint-operand MINUS (`{?x likes ?y} MINUS {?z owns ?w}`, no shared variable):
 | ?x=B, ?y=Y | 0.5000 | 0.2500 | 0.5000 | ours OK; **SPARQLprov WRONG** |
 
 SPARQLprov realizes MINUS as an *unguarded* DIFF; on disjoint operands it over-subtracts. Ours (the W3C
-shared-variable guard, see [`../CONFORMANCE.md`](../CONFORMANCE.md) §3) matches possible-world
+shared-variable guard, see [`../docs/CONFORMANCE.md`](../docs/CONFORMANCE.md) §3) matches possible-world
 enumeration — the MINUS bug as a *measured wrong probability*.
 
 ### Result 4 — on real data the win is co-extensive with reconvergence

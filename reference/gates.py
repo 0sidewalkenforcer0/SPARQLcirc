@@ -20,7 +20,7 @@ distinct gates collide only under a sha256 collision.
 
 This Python algebraic reference preserves those duplicate children. The Java engine's
 RDF interchange uses unindexed edges and is intentionally consumed as the Boolean/PQE
-quotient, where duplicate edges are idempotent; see TECHREPORT.md section 3.2.
+quotient, where duplicate edges are idempotent; see docs/TECHREPORT.md section 3.2.
 """
 import hashlib
 

@@ -6,7 +6,7 @@ possible-world enumeration` on the small checks, and `d4 / ProvSQL / CUDD / orac
 instance. Environment: GraphDB 10.7.6 (WatDiv 10M = 32,749,371 reified triples; 100M = 326,993,142) · d4 v1
 (Linux/x86) · PostgreSQL 18 + ProvSQL 1.11 · zero-dependency ROBDD + WMC.
 
-## Pre-registered claims (from `watdiv/EXPERIMENTS.md` / `EVALUATION.md`)
+## Pre-registered claims (from `watdiv/EXPERIMENTS.md` / `docs/EVALUATION.md`)
 | | Claim | Backed by |
 |---|---|---|
 | **A** | An **unmodified** SPARQL engine builds the shared circuit | E3, E7, E10, G2a, reification×4, persist-portability |

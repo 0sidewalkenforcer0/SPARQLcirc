@@ -78,4 +78,4 @@ as CONCAT strings and computed by the stock engine — no engine modification.
 NOTE: DIFF here is the algebra's anti-join (the negative half of OPTIONAL), NOT the
 user-level SPARQL MINUS keyword. They differ when the operands share no variable: DIFF
 removes such μ, MINUS keeps it (no-op). Our OPTIONAL uses DIFF (correct). The disjoint-
-domain MINUS case is a separate, known guard issue — see EVALUATION.md.
+domain MINUS case is a separate, known guard issue — see docs/EVALUATION.md.
