@@ -270,11 +270,19 @@ join's operands, so it composes to any depth: `planOperand` and `diffCore` recur
 through each other, and a composite operand's marginal ⊕ is a sink over the single
 gate its relation already carries.
 
-**Accepted shapes went from 12 of 35 to 35 of 35** — every way the supported
-operators nest, which is exactly what Thm. 4.13 claims. The matrix is pinned by
-`CircuitRewriterTest.everyCompositionOfTheSupportedOperatorsBuilds`; the Boolean
-functions are checked against possible-world enumeration and the Python reference
-in both construction modes.
+**Every composition of Join, Union, Filter, MINUS and OPTIONAL now builds.** Not a
+hand-written matrix: the shapes are ENUMERATED. All 86,016 binary-operator trees up
+to five operators build in both construction modes, as do all 4,495 trees up to
+three constructors once FILTER is added as a unary one — the latter pinned as
+`CircuitRewriterTest.everyCompositionUpToThreeConstructorsBuilds`. Boolean functions
+are checked against possible-world enumeration, the Python reference, and (for
+filters, which the Python DSL does not model) an independent rdflib oracle that runs
+the plain query over every possible world.
+
+Enumeration was necessary, not decorative. The hand-written matrix stopped at two
+levels of nesting and missed that three OPTIONALs put a JOIN in operand position; it
+had no filters at all and missed three more shapes. Both gaps were found by accident
+before the sweep existed.
 
 The most consequential shapes this unlocked are the ones ordinary queries hit:
 **two OPTIONALs**, and an operator written anywhere in its group rather than only

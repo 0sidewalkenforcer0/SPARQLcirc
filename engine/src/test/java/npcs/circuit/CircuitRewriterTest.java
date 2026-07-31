@@ -582,6 +582,72 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * Thm. 4.13 claims every composition of the supported operators. This ENUMERATES them instead of
+     * listing a few by hand, which is the only way the claim can be checked: the hand-written matrix
+     * above missed that three nested OPTIONALs put a JOIN in operand position, and missed FILTER in
+     * operand position entirely. Both gaps were found by accident, not by the matrix.
+     *
+     * <p>Two sweeps: every binary-operator tree up to four operators, and every tree up to three
+     * constructors once FILTER is added as a unary one. The condition is on {@code ?x}, which every
+     * leaf binds, so it is in scope wherever it lands.
+     */
+    @Test
+    public void everyCompositionUpToThreeConstructorsBuilds() {
+        List<String> shapes = new java.util.ArrayList<>();
+        for (int n = 1; n <= 4; n++) shapes.addAll(compositions(n, false));
+        for (int n = 1; n <= 3; n++) shapes.addAll(compositions(n, true));
+        assertTrue("the generator must produce a real sweep", shapes.size() > 4000);
+        List<String> rejected = new java.util.ArrayList<>();
+        for (String shape : shapes) {
+            String query = "SELECT ?x WHERE " + materialize(shape);
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                try {
+                    new CircuitRewriter(Reification.STANDARD, mode, "junit-sweep").constructionPlan(query);
+                } catch (RuntimeException failure) {
+                    if (rejected.size() < 6) rejected.add(mode + ": " + query + "\n      " + failure.getMessage());
+                }
+            }
+        }
+        assertTrue(shapes.size() + " shapes swept, " + rejected.size() + " rejected:\n   "
+                + String.join("\n   ", rejected), rejected.isEmpty());
+    }
+
+    /** Every group expression with exactly {@code n} constructors; FILTER counts as a unary one. */
+    private static List<String> compositions(int n, boolean withFilter) {
+        List<String> out = new java.util.ArrayList<>();
+        if (n == 0) { out.add("LEAF"); return out; }
+        for (int left = 0; left < n; left++) {
+            for (String a : compositions(left, withFilter)) {
+                for (String b : compositions(n - 1 - left, withFilter)) {
+                    out.add("{" + a + " " + b + "}");
+                    out.add("{{" + a + "} UNION {" + b + "}}");
+                    out.add("{" + a + " MINUS {" + b + "}}");
+                    out.add("{" + a + " OPTIONAL {" + b + "}}");
+                }
+            }
+        }
+        if (withFilter) {
+            for (String a : compositions(n - 1, true)) out.add("{" + a + " FILTER(?x != <urn:zz>)}");
+        }
+        return out;
+    }
+
+    /** Give each LEAF placeholder a distinct triple pattern sharing {@code ?x}. */
+    private static String materialize(String shape) {
+        StringBuilder out = new StringBuilder();
+        int leaf = 0;
+        for (int i = 0; i < shape.length(); ) {
+            if (shape.startsWith("LEAF", i)) {
+                out.append("?x <urn:p").append(leaf).append("> ?v").append(leaf++).append(" .");
+                i += 4;
+            } else {
+                out.append(shape.charAt(i++));
+            }
+        }
+        return out.toString();
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

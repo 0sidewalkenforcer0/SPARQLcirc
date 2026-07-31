@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -303,6 +304,20 @@ public class CircuitRewriter {
             }
             return diff(guarded, nl, nr);
         }
+        if (node instanceof Filter) {
+            // σ_φ(A ∪ B) ≡ σ_φ(A) ∪ σ_φ(B): σ is applied per solution and ∪ is set union. Needed
+            // because expanding an OPTIONAL turns `{ A OPTIONAL{B} FILTER(φ) }` into a FILTER over a
+            // UNION, and a UNION is not something a BGP group can carry a condition for.
+            Filter f = (Filter) node;
+            TupleExpr inner = normalize(f.getArg().clone());
+            if (inner instanceof Union) {
+                Union u = (Union) inner;
+                return normalize(new Union(
+                        new Filter(u.getLeftArg().clone(), f.getCondition().clone()),
+                        new Filter(u.getRightArg().clone(), f.getCondition().clone())));
+            }
+            return new Filter(inner, f.getCondition().clone());
+        }
         if (node instanceof Join) {
             // Join(A∪B, Z) ≡ (A⋈Z) ∪ (B⋈Z)  [(a∨b)∧z = (a∧z)∨(b∧z)], and symmetrically on the right.
             // Pushing UNION above JOIN is what lets a UNION appear as a join operand at all: the
@@ -380,41 +395,72 @@ public class CircuitRewriter {
         // what to do with an operand that cannot be reified inline: materialize its output as "a
         // relation whose ordinary columns contain the extensions and whose gate column contains the
         // corresponding root", then read that relation instead. See planOperand.
-        List<TupleExpr> parts = flattenJoin(body);
+        List<TupleExpr> parts = new ArrayList<>();
+        List<ValueExpr> conditions = new ArrayList<>();
+        flattenJoin(body, parts, conditions);
         boolean composite = false;
         for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
         if (!composite) {
             return bgpSteps(collectBlock(body), W);           // pure BGP branch: factored in FACTORED mode
         }
-        if (!Filters.of(body).isEmpty()) {
-            throw new UnsupportedOperationException(
-                "Unsupported: a FILTER over a join that has a MINUS/OPTIONAL operand. The condition's "
-              + "group spans an operand read from a materialized relation, where the filter's scope "
-              + "cannot be reproduced. Move the FILTER inside the operand that binds its variables.");
-        }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         List<Operand> operands = new ArrayList<>();
         for (TupleExpr part : parts) operands.add(planOperand(part, plan));
-        plan.add(flatStep(productAnswer(operands, W), "join-operands"));
+        plan.add(flatStep(productAnswer(operands, joinConditions(conditions, operands), W),
+                "join-operands"));
         return plan;
     }
 
     /** A join's operands, with the Join spine flattened away (⋈ is associative and commutative). */
     private static List<TupleExpr> flattenJoin(TupleExpr node) {
         List<TupleExpr> out = new ArrayList<>();
-        flattenJoin(node, out);
+        flattenJoin(node, out, null);
         return out;
     }
 
-    private static void flattenJoin(TupleExpr node, List<TupleExpr> out) {
+    /**
+     * @param conditions when non-null, collects the FILTER conditions crossed on the way down — the
+     *     ones that scope over the JOIN. Conditions nested INSIDE an operand must not be collected:
+     *     in {@code { A MINUS { B FILTER(φ) } }} the φ decides which B rows remove, and re-applying
+     *     it to the join's output would also delete answers it was never meant to touch.
+     */
+    private static void flattenJoin(TupleExpr node, List<TupleExpr> out, List<ValueExpr> conditions) {
         if (node instanceof Join) {
-            flattenJoin(((Join) node).getLeftArg(), out);
-            flattenJoin(((Join) node).getRightArg(), out);
+            flattenJoin(((Join) node).getLeftArg(), out, conditions);
+            flattenJoin(((Join) node).getRightArg(), out, conditions);
         } else if (node instanceof Filter) {
-            flattenJoin(((Filter) node).getArg(), out);        // the condition is handled by Filters.of
+            if (conditions != null) conditions.add(((Filter) node).getCondition());
+            flattenJoin(((Filter) node).getArg(), out, conditions);
         } else {
             out.add(node);
         }
+    }
+
+    /**
+     * Render the conditions scoping a composite join, once every operand is known. A condition may be
+     * evaluated after the operands are matched only if the variables it mentions are EXPORTED by
+     * them: a materialized operand publishes only its scope as columns, so a condition reaching into,
+     * say, a subtrahend has nothing to read.
+     */
+    private static List<String> joinConditions(List<ValueExpr> conditions, List<Operand> operands) {
+        if (conditions.isEmpty()) return Collections.emptyList();
+        LinkedHashSet<String> exported = new LinkedHashSet<>();
+        for (Operand operand : operands) exported.addAll(operand.scope());
+        List<String> rendered = new ArrayList<>();
+        for (ValueExpr condition : conditions) {
+            Set<String> used = Filters.conditionVars(condition);
+            used.removeAll(exported);
+            if (!used.isEmpty()) {
+                throw new UnsupportedOperationException(
+                    "Unsupported FILTER: the condition references " + used + ", which none of the "
+                  + "join's operands binds. A MINUS/OPTIONAL operand exports only its own bindings, "
+                  + "so a condition reaching into its subtrahend cannot be evaluated here. Move the "
+                  + "FILTER into the group that binds those variables.");
+            }
+            rendered.add(Filters.render(condition));
+        }
+        Collections.sort(rendered);                            // canonical: conjunction is commutative
+        return rendered;
     }
 
     private CircuitConstructionPlan.Step flatStep(String query, String label) {
@@ -595,17 +641,12 @@ public class CircuitRewriter {
             // A JOIN can also be an operand — of a difference, or of another join one level up (three
             // nested OPTIONALs produce exactly that). If any of its parts is composite the whole
             // product has to be materialized, since only a BGP can be reified inline.
-            List<TupleExpr> parts = flattenJoin(node);
+            List<TupleExpr> parts = new ArrayList<>();
+            List<ValueExpr> conditions = new ArrayList<>();
+            flattenJoin(node, parts, conditions);
             boolean composite = false;
             for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
             if (!composite) return new BgpOperand(collectBlock(node));
-            if (!Filters.of(node).isEmpty()) {
-                throw new UnsupportedOperationException(
-                    "Unsupported: a FILTER over a join that has a MINUS/OPTIONAL operand. The "
-                  + "condition's group spans an operand read from a materialized relation, where the "
-                  + "filter's scope cannot be reproduced. Move the FILTER inside the operand that "
-                  + "binds its variables.");
-            }
             List<Operand> operands = new ArrayList<>();
             for (TupleExpr part : parts) operands.add(planOperand(part, plan));
             LinkedHashSet<String> scope = new LinkedHashSet<>();
@@ -616,7 +657,8 @@ public class CircuitRewriter {
             String productRelation = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
                                    + ":operand:" + productFp;
             plan.add(new CircuitConstructionPlan.Step(
-                    productRows(operands, columns, productFp, productRelation, productGate),
+                    productRows(operands, joinConditions(conditions, operands), columns, productFp,
+                                productRelation, productGate),
                     true, "operand-rows"));
             return new RelationOperand(productRelation, columns, productGate);
         }
@@ -706,11 +748,12 @@ public class CircuitRewriter {
     }
 
     /** {@link #productAnswer} published as a row relation instead of an answer: a join as an operand. */
-    private String productRows(List<Operand> operands, List<String> columns, String productFp,
-                               String relationIri, String gateVar) {
+    private String productRows(List<Operand> operands, List<String> conditions, List<String> columns,
+                               String productFp, String relationIri, String gateVar) {
         StringBuilder where = new StringBuilder();
         List<String> children = new ArrayList<>();
         for (int i = 0; i < operands.size(); i++) operands.get(i).emit(where, "j" + i + "_", children);
+        where.append(Filters.emit(conditions));
         String tkey = emitSortedProdKey(where, children);
         String times = "?" + gateVar, row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
@@ -731,10 +774,11 @@ public class CircuitRewriter {
     }
 
     /** {@link #bgp} over a mixed operand list: one ⊗ per derivation, feeding the answer ⊕. */
-    private String productAnswer(List<Operand> operands, List<String> W) {
+    private String productAnswer(List<Operand> operands, List<String> conditions, List<String> W) {
         StringBuilder where = new StringBuilder();
         List<String> children = new ArrayList<>();
         for (int i = 0; i < operands.size(); i++) operands.get(i).emit(where, "j" + i + "_", children);
+        where.append(Filters.emit(conditions));
         String tkey = emitSortedProdKey(where, children);
         String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
         StringBuilder q = new StringBuilder(PRE);
