@@ -591,7 +591,35 @@ public class CircuitRewriter {
      * minuend and is inlined, so no relation is materialized for it.
      */
     private Operand planOperand(TupleExpr node, List<CircuitConstructionPlan.Step> plan) {
-        if (!(node instanceof Difference)) return new BgpOperand(collectBlock(node));
+        if (!(node instanceof Difference)) {
+            // A JOIN can also be an operand — of a difference, or of another join one level up (three
+            // nested OPTIONALs produce exactly that). If any of its parts is composite the whole
+            // product has to be materialized, since only a BGP can be reified inline.
+            List<TupleExpr> parts = flattenJoin(node);
+            boolean composite = false;
+            for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
+            if (!composite) return new BgpOperand(collectBlock(node));
+            if (!Filters.of(node).isEmpty()) {
+                throw new UnsupportedOperationException(
+                    "Unsupported: a FILTER over a join that has a MINUS/OPTIONAL operand. The "
+                  + "condition's group spans an operand read from a materialized relation, where the "
+                  + "filter's scope cannot be reproduced. Move the FILTER inside the operand that "
+                  + "binds its variables.");
+            }
+            List<Operand> operands = new ArrayList<>();
+            for (TupleExpr part : parts) operands.add(planOperand(part, plan));
+            LinkedHashSet<String> scope = new LinkedHashSet<>();
+            for (Operand operand : operands) scope.addAll(operand.scope());
+            List<String> columns = canonicalVars(scope);
+            String productFp = operandFingerprint(node);
+            String productGate = generated("opg" + (operandSerial++));
+            String productRelation = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
+                                   + ":operand:" + productFp;
+            plan.add(new CircuitConstructionPlan.Step(
+                    productRows(operands, columns, productFp, productRelation, productGate),
+                    true, "operand-rows"));
+            return new RelationOperand(productRelation, columns, productGate);
+        }
         Difference d = (Difference) node;
         DiffCore core = diffCore(d, plan);
         if (core == null) return planOperand(d.getLeftArg(), plan);   // removes nothing: operand = P1
@@ -673,6 +701,31 @@ public class CircuitRewriter {
         q.append(bindIri(sub, "urn:g:sub:", idKey(V1, "SUB@" + core.opFp)));
         q.append(bindIri(minus, "urn:g:m:", idKey(V1, "M@" + core.opFp)));
         q.append(bindIri(row, FactoredBgpRewriter.META_NS + "row:", idKey(V1, "OPROW@" + core.opFp)));
+        q.append("}\n");
+        return q.toString();
+    }
+
+    /** {@link #productAnswer} published as a row relation instead of an answer: a join as an operand. */
+    private String productRows(List<Operand> operands, List<String> columns, String productFp,
+                               String relationIri, String gateVar) {
+        StringBuilder where = new StringBuilder();
+        List<String> children = new ArrayList<>();
+        for (int i = 0; i < operands.size(); i++) operands.get(i).emit(where, "j" + i + "_", children);
+        String tkey = emitSortedProdKey(where, children);
+        String times = "?" + gateVar, row = qv("oprow");
+        StringBuilder q = new StringBuilder(PRE);
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        for (String c : children) q.append(" c:in ?").append(c).append(" ;");
+        q.setLength(q.length() - 2);
+        q.append(".\n  ").append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
+         .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ").append(times);
+        for (String v : columns) {
+            q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(v)).append("> ?").append(v);
+        }
+        q.append(" .\n}\nWHERE {\n").append(where);
+        q.append(bindIri(times, "urn:g:t:", tkey));
+        q.append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
+                idKey(columns, "OPROW@" + productFp)));
         q.append("}\n");
         return q.toString();
     }
@@ -969,6 +1022,11 @@ public class CircuitRewriter {
     private static LinkedHashSet<String> scopeOf(TupleExpr node) {
         if (node instanceof Difference) return scopeOf(((Difference) node).getLeftArg());
         if (node instanceof Filter)     return scopeOf(((Filter) node).getArg());
+        if (node instanceof Join) {
+            LinkedHashSet<String> out = scopeOf(((Join) node).getLeftArg());
+            out.addAll(scopeOf(((Join) node).getRightArg()));
+            return out;                                        // a Diff part contributes its minuend's
+        }
         if (node instanceof Union) {
             LinkedHashSet<String> out = scopeOf(((Union) node).getLeftArg());
             out.addAll(scopeOf(((Union) node).getRightArg()));
@@ -1050,9 +1108,21 @@ public class CircuitRewriter {
                          + part(varSemanticKey(a.getObjectVar()))
                          + part(querySemanticKey(a.getPathExpression()));
         }
+        // The BGP key is tried FIRST and the JOIN key only as a fallback, deliberately: a pure-BGP
+        // join must keep the "BGP…" key it has always had, or θ — and with it every answer-gate IRI —
+        // would move. Only a join the BGP collector refuses (one with a composite part) needs a key of
+        // its own, and without one two different such operands would share a fingerprint.
         try {
             return bgpSemanticKey(collectBlock(node));         // BGP (+ its FILTERs)
         } catch (UnsupportedOperationException outsideFragment) {
+            if (node instanceof Join) {
+                List<String> keys = new ArrayList<>();
+                for (TupleExpr operand : flattenJoin(node)) keys.add(querySemanticKey(operand));
+                Collections.sort(keys);                        // ⋈ is commutative and associative
+                StringBuilder out = new StringBuilder("JOIN");
+                for (String key : keys) out.append(part(key));
+                return out.toString();
+            }
             return "OTHER" + part(node.getClass().getSimpleName());
         }
     }

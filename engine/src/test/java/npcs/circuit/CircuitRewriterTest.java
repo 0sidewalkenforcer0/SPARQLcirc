@@ -555,6 +555,15 @@ public class CircuitRewriterTest {
             {"OPTIONAL then MINUS","SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } MINUS { ?x <urn:t> ?v } }"},
             {"two MINUSes",        "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } MINUS { ?x <urn:t> ?v } }"},
             {"nested UNION",       "SELECT ?x WHERE { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } UNION { ?x <urn:t> ?v } }"},
+            // Three levels deep: the two-level matrix above missed that a JOIN can itself be an
+            // operand (Join(Diff,·) appears as a join operand once a third OPTIONAL nests), which
+            // planOperand handled only for a Difference.
+            {"three OPTIONALs",    "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } "
+                                 + "OPTIONAL { ?x <urn:t> ?v } OPTIONAL { ?x <urn:u> ?z } }"},
+            {"two OPT then MINUS", "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } "
+                                 + "OPTIONAL { ?x <urn:t> ?v } MINUS { ?x <urn:u> ?z } }"},
+            {"MINUS of two OPTs",  "SELECT ?x WHERE { { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } } "
+                                 + "MINUS { ?x <urn:t> ?v OPTIONAL { ?x <urn:u> ?z } } }"},
         };
         for (String[] shape : shapes) {
             for (ConstructionMode mode : ConstructionMode.values()) {
