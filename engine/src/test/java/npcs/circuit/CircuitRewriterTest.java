@@ -320,6 +320,45 @@ public class CircuitRewriterTest {
                 .constructionPlan("SELECT ?x ?y WHERE { ?x <urn:p>? ?y }"));
     }
 
+    /**
+     * A UNION may now be a JOIN operand: {@code normalize} distributes
+     * {@code Join(A∪B, Z) ≡ (A⋈Z) ∪ (B⋈Z)}, which leaves every operand a BGP, the only thing the
+     * inline {@code reif} of a join can consume. Before, {@code assertPureBgp} rejected it.
+     *
+     * <p>Checked against the answer's Boolean function over all 2^4 worlds, not just against
+     * "it plans": {@code ?x=s} holds exactly when {@code (t1 ∨ t3) ∧ t4}.
+     */
+    @Test
+    public void aUnionMayBeAJoinOperandAndDenotesTheRightEvent() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:s", "urn:p", "urn:b");
+            reify(con, "urn:r:t2", "urn:b", "urn:q", "urn:c");
+            reify(con, "urn:r:t3", "urn:s", "urn:r", "urn:e");
+            reify(con, "urn:r:t4", "urn:s", "urn:t", "urn:f");
+            String query = "SELECT ?x WHERE { { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } } "
+                         + "?x <urn:t> ?v }";
+            String[] tokens = {"urn:r:t1", "urn:r:t2", "urn:r:t3", "urn:r:t4"};
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Model circuit = executePlan(con, query, mode);
+                Set<Resource> roots = answerRoots(circuit);
+                assertEquals(mode + ": one answer", 1, roots.size());
+                Resource root = roots.iterator().next();
+                for (int bits = 0; bits < 16; bits++) {
+                    Set<String> world = new LinkedHashSet<>();
+                    for (int i = 0; i < 4; i++) if ((bits & (1 << i)) != 0) world.add(tokens[i]);
+                    boolean expected = (world.contains("urn:r:t1") || world.contains("urn:r:t3"))
+                            && world.contains("urn:r:t4");
+                    assertEquals(mode + ": world " + world, expected,
+                            evaluate(circuit, root, world, new HashMap<>()));
+                }
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

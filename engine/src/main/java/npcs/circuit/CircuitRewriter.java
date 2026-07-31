@@ -128,6 +128,14 @@ public class CircuitRewriter {
             if (!W.contains(pe.getName())) W.add(pe.getName());
         }
         TupleExpr body = normalize(projection.getArg());
+        int branches = unionBranchCount(body);
+        if (branches > MAX_UNION_BRANCHES) {
+            throw new UnsupportedOperationException(
+                "Query too large after normalization: distributing JOIN and MINUS over UNION produced "
+              + branches + " branches (limit " + MAX_UNION_BRANCHES + "). Each branch is a separate "
+              + "CONSTRUCT, so the plan would be impractical. Reduce the number of UNIONs combined by "
+              + "joins, or split the query.");
+        }
         answerTag = answerTag(body, W);              // Def. 4.6 θ; must precede every emitted step
         TupleExpr bgpCandidate = unwrapSetWrappers(body, W);
         // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
@@ -242,7 +250,42 @@ public class CircuitRewriter {
             }
             return new Difference(nl, nr);
         }
-        return node;   // BGP / Join / StatementPattern
+        if (node instanceof Join) {
+            // Join(A∪B, Z) ≡ (A⋈Z) ∪ (B⋈Z)  [(a∨b)∧z = (a∧z)∨(b∧z)], and symmetrically on the right.
+            // Pushing UNION above JOIN is what lets a UNION appear as a join operand at all: the
+            // rewriting reifies a join's operands inline, which only a BGP supports, so a union
+            // operand is otherwise rejected. Distributing leaves every operand a BGP again.
+            Join j = (Join) node;
+            TupleExpr l = normalize(j.getLeftArg().clone());
+            TupleExpr r = normalize(j.getRightArg().clone());
+            if (l instanceof Union) {
+                Union u = (Union) l;
+                return normalize(new Union(new Join(u.getLeftArg().clone(), r.clone()),
+                                           new Join(u.getRightArg().clone(), r.clone())));
+            }
+            if (r instanceof Union) {
+                Union u = (Union) r;
+                return normalize(new Union(new Join(l.clone(), u.getLeftArg().clone()),
+                                           new Join(l.clone(), u.getRightArg().clone())));
+            }
+            return new Join(l, r);
+        }
+        return node;   // StatementPattern / anything the plan builder rejects on its own
+    }
+
+    /**
+     * Distribution multiplies branches, so bound the normalized body. A query with many UNIONs joined
+     * together is exponential in the number of joined unions, and a plan of thousands of CONSTRUCTs is
+     * never what the user meant; say so instead of emitting it.
+     */
+    private static final int MAX_UNION_BRANCHES = 256;
+
+    private static int unionBranchCount(TupleExpr node) {
+        if (node instanceof Union) {
+            return unionBranchCount(((Union) node).getLeftArg())
+                 + unionBranchCount(((Union) node).getRightArg());
+        }
+        return 1;
     }
 
     /**
