@@ -31,7 +31,11 @@ echo "loaded $(curl -s "$GDB/repositories/$REPO/size") triples into repo '$REPO'
 
 # extract our emitted CONSTRUCT (stderr = plan; stdout = circuit -> discard).
 # NB: use explicit file redirection, not '2>&1 >/dev/null' (zsh MULTIOS tees both).
-java -cp "$JAR" npcs.circuit.CircuitRun "$SCHEME" "$DATA" "$QUERY" >/dev/null 2>graphdb/plan.txt
+# --construction=flat is required, not a preference: this harness POSTs the plan as ONE query, so it
+# needs the single-CONSTRUCT flat plan. The default became factored, whose multi-step plan with its
+# private feedback INSERTs cannot be concatenated into one request (GraphDB answers MALFORMED QUERY).
+# Driving a factored plan end to end is CircuitRun's own endpoint mode: pass the endpoint URL to it.
+java -cp "$JAR" npcs.circuit.CircuitRun --construction=flat "$SCHEME" "$DATA" "$QUERY" >/dev/null 2>graphdb/plan.txt
 awk '/^PREFIX c:/{p=1} /^# circuit triples/{p=0} p' graphdb/plan.txt > graphdb/construct.rq
 
 curl -s -X POST "$GDB/repositories/$REPO" -H 'Content-Type: application/sparql-query' \

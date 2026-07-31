@@ -2,7 +2,6 @@
 @prefix sr:  <http://www.openrdf.org/config/repository/sail#> .
 @prefix sail:<http://www.openrdf.org/config/sail#> .
 @prefix graphdb: <http://www.ontotext.com/config/graphdb#> .
-[] a rep:Repository ;
-   rep:repositoryID "prov" ; rdfs:label "prov" ;
+[] a rep:Repository ; rep:repositoryID "prov" ; rdfs:label "prov" ;
    rep:repositoryImpl [ rep:repositoryType "graphdb:SailRepository" ;
      sr:sailImpl [ sail:sailType "graphdb:Sail" ; graphdb:ruleset "empty" ] ] .
