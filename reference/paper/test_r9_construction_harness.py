@@ -1693,7 +1693,7 @@ class CheckpointTests(unittest.TestCase):
             source = os.path.join(directory, "timing.csv")
 
             # A perfectly well-formed v3 checkpoint from a one-run smoke test
-            # must not silently enter the formal five-run/300-second table.
+            # must not silently enter the formal five-run/500-second table.
             exploratory = self._row(samples=[1.0])
             with open(source, "w", newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=pcm.COLS)
@@ -2007,11 +2007,13 @@ class MatrixConfigurationTests(unittest.TestCase):
             self.assertEqual(
                 pcm.resolve_run_profile(args()),
                 {
-                    "warmups": 1,
-                    "runs": 5,
-                    "timeout_s": 300.0,
-                    "update_chunk_triples": 1000,
-                    "orphan_cleanup_timeout_s": 15.0,
+                    "warmups": pcm.FORMAL_WARMUPS,
+                    "runs": pcm.FORMAL_RUNS,
+                    "timeout_s": pcm.FORMAL_TIMEOUT,
+                    "update_chunk_triples": pcm.FORMAL_UPDATE_CHUNK_TRIPLES,
+                    "orphan_cleanup_timeout_s": (
+                        pcm.FORMAL_ORPHAN_CLEANUP_TIMEOUT
+                    ),
                 },
             )
             with self.assertRaises(ValueError):
@@ -2371,9 +2373,9 @@ class MatrixConfigurationTests(unittest.TestCase):
                             "class": cls,
                             "template": cls + "1",
                             "query_sha256": query_sha,
-                            "warmups": "1",
-                            "runs": "5",
-                            "timeout_s": "300.0",
+                            "warmups": str(pcm.FORMAL_WARMUPS),
+                            "runs": str(pcm.FORMAL_RUNS),
+                            "timeout_s": str(pcm.FORMAL_TIMEOUT),
                         }
                     )
                     metadata = pcm.unpack_note(row)
@@ -2439,11 +2441,13 @@ class MatrixConfigurationTests(unittest.TestCase):
                 commit=pcm.COMMIT,
                 batch_id="b" * 64,
                 profile={
-                    "warmups": 1,
-                    "runs": 5,
-                    "timeout_s": 300.0,
-                    "update_chunk_triples": 1000,
-                    "orphan_cleanup_timeout_s": 15.0,
+                    "warmups": pcm.FORMAL_WARMUPS,
+                    "runs": pcm.FORMAL_RUNS,
+                    "timeout_s": pcm.FORMAL_TIMEOUT,
+                    "update_chunk_triples": pcm.FORMAL_UPDATE_CHUNK_TRIPLES,
+                    "orphan_cleanup_timeout_s": (
+                        pcm.FORMAL_ORPHAN_CLEANUP_TIMEOUT
+                    ),
                 },
                 engines=("graphdb",),
                 scales=("10M",),

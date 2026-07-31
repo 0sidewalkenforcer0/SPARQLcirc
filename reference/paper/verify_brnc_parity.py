@@ -914,7 +914,8 @@ def main(argv=None):
     if not args.exploratory:
         if args.cap != FORMAL_CAP or args.timeout != FORMAL_TIMEOUT:
             parser.error(
-                "formal parity fixes cap=500000 and timeout=300; "
+                f"formal parity fixes cap={FORMAL_CAP:g} "
+                f"and timeout={FORMAL_TIMEOUT:g}; "
                 "overrides require --exploratory"
             )
         if tuple(classes) != pcm.FORMAL_CLASSES:
