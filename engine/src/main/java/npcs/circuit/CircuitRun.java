@@ -136,8 +136,26 @@ public final class CircuitRun {
         try (RepositoryConnection con = repo.getConnection()) {
             if (skipLoad) {
                 System.err.println("# CIRCUIT_SKIP_LOAD: assuming the (reified) data is already loaded on the engine");
+                // §4.2 assumes the client skolemized before loading. On this route it did the loading,
+                // so the engine cannot know; ask once. A blank node left in the store makes gate keys
+                // depend on a label the store invented -- and on RDF4J, STR(?bnode) is a type error
+                // that leaves the answer gate unbound and drops the answer with no diagnostic at all.
+                if (!"1".equals(System.getenv("CIRCUIT_SKIP_BNODE_CHECK"))
+                        && npcs.rewrite.Skolem.graphHasBlankNodes(con)) {
+                    System.err.println("# ERROR: the loaded graph still contains blank nodes. Gate keys "
+                        + "hash STR(?term), which has no stable value for a blank node, so the circuit "
+                        + "would depend on labels this store invented -- and answers binding one are "
+                        + "dropped silently. Skolemize before loading:\n"
+                        + "#   java -cp npcs-rewrite.jar npcs.rewrite.Skolem in.ttl out.nt\n"
+                        + "# (CIRCUIT_SKIP_BNODE_CHECK=1 skips this probe on a store where the ASK is "
+                        + "too expensive and you know the data is ground.)");
+                    System.exit(3);
+                    return;
+                }
             } else try {
-                con.add(dataFile, "urn:base:", fmt);                   // in-memory: load; endpoint: INSERT (needs write access)
+                // §4.2: "Before loading either endpoint, the client applies one injective
+                // skolemization map sk : B_G -> I". Here the engine IS the client doing the loading.
+                npcs.rewrite.Skolem.load(con, dataFile, "urn:base:", fmt);
             } catch (RuntimeException e) {
                 if (endpoint != null) {
                     System.err.println("# ERROR: could not write data to the endpoint (needs a WRITABLE repo, or set "

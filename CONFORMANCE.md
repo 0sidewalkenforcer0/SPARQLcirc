@@ -42,7 +42,7 @@ tag. Item 1 is to be corrected on the paper side.
 | **3** | W3C MINUS is implemented and evaluated; the paper proves only algebraic Diff and disclaims the domain-disjointness rewriting | GAP | paper |
 | **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **FIXED in code** | code |
 | **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12, `I_C` bind-join) | **FIXED in code** | code |
-| **6** | Skolemization of blank nodes (Def. §4.2) is not implemented anywhere | GAP | code (or paper) |
+| **6** | ~~Skolemization of blank nodes (§4.2) is not implemented anywhere~~ | **FIXED** | code |
 | **7** | Tseitin `T(C)` compiled once + conditioned on `y_r`; the d4 path compiles one CNF **per answer root** | GAP | paper |
 | **8** | ⊖ minuend child *set* (Def. 4.2) is never built; both implementations interpose a ⊕ marginal | DIFFERS | paper |
 | **9** | Emitted RDF vocabulary and key encoding are not the ones in Def. 4.6 / Def. 4.7 | DIFFERS | paper |
@@ -379,27 +379,65 @@ single-source ones), request the flag explicitly.
 
 ---
 
-## 6. Skolemization is not implemented — GAP
+## 6. Skolemization is not implemented — GAP → FIXED
 
 **Paper.** §4.2: "The rewriting creates no blank nodes. Before loading either
 endpoint, the client applies one injective skolemization map `sk : B_G → I` whose
-image lies in a fresh IRI namespace to the input blank nodes and stores its
-inverse … the client applies `sk⁻¹` to projected answer terms."
+image lies in a fresh IRI namespace … and stores its inverse … the client applies
+`sk⁻¹` to projected answer terms."
 
-**Code.** No skolemization step exists. `grep -ri skolem` over the whole
-repository returns two hits, both about a *future* fix for blank-node path
-frontiers. Blank nodes reach the gate key as their engine-assigned label:
+The first sentence was already true — every gate IRI is minted by `BIND(IRI(...))`,
+and an emitted circuit contains zero blank nodes. The rest was absent: `grep -ri
+skolem` over the repository returned two hits, both future-work comments about path
+frontiers.
 
-```java
-IF(isBlank(?v), CONCAT("b", SHA256(STR(?v))), …)   // termHash
-```
-[CircuitRewriter.java:613-622](engine/src/main/java/npcs/circuit/CircuitRewriter.java#L613-L622)
+**What that cost.** Gate keys hash `STR(?term)`, which has no stable value for a
+blank node, so a blank node in a binding made the gate depend on a label the store
+invented. The two engines did not even fail alike:
 
-**Assessment.** Blank-node labels are not stable across stores, so for any graph
-containing blank nodes the byte-identity result of §5.2 (RQ2) does not follow.
-The WatDiv/TPC-H/Wikidata inputs happen to be blank-node-free, so no measurement
-is affected — but the claim as stated is unsupported until either `sk` is
-implemented or §5.2 is scoped to ground graphs.
+| | `STR(?bnode)` | consequence |
+|---|---|---|
+| RDF4J | type error | the answer gate's BIND is unbound, CONSTRUCT drops the whole answer template — **the answer disappears silently**, leaving an orphan ⊗ gate and no root |
+| rdflib | returns the internal label | a store-dependent gate IRI; byte-identity across engines fails |
+
+The RDF4J behaviour is the more serious of the two: measured on a one-triple graph
+whose object is a blank node, the circuit came back with 2 triples and **0 answers**
+where the same graph with an IRI object gives 8 triples and 1 answer. No error, no
+warning. This is the same class as the subquery defect of item 4 — the engine
+answering a different question — and it is why §4.2 puts `sk` before the data reaches
+any endpoint. No SPARQL 1.1 function could repair it at query time: a stable name for
+a blank node is exactly what RDF declines to provide.
+
+### The fix
+
+`npcs.rewrite.Skolem` implements `sk(b) = urn:sk:<hex of the UTF-8 label>`. Hex keeps
+it injective and makes it its own inverse, so `sk⁻¹` needs no stored map on either
+side — a small improvement on "stores its inverse".
+
+It is deliberately split, because the pipeline has two ends in different places:
+
+| piece | where | why |
+|---|---|---|
+| `sk` | Java, one implementation, also a CLI (`npcs.rewrite.Skolem in.ttl out.nt`) | data arrives three ways — `CircuitRun` loading a file, a bulk load under `CIRCUIT_SKIP_LOAD`, or a `reify.py` preprocessing step. Neither language alone covers all three, and two implementations would drift |
+| applying it on the engine's own load | `CircuitRun` | on that route the engine *is* the client doing the loading |
+| the guard when data was pre-loaded | `CircuitRun` | only the engine sees query-time terms; whether someone skolemized first is otherwise undetectable. One `ASK` for blank nodes, `CIRCUIT_SKIP_BNODE_CHECK=1` to skip it |
+| `sk⁻¹` | `circuit_io.unskolemize` | answers become user-facing terms in the Python client; an answer that bound a blank node is reported as one, not as the IRI it was loaded under |
+
+One subtlety was worth a test of its own. RDF4J mints a fresh `genid-<uuid>` per
+parse, so `sk` computed from the parsed label is a function of the *parse*: two loads
+of the same file disagreed, reintroducing one layer down the instability `sk` exists
+to remove. The parser is now configured to preserve the document's labels, which is
+also the right domain — the paper's `sk` is over `B_G`, the blank nodes of the graph.
+
+**What this does and does not stabilize.** The same skolemized graph loaded into two
+engines yields identical circuits, which is the byte-identity claim ("two independent
+engines construct the same circuit from the same rewriting and input graph"). It does
+not make two different *serializations* of one graph agree, since `_:x` and `_:y` are
+different labels; that would need graph canonicalization (RDFC-1.0), which is out of
+scope and is not what §5.2 claims.
+
+No measurement was affected either way: WatDiv, the TPC-H direct mapping and the
+Wikidata truthy dump are all ground.
 
 ---
 

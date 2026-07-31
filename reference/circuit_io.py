@@ -11,6 +11,7 @@ Every verification / experiment consumer should call `parse()` and identify answ
 an IRI vs a same-lexical literal, differing datatype / language tag, or bound-vs-unbound never
 collapse. `canon_rdflib()` gives the matching key for a PWE oracle's rdflib term.
 """
+SK = "urn:sk:"                                                     # npcs.rewrite.Skolem.NS
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 C = "urn:circuit:"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
@@ -41,13 +42,31 @@ def _nt_unescape(s):
     return "".join(out)
 
 
+def unskolemize(iri):
+    """sk^-1. §4.2 has the client apply it to projected answer terms, so an answer that bound a
+    blank node is reported as one rather than as the IRI the graph was loaded under. sk is
+    `urn:sk:<hex of the UTF-8 label>` (npcs.rewrite.Skolem), which is its own inverse — no map file
+    on either side. Returns None when the IRI is not in sk's image."""
+    if not iri.startswith(SK):
+        return None
+    encoded = iri[len(SK):]
+    if not encoded or len(encoded) % 2:
+        return None
+    try:
+        return bytes.fromhex(encoded).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def canon_term(tok):
     """Term-aware canonical key for a raw N-Triples object token (or None -> unbound)."""
     if tok is None:
         return "u"
     tok = tok.strip()
     if tok.startswith("<") and tok.endswith(">"):
-        return "i" + US + tok[1:-1]
+        iri = tok[1:-1]
+        label = unskolemize(iri)
+        return ("b" + US + label) if label is not None else ("i" + US + iri)
     if tok.startswith("_:"):
         return "b" + US + tok[2:]
     if tok.startswith('"'):
