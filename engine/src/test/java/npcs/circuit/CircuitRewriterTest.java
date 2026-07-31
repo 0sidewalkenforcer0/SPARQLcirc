@@ -518,6 +518,61 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * The composition matrix: every way the supported operators nest, which is what Thm. 4.13 claims
+     * and what the engine now builds. Each shape is listed with the algebra it parses to, because the
+     * W3C group translation folds left to right and the position of an operator inside its group
+     * decides that algebra — {@code { A OPTIONAL{B} . C }} is {@code Join(LeftJoin(A,B), C)} while
+     * {@code { A . C OPTIONAL{B} }} is {@code LeftJoin(Join(A,C), B)}. Only the second used to build.
+     *
+     * <p>This asserts coverage. The Boolean functions are checked against possible-world enumeration
+     * by the focused tests above and, for the whole matrix, against the Python reference.
+     */
+    @Test
+    public void everyCompositionOfTheSupportedOperatorsBuilds() {
+        String[][] shapes = {
+            {"Join(Union,·)",      "SELECT ?x WHERE { { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } } ?x <urn:t> ?v }"},
+            {"Join(LeftJoin,·)",   "SELECT ?x WHERE { { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } } ?x <urn:t> ?v }"},
+            {"Join(Diff,·)",       "SELECT ?x WHERE { { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } } ?x <urn:t> ?v }"},
+            {"Union(Diff,·)",      "SELECT ?x WHERE { { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } } UNION { ?x <urn:t> ?v } }"},
+            {"Union(LeftJoin,·)",  "SELECT ?x WHERE { { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } } UNION { ?x <urn:t> ?v } }"},
+            {"Diff(Union,·)",      "SELECT ?x WHERE { { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } } MINUS { ?x <urn:t> ?v } }"},
+            {"Diff(·,Union)",      "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { { ?x <urn:r> ?w } UNION { ?x <urn:t> ?v } } }"},
+            {"Diff(LeftJoin,·)",   "SELECT ?x WHERE { { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } } MINUS { ?x <urn:t> ?v } }"},
+            {"Diff(·,LeftJoin)",   "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w OPTIONAL { ?x <urn:t> ?v } } }"},
+            {"Diff(Diff,·)",       "SELECT ?x WHERE { { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } } MINUS { ?x <urn:t> ?v } }"},
+            {"Diff(·,Diff)",       "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w MINUS { ?x <urn:t> ?v } } }"},
+            {"LeftJoin(Union,·)",  "SELECT ?x WHERE { { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } } OPTIONAL { ?x <urn:t> ?v } }"},
+            {"LeftJoin(·,Union)",  "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { { ?x <urn:r> ?w } UNION { ?x <urn:t> ?v } } }"},
+            {"LeftJoin(LeftJoin,·)","SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } OPTIONAL { ?x <urn:t> ?v } }"},
+            {"LeftJoin(·,LeftJoin)","SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w OPTIONAL { ?x <urn:t> ?v } } }"},
+            {"LeftJoin(Diff,·)",   "SELECT ?x WHERE { { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } } OPTIONAL { ?x <urn:t> ?v } }"},
+            {"LeftJoin(·,Diff)",   "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w MINUS { ?x <urn:t> ?v } } }"},
+            {"OPTIONAL mid-group", "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } ?x <urn:t> ?v }"},
+            {"MINUS mid-group",    "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } ?x <urn:t> ?v }"},
+            {"UNION mid-group",    "SELECT ?x WHERE { ?x <urn:p> ?y { { ?x <urn:r> ?w } UNION { ?x <urn:t> ?v } } }"},
+            {"MINUS then OPTIONAL","SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } OPTIONAL { ?x <urn:t> ?v } }"},
+            {"OPTIONAL then MINUS","SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { ?x <urn:r> ?w } MINUS { ?x <urn:t> ?v } }"},
+            {"two MINUSes",        "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } MINUS { ?x <urn:t> ?v } }"},
+            {"nested UNION",       "SELECT ?x WHERE { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } UNION { ?x <urn:t> ?v } }"},
+        };
+        for (String[] shape : shapes) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                try {
+                    CircuitConstructionPlan plan = new CircuitRewriter(
+                            Reification.STANDARD, mode, "junit-matrix").constructionPlan(shape[1]);
+                    assertFalse(shape[0] + " (" + mode + ") produced no steps", plan.steps().isEmpty());
+                    for (CircuitConstructionPlan.Step step : plan.steps()) {
+                        new SPARQLParser().parseQuery(step.query(), null);   // every step is valid SPARQL
+                    }
+                } catch (RuntimeException failure) {
+                    throw new AssertionError(shape[0] + " (" + mode + ") no longer builds: "
+                            + failure.getMessage(), failure);
+                }
+            }
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

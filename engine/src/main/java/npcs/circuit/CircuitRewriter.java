@@ -367,7 +367,7 @@ public class CircuitRewriter {
         }
         if (body instanceof Difference) {
             // guarded = user MINUS; unguarded = the negative branch normalize() split out of an OPTIONAL
-            return minusPlan((Difference) body, W, isGuarded((Difference) body));
+            return minusPlan((Difference) body, W);
         }
         if (body instanceof ZeroLengthPath) {                 // zero-length path, e.g. the ?-branch of :p?
             List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
@@ -522,6 +522,11 @@ public class CircuitRewriter {
      */
     private abstract class Operand {
         abstract void emit(StringBuilder where, String prefix, List<String> children);
+        /** The variables this operand binds. */
+        abstract LinkedHashSet<String> scope();
+        /** The ⊕ gate keyed by (groupTag, scope) that an enclosing ⊖ reads as minuend or subtrahend. */
+        abstract List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
+                                                             String groupTag);
     }
 
     private final class BgpOperand extends Operand {
@@ -529,6 +534,11 @@ public class CircuitRewriter {
         BgpOperand(Block block) { this.block = block; }
         @Override void emit(StringBuilder where, String prefix, List<String> children) {
             where.append(reify(block, prefix, children));
+        }
+        @Override LinkedHashSet<String> scope() { return vars(block.patterns); }
+        @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
+                                                              String groupTag) {
+            return marginalPlus(block, tokPrefix, plusPrefix, groupTag, vars(block.patterns));
         }
     }
 
@@ -538,6 +548,26 @@ public class CircuitRewriter {
         private final String gateVar;                          // without '?'
         RelationOperand(String relationIri, List<String> scope, String gateVar) {
             this.relationIri = relationIri; this.scope = scope; this.gateVar = gateVar;
+        }
+        @Override LinkedHashSet<String> scope() { return new LinkedHashSet<>(scope); }
+        /**
+         * A materialized operand already carries exactly one gate per binding, so its marginal is a
+         * sink ⊕ over that one child — the same shape {@code FactoredBgpRewriter.marginalSink} uses,
+         * and carrying the same content-addressed IRI the flat gate would, so a ⊖ built over it
+         * connects unchanged.
+         */
+        @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
+                                                              String groupTag) {
+            StringBuilder where = new StringBuilder();
+            emit(where, tokPrefix + "m", new ArrayList<>());
+            String plus = qv("pg");
+            StringBuilder q = new StringBuilder(PRE)
+                    .append("CONSTRUCT {\n  ").append(plus).append(" a c:Plus .\n  ?").append(gateVar)
+                    .append(" c:feeds ").append(plus).append(" .\n}\nWHERE {\n").append(where)
+                    .append(bindIri(plus, plusPrefix, idKey(scope, groupTag))).append("}\n");
+            List<CircuitConstructionPlan.Step> out = new ArrayList<>();
+            out.add(flatStep(q.toString(), "operand-marginal"));
+            return out;
         }
         @Override void emit(StringBuilder where, String prefix, List<String> children) {
             where.append("\t?").append(generated(prefix + "row"))
@@ -563,32 +593,58 @@ public class CircuitRewriter {
     private Operand planOperand(TupleExpr node, List<CircuitConstructionPlan.Step> plan) {
         if (!(node instanceof Difference)) return new BgpOperand(collectBlock(node));
         Difference d = (Difference) node;
-        boolean guarded = isGuarded(d);
-        Block L = collectBlock(d.getLeftArg());
-        LinkedHashSet<String> V1 = vars(L.patterns);
-        List<Block> removing = new ArrayList<>();
-        for (Block Rb : unionBlocks(d.getRightArg())) {
-            if (!guarded || !intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);
-        }
-        if (removing.isEmpty()) return new BgpOperand(L);      // the MINUS is a no-op: operand = P1
-        String p1Tag = "P1@" + bgpFingerprint(L);
-        String opFp = diffFingerprint(L, removing);
-        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
-        for (Block Rb : removing) {
-            LinkedHashSet<String> V2 = vars(Rb.patterns);
-            String p2Tag = "P2@" + bgpFingerprint(Rb);
-            plan.addAll(marginalPlus(Rb, "b", "urn:g:p2:", p2Tag, V2));
-            plan.add(flatStep(subFeeds(L, Rb, V1, V2, p2Tag, opFp), "sub"));
-        }
-        List<String> scope = canonicalVars(V1);
+        DiffCore core = diffCore(d, plan);
+        if (core == null) return planOperand(d.getLeftArg(), plan);   // removes nothing: operand = P1
         String gateVar = generated("opg" + (operandSerial++));
-        // The relation is named by the operator fingerprint inside this run's private workspace, so two
-        // operands of one query never collide and two concurrent runs never share rows.
+        // Named by the operator fingerprint inside this run's private workspace, so two operands of one
+        // query never collide and two concurrent runs never share rows.
         String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
-                           + ":operand:" + opFp;
+                           + ":operand:" + core.opFp;
         plan.add(new CircuitConstructionPlan.Step(
-                minusRows(L, V1, p1Tag, opFp, relationIri, gateVar), true, "operand-rows"));
-        return new RelationOperand(relationIri, scope, gateVar);
+                minusRows(core, relationIri, gateVar), true, "operand-rows"));
+        return new RelationOperand(relationIri, canonicalVars(core.scope), gateVar);
+    }
+
+    /** The ⊖'s minuend operand and the gate tags naming its three gates, once its inputs are planned. */
+    private static final class DiffCore {
+        final Operand left; final LinkedHashSet<String> scope; final String p1Tag; final String opFp;
+        DiffCore(Operand left, LinkedHashSet<String> scope, String p1Tag, String opFp) {
+            this.left = left; this.scope = scope; this.p1Tag = p1Tag; this.opFp = opFp;
+        }
+    }
+
+    /**
+     * The part of a ⊖ that is the same whether it ends in an answer gate or in a row relation: the
+     * minuend marginal ⊕_{P1}, each subtrahend marginal ⊕_{P2}, and the ⊕_{P2}→⊕_{sub} feeds. Either
+     * side may itself be composite, in which case {@link #planOperand} materializes it first — which
+     * is what makes the construction fully compositional.
+     *
+     * @return {@code null} when the difference removes nothing, so the caller should use the minuend
+     *     alone (a MINUS whose every right branch is domain-disjoint is a no-op).
+     */
+    private DiffCore diffCore(Difference d, List<CircuitConstructionPlan.Step> plan) {
+        boolean guarded = isGuarded(d);
+        LinkedHashSet<String> V1 = scopeOf(d.getLeftArg());
+        List<TupleExpr> removing = new ArrayList<>();
+        for (TupleExpr rb : unionNodes(d.getRightArg())) {
+            // The W3C guard applies to user MINUS only. OPTIONAL's negative branch is UNGUARDED: it
+            // must subtract even from a domain-disjoint operand, where subFeeds' single WHERE
+            // cross-products P1 against P2 so every P2 feeds every P1 subtrahend. Guarding it would
+            // leave a bare P1 answer standing even though the OPTIONAL matched.
+            if (!guarded || !intersect(V1, scopeOf(rb)).isEmpty()) removing.add(rb);
+        }
+        if (removing.isEmpty()) return null;
+        Operand L = planOperand(d.getLeftArg(), plan);
+        String p1Tag = "P1@" + operandFingerprint(d.getLeftArg());
+        String opFp = diffFingerprint(d.getLeftArg(), removing);
+        plan.addAll(L.marginal("a", "urn:g:p1:", p1Tag));
+        for (TupleExpr rb : removing) {
+            Operand R = planOperand(rb, plan);
+            String p2Tag = "P2@" + operandFingerprint(rb);
+            plan.addAll(R.marginal("b", "urn:g:p2:", p2Tag));
+            plan.add(flatStep(subFeeds(L, R, V1, R.scope(), p2Tag, opFp), "sub"));
+        }
+        return new DiffCore(L, V1, p1Tag, opFp);
     }
 
     /**
@@ -597,10 +653,10 @@ public class CircuitRewriter {
      * an answer ⊕. Circuit triples and {@code urn:sc:} rows travel in one CONSTRUCT; CircuitRun splits
      * them by predicate, keeping the gates and feeding the rows back for the enclosing join to read.
      */
-    private String minusRows(Block L, LinkedHashSet<String> V1, String p1Tag, String opFp,
-                             String relationIri, String gateVar) {
-        List<String> ta = new ArrayList<>();
-        StringBuilder where = reify(L, "a", ta);
+    private String minusRows(DiffCore core, String relationIri, String gateVar) {
+        StringBuilder where = new StringBuilder();
+        core.left.emit(where, "a", new ArrayList<>());
+        List<String> V1 = canonicalVars(core.scope);
         String minus = "?" + gateVar, p1 = qv("p1"), sub = qv("sub"), row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
         q.append("CONSTRUCT {\n");
@@ -609,15 +665,14 @@ public class CircuitRewriter {
         q.append("  ").append(sub).append(" a c:Plus .\n");
         q.append("  ").append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
          .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ").append(minus);
-        for (String v : canonicalVars(V1)) {
+        for (String v : V1) {
             q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(v)).append("> ?").append(v);
         }
         q.append(" .\n}\nWHERE {\n").append(where);
-        q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), p1Tag)));
-        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
-        q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + opFp)));
-        q.append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
-                idKey(canonicalVars(V1), "OPROW@" + opFp)));
+        q.append(bindIri(p1, "urn:g:p1:", idKey(V1, core.p1Tag)));
+        q.append(bindIri(sub, "urn:g:sub:", idKey(V1, "SUB@" + core.opFp)));
+        q.append(bindIri(minus, "urn:g:m:", idKey(V1, "M@" + core.opFp)));
+        q.append(bindIri(row, FactoredBgpRewriter.META_NS + "row:", idKey(V1, "OPROW@" + core.opFp)));
         q.append("}\n");
         return q.toString();
     }
@@ -652,34 +707,11 @@ public class CircuitRewriter {
      * iff it matches SOME branch). A branch sharing no variable with P1 is a no-op and
      * is skipped; if no branch overlaps, MINUS is a no-op (= P1).
      */
-    private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W, boolean guarded) {
-        Block L = collectBlock(diff.getLeftArg());
-        LinkedHashSet<String> V1 = vars(L.patterns);
-        List<Block> removing = new ArrayList<>();
-        for (Block Rb : unionBlocks(diff.getRightArg())) {
-            // The W3C guard applies to user MINUS only. OPTIONAL's negative branch is UNGUARDED: it
-            // must subtract even from a domain-disjoint operand, where subFeeds' single WHERE
-            // cross-products P1 against P2 so every P2 feeds every P1 subtrahend. Guarding it would
-            // leave a bare P1 answer standing even though the OPTIONAL matched.
-            if (!guarded || !intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);
-        }
+    private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W) {
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
-        if (removing.isEmpty()) {                                      // no overlap ⇒ MINUS is a no-op
-            plan.addAll(bgpSteps(L, W));                                // = P1 (factored in FACTORED mode)
-            return plan;
-        }
-        String p1Tag = "P1@" + bgpFingerprint(L);
-        String opFp = diffFingerprint(L, removing);
-        // ⊕_{P1}(V1): the minuend marginal. Factored when possible (compresses reconvergent P1);
-        // its content-addressed IRI is unchanged, so subFeeds/minusRoot connect regardless.
-        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
-        for (Block Rb : removing) {
-            LinkedHashSet<String> V2 = vars(Rb.patterns);
-            String p2Tag = "P2@" + bgpFingerprint(Rb);
-            plan.addAll(marginalPlus(Rb, "b", "urn:g:p2:", p2Tag, V2)); // ⊕_{P2}(V2)
-            plan.add(flatStep(subFeeds(L, Rb, V1, V2, p2Tag, opFp), "sub")); // ⊕_{P2} -> ⊕_{sub}(V1)
-        }
-        plan.add(flatStep(minusRoot(L, V1, W, p1Tag, opFp), "minusRoot")); // ⊖(⊕_{P1}, ⊕_{sub}) -> answer
+        DiffCore core = diffCore(diff, plan);
+        if (core == null) return branchPlan(diff.getLeftArg(), W);   // no removal: the answer is P1's
+        plan.add(flatStep(minusRoot(core, W), "minusRoot"));
         return plan;
     }
 
@@ -725,12 +757,13 @@ public class CircuitRewriter {
     }
 
     /** For each compatible (P1,P2) pair, ⊕_{P2}(μ2) feeds ⊕_{sub}(μ1). */
-    private String subFeeds(Block L, Block R,
+    private String subFeeds(Operand L, Operand R,
                             LinkedHashSet<String> V1, LinkedHashSet<String> V2,
                             String p2Tag, String opFp) {
-        List<String> ta = new ArrayList<>(), tb = new ArrayList<>();
-        StringBuilder where = reify(L, "a", ta);
-        where.append(reify(R, "b", tb));                                 // natural join on shared vars
+        StringBuilder where = new StringBuilder();
+        List<String> unusedChildren = new ArrayList<>();   // subFeeds wires ⊕s; it builds no ⊗
+        L.emit(where, "a", unusedChildren);
+        R.emit(where, "b", unusedChildren);                // natural join on shared vars
         String p2 = qv("p2"), sub = qv("sub");
         StringBuilder q = new StringBuilder(PRE);
         q.append("CONSTRUCT {\n  ").append(p2).append(" c:feeds ").append(sub).append(" .\n}\nWHERE {\n").append(where);
@@ -741,10 +774,10 @@ public class CircuitRewriter {
     }
 
     /** ⊖(⊕_{P1}(μ1), ⊕_{sub}(μ1)) feeding the answer ⊕, keyed by the projection. */
-    private String minusRoot(Block L, LinkedHashSet<String> V1, List<String> W,
-                             String p1Tag, String opFp) {
-        List<String> ta = new ArrayList<>();
-        StringBuilder where = reify(L, "a", ta);
+    private String minusRoot(DiffCore core, List<String> W) {
+        StringBuilder where = new StringBuilder();
+        core.left.emit(where, "a", new ArrayList<>());
+        LinkedHashSet<String> V1 = core.scope;
         String minus = qv("m"), p1 = qv("p1"), sub = qv("sub");
         String ans = qv("ans"), anskey = qv("anskey");
         StringBuilder q = new StringBuilder(PRE);
@@ -754,9 +787,9 @@ public class CircuitRewriter {
         q.append("  ").append(sub).append(" a c:Plus .\n");
         q.append("  ").append(ans).append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
-        q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), p1Tag)));
-        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
-        q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + opFp)));
+        q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), core.p1Tag)));
+        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + core.opFp)));
+        q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + core.opFp)));
         q.append(bind(anskey, ansKey(W, V1)));                        // readable label (W vars not in V1 -> NULL)
         q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));      // collision-resistant identity
         q.append(bindingWhere(W));
@@ -919,6 +952,44 @@ public class CircuitRewriter {
     }
 
     /**
+     * Canonical fingerprint of an arbitrary operand. For a BGP node {@link #querySemanticKey} falls
+     * through to {@link #bgpSemanticKey}, so this agrees with {@link #bgpFingerprint} byte for byte
+     * and a composite operand simply gets a key of its own.
+     */
+    private static String operandFingerprint(TupleExpr node) {
+        return sha256hex(querySemanticKey(node));
+    }
+
+    /**
+     * The variables an operand actually exports. Not the same as every variable its subtree mentions:
+     * a difference exports only its minuend's, since the subtrahend contributes no bindings. Getting
+     * this wrong would widen the ⊕/⊖ group key and the MINUS guard to variables the operand cannot
+     * bind.
+     */
+    private static LinkedHashSet<String> scopeOf(TupleExpr node) {
+        if (node instanceof Difference) return scopeOf(((Difference) node).getLeftArg());
+        if (node instanceof Filter)     return scopeOf(((Filter) node).getArg());
+        if (node instanceof Union) {
+            LinkedHashSet<String> out = scopeOf(((Union) node).getLeftArg());
+            out.addAll(scopeOf(((Union) node).getRightArg()));
+            return out;
+        }
+        return varsOf(node);
+    }
+
+    /** A UNION's branches as nodes (a non-union is one branch). */
+    private static List<TupleExpr> unionNodes(TupleExpr node) {
+        List<TupleExpr> out = new ArrayList<>();
+        if (node instanceof Union) {
+            out.addAll(unionNodes(((Union) node).getLeftArg()));
+            out.addAll(unionNodes(((Union) node).getRightArg()));
+        } else {
+            out.add(node);
+        }
+        return out;
+    }
+
+    /**
      * Def. 4.6's pattern tag θ for the outer projection: {@code "A@" + SHA256(<body key>|W<vars>)}.
      * Hex-only, so it embeds in a CONSTRUCT string literal without escaping, and derived purely from
      * the normalized algebra, so it is identical on every engine (byte-identity is unaffected).
@@ -1001,11 +1072,11 @@ public class CircuitRewriter {
      * {@code {A MINUS P} UNION {A MINUS Q}} collision) necessarily gets a different SUB/M identity.
      * Right UNION alternatives are sorted because Boolean union is associative/commutative/idempotent.
      */
-    private String diffFingerprint(Block left, List<Block> rights) {
+    private static String diffFingerprint(TupleExpr left, List<TupleExpr> rights) {
         List<String> rkeys = new ArrayList<>();
-        for (Block right : rights) rkeys.add(bgpSemanticKey(right));
+        for (TupleExpr right : rights) rkeys.add(querySemanticKey(right));
         Collections.sort(rkeys);
-        StringBuilder key = new StringBuilder("DIFF|").append(part(bgpSemanticKey(left)));
+        StringBuilder key = new StringBuilder("DIFF|").append(part(querySemanticKey(left)));
         String previous = null;
         for (String rkey : rkeys) {
             if (!rkey.equals(previous)) key.append(part(rkey));       // UNION duplicate is Boolean-idempotent

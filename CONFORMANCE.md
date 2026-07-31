@@ -40,7 +40,7 @@ tag. Item 1 is to be corrected on the paper side.
 | **1** | `e*` / `e?` zero-length root is `g⊤` in the paper, "source occurs in the graph" in both implementations | CONTRADICTS | paper (code is deliberate + documented) |
 | **2** | ~~Answer-gate identifier drops the pattern tag θ ⇒ distinct queries mint identical answer gates~~ | **FIXED** | code |
 | **3** | W3C MINUS is implemented and evaluated; the paper proves only algebraic Diff and disclaims the domain-disjointness rewriting | GAP | paper |
-| **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **mostly FIXED in code** | code |
+| **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **FIXED in code** | code |
 | **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12, `I_C`, bind-join) are not implemented | GAP | paper |
 | **6** | Skolemization of blank nodes (Def. §4.2) is not implemented anywhere | GAP | code (or paper) |
 | **7** | Tseitin `T(C)` compiled once + conditioned on `y_r`; the d4 path compiles one CNF **per answer root** | GAP | paper |
@@ -265,17 +265,33 @@ each byte-identical on every shape that already worked:
    as a single ⊗ child. The mechanism is `FactoredBgpRewriter`'s message relations,
    already exercised by every factored query.
 
-Accepted shapes went from 12 of 35 to 30 of 35. Newly covered, and verified against
-possible-world enumeration and the Python reference in both construction modes:
-a UNION, an OPTIONAL or a MINUS as a JOIN or OPTIONAL operand; **two OPTIONALs**;
-and an operator written anywhere in its group rather than only last — the
-restriction that made `{ A OPTIONAL {B} . C }` fail while `{ A . C OPTIONAL {B} }`
-worked.
+Materialization applies to a `Difference`'s minuend and subtrahend as well as to a
+join's operands, so it composes to any depth: `planOperand` and `diffCore` recurse
+through each other, and a composite operand's marginal ⊕ is a sink over the single
+gate its relation already carries.
 
-Still rejected, all the same residual: a `Difference` as an operand *of a
-Difference* (`A MINUS (P MINUS Q)`, `LeftJoin(A, Diff)`, `LeftJoin(Diff, ·)`,
-`MINUS` followed by `OPTIONAL`). Closing it means giving `minusPlan`'s minuend and
-subtrahend the same `Operand` treatment the join now has.
+**Accepted shapes went from 12 of 35 to 35 of 35** — every way the supported
+operators nest, which is exactly what Thm. 4.13 claims. The matrix is pinned by
+`CircuitRewriterTest.everyCompositionOfTheSupportedOperatorsBuilds`; the Boolean
+functions are checked against possible-world enumeration and the Python reference
+in both construction modes.
+
+The most consequential shapes this unlocked are the ones ordinary queries hit:
+**two OPTIONALs**, and an operator written anywhere in its group rather than only
+last. The W3C group translation folds left to right, so `{ A OPTIONAL {B} . C }`
+parses to `Join(LeftJoin(A,B), C)` while `{ A . C OPTIONAL {B} }` parses to
+`LeftJoin(Join(A,C), B)` — only the second used to build, and nothing told the user
+to reorder.
+
+Two facts worth keeping:
+
+* θ must be computed from the query's own algebra, not from the normalized body.
+  Keying it on the normal form would move every answer-gate IRI whenever
+  `normalize` changes — expanding OPTIONAL did exactly that before the fix.
+* The chained-difference identity `(A ∖ B) ∖ P ≡ A ∖ (B ∪ P)` may only merge the
+  two subtrahends when both removals ask the same question of a candidate: same
+  kind, or an unguarded inner under a guarded outer. A guarded inner under an
+  unguarded outer keeps the nesting and is materialized instead.
 
 **Paper-side remainder.** The normal form is still not described anywhere. §4.2
 should state it, because it is what makes Def. 4.7 executable: expand OPTIONAL,
