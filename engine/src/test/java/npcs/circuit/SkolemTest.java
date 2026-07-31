@@ -1,6 +1,7 @@
 package npcs.circuit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -82,6 +83,40 @@ public class SkolemTest {
             Files.write(data.toPath(), GRAPH.getBytes(StandardCharsets.UTF_8));
             assertEquals("two loads of the same file must give the same circuit",
                     canonical(build(data)), canonical(build(data)));
+        } finally {
+            data.delete();
+        }
+    }
+
+    /**
+     * The guard for the one route the engine cannot cover itself. Under CIRCUIT_SKIP_LOAD somebody
+     * else did the loading, so whether sk was applied is invisible to the engine; it asks once. The
+     * probe must see blank nodes in a raw graph and none after sk, or it is either useless or a
+     * false alarm that blocks every ground graph.
+     */
+    @Test
+    public void theGuardSeesBlankNodesBeforeSkolemizationAndNoneAfter() throws Exception {
+        File data = File.createTempFile("skolem", ".ttl");
+        try {
+            Files.write(data.toPath(), GRAPH.getBytes(StandardCharsets.UTF_8));
+
+            Repository raw = new SailRepository(new MemoryStore());
+            try (RepositoryConnection con = raw.getConnection()) {
+                con.add(data, "urn:base:", RDFFormat.TURTLE);        // the ordinary load: keeps bnodes
+                assertTrue("a raw graph with a blank node must be flagged",
+                        Skolem.graphHasBlankNodes(con));
+            } finally {
+                raw.shutDown();
+            }
+
+            Repository skolemized = new SailRepository(new MemoryStore());
+            try (RepositoryConnection con = skolemized.getConnection()) {
+                Skolem.load(con, data, "urn:base:", RDFFormat.TURTLE);
+                assertFalse("after sk there is nothing left to flag",
+                        Skolem.graphHasBlankNodes(con));
+            } finally {
+                skolemized.shutDown();
+            }
         } finally {
             data.delete();
         }

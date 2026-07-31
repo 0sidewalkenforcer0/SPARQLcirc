@@ -46,7 +46,11 @@ def main():
     ok &= sane
     print(f"[sanity]  canon('a\\\"b') carries decoded lexical 'a\"b'  {'OK' if sane else 'FAIL'}")
 
-    # (3) match rdflib (the PWE-oracle side), if available.
+    # (3) sk^-1 (§4.2's client half). No rdflib needed, so it runs before the optional section
+    # below -- which exits early when rdflib is missing and would otherwise skip it.
+    ok &= _check_unskolemize()
+
+    # (4) match rdflib (the PWE-oracle side), if available.
     try:
         import rdflib
         from rdflib.plugins.parser.ntriples import unquote  # noqa: F401  (presence check)
@@ -74,6 +78,33 @@ def main():
 
     print("\nALL OK" if ok else "\nFAILURES")
     sys.exit(0 if ok else 1)
+
+
+def _check_unskolemize():
+    """sk^-1, the client half of §4.2. Must agree with npcs.rewrite.Skolem, must report a
+    skolemized term as the BLANK NODE it stands for, and must not claim IRIs that merely look
+    like the namespace."""
+    ok = True
+    print()
+    for label in ("x", "b0", "genid-1", "a-b_c", "üñ"):
+        iri = "urn:sk:" + label.encode("utf-8").hex()
+        back = cio.unskolemize(iri)
+        good = back == label
+        ok &= good
+        print(f"[sk^-1]  {iri:40} -> {back!r} {'OK' if good else 'FAIL expected ' + label!r}")
+    # a skolemized term must come back as a blank node, matching what a plain SPARQL answer binds
+    key = cio.canon_term("<urn:sk:78>")
+    good = key == "b" + cio.US + "x"
+    ok &= good
+    print(f"[sk^-1]  canon_term(<urn:sk:78>) -> {key!r} {'OK' if good else 'FAIL'}")
+    # and nothing else may be mistaken for one
+    for iri, why in (("urn:d:a", "ordinary IRI"), ("urn:skate:x", "near-miss namespace"),
+                     ("urn:sk:7", "odd-length hex"), ("urn:sk:zz", "non-hex")):
+        claimed = cio.unskolemize(iri)
+        good = claimed is None
+        ok &= good
+        print(f"[sk^-1]  {iri:40} ({why}) -> {'not sk OK' if good else 'FAIL claimed ' + repr(claimed)}")
+    return ok
 
 
 if __name__ == "__main__":

@@ -53,9 +53,38 @@ QUERY = (
 
 
 def _run_python_checks() -> None:
-    for script in ("tests.py", "wmc.py", "verify_boolean_boundary.py", "verify_pqe_cli.py"):
+    for script in ("tests.py", "wmc.py", "verify_boolean_boundary.py",
+                   "verify_circuit_io.py", "verify_pqe_cli.py"):
         print(f"# running reference/{script}", flush=True)
         subprocess.run([sys.executable, script], cwd=REFERENCE, check=True)
+
+
+def _check_skolem_roundtrip() -> None:
+    """§4.2 end to end: the engine skolemizes on load, and the client turns the term back into the
+    blank node it stands for. Before sk existed this query produced NO answer at all -- RDF4J makes
+    STR(?bnode) a type error, so the answer gate's BIND was unbound and CONSTRUCT dropped it."""
+    import tempfile
+
+    print("# skolemization round trip (blank node in an answer)", flush=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        data = Path(tmp) / "bnode.ttl"
+        data.write_text(
+            "@prefix d: <urn:d:> .\n"
+            "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+            "d:t1 rdf:subject d:a ; rdf:predicate d:p ; rdf:object _:x .\n", encoding="utf-8")
+        query = Path(tmp) / "q.sparql"
+        query.write_text("SELECT ?y WHERE { <urn:d:a> <urn:d:p> ?y }\n", encoding="utf-8")
+        out = subprocess.run(
+            ["java", "-cp", str(JAR), "npcs.circuit.CircuitRun", "--construction=flat",
+             "Standard", str(data), str(query)],
+            stdout=subprocess.PIPE, check=True).stdout.decode("utf-8")
+    circ, answers, bindings = circuit_io.parse(out)
+    if len(answers) != 1:
+        raise AssertionError(f"a blank-node answer must survive; got {len(answers)} answer gates")
+    binding = bindings[next(iter(answers))]
+    if binding.get("y") != "b" + circuit_io.US + "x":
+        raise AssertionError(f"sk^-1 must report the original blank node, got {binding!r}")
+    print("SKOLEM ROUND TRIP OK: answer binds _:x, reported as a blank node")
 
 
 def _check_composition() -> None:
@@ -162,6 +191,7 @@ def main() -> int:
         _check_fresh_circuit(_fresh_engine_circuit())
         _check_pqe_jar_cli()
         _check_composition()
+        _check_skolem_roundtrip()
     except (AssertionError, json.JSONDecodeError, KeyError, RuntimeError,
             TypeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"QUICK VERIFY FAILED: {exc}", file=sys.stderr)
