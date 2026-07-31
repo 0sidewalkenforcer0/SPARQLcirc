@@ -746,6 +746,67 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * The bound-source condition of §3, which the engine does not yet implement — audit item 5's
+     * residual. Currently {@code @Ignore}d; the fix flips it on.
+     *
+     * <p>§3 distinguishes two variable sources. A BOUND one is bound by an operand evaluated before
+     * the atom, so Def. 4.7 clause 2 invokes the path plan once per {@code ρ ∈ I_C} and each run is
+     * confined to that source's reachable subgraph — which is what Thm. 4.11's
+     * {@code O(n(n + |E_s|))} is a bound on, and what §4.3 means by "a bound source restricts the
+     * construction to that reachable subgraph rather than the full property relation". An UNBOUND one
+     * is excluded from the fragment outright.
+     *
+     * <p>The engine does not distinguish them: any variable source materializes the all-pairs base.
+     * The answers stay correct, but the construction is the one §3 excludes. On two disjoint chains,
+     * where the source's component is half the graph, the paper's case costs 26x what it should.
+     *
+     * <p>The assertion is deliberately semantic rather than a gate count: with {@code ?x} pinned to
+     * {@code a0} by its predecessor, the atom must build exactly the reach gates it would build from
+     * the constant {@code a0}, and none mentioning the unreachable {@code b} chain.
+     */
+    @org.junit.Ignore("bound-source condition not implemented; see CONFORMANCE.md item 5")
+    @Test
+    public void aBoundVariableSourceIsConstructedPerSourceBinding() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            for (int i = 0; i < 4; i++) {                       // two disjoint chains
+                reify(con, "urn:r:a" + i, "urn:a" + i, "urn:p", "urn:a" + (i + 1));
+                reify(con, "urn:r:b" + i, "urn:b" + i, "urn:p", "urn:b" + (i + 1));
+            }
+            reify(con, "urn:r:tag", "urn:a0", "urn:tag", "urn:mark");   // only a0 is tagged
+
+            Model fromConstant = executePlan(con,
+                    "SELECT ?y WHERE { <urn:a0> <urn:p>+ ?y }", ConstructionMode.FLAT);
+            Model fromBound = executePlan(con,
+                    "SELECT ?x ?y WHERE { ?x <urn:tag> <urn:mark> . ?x <urn:p>+ ?y }",
+                    ConstructionMode.FLAT);
+
+            assertEquals("both forms reach the same four nodes",
+                    answerRoots(fromConstant).size(), answerRoots(fromBound).size());
+
+            IRI rfrom = SimpleValueFactory.getInstance().createIRI(C, "rfrom");
+            IRI rto = SimpleValueFactory.getInstance().createIRI(C, "rto");
+            for (IRI endpoint : new IRI[]{rfrom, rto}) {
+                for (Value term : fromBound.filter(null, endpoint, null).objects()) {
+                    assertFalse("a bound source must not build reach gates outside its reachable "
+                                    + "subgraph, but found " + term,
+                            term.stringValue().startsWith("urn:b"));
+                }
+            }
+            assertEquals("binding ?x to a0 must build exactly the gates the constant a0 does",
+                    reachGates(fromConstant), reachGates(fromBound));
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** The level-indexed reach gates of a path circuit, by IRI. */
+    private static Set<Resource> reachGates(Model model) {
+        IRI rlvl = SimpleValueFactory.getInstance().createIRI(C, "rlvl");
+        return new LinkedHashSet<>(model.filter(null, rlvl, null).subjects());
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

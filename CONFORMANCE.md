@@ -339,13 +339,39 @@ beside another atom. Verified against an rdflib possible-world oracle (which
 implements property paths natively) in both construction modes, with `+` and `*`,
 and with a constant or a variable source.
 
-**What is still not the paper's construction.** For a *variable* source the engine
-materializes the all-pairs base rather than invoking the fixpoint once per source
-binding. The answers and probabilities are right — that is what the oracle checks —
-but `I_C` and the bind-join of §3's bound-source condition are an efficiency
-mechanism the engine does not have, and an unbound source is outside the fragment
-§3 defines. A bound source still restricts the base to the source-reachable subgraph
-`V_s`, as before.
+**What is still not the paper's construction: the bound-source condition.** §3
+distinguishes a BOUND variable source — bound by an operand evaluated before the
+atom, so Def. 4.7 clause 2 runs the path plan once per `ρ ∈ I_C`, each confined to
+that source's reachable subgraph — from an UNBOUND one, which it excludes outright.
+The engine does not distinguish them: any variable source materializes the all-pairs
+base. Answers and probabilities stay correct (the oracle checks that), but the
+construction is the one §3 excludes, and Thm. 4.11's `O(n(n + |E_s|))` then holds
+only when the source is a constant.
+
+The cost is not marginal. On 20 triples forming two disjoint 10-edge chains, with a
+predecessor pinning the source to one chain's head — the paper's case exactly:
+
+| | circuit triples | reach gates | rounds |
+|---|---|---|---|
+| constant source | 737 | 75 | 10 |
+| bound variable source (`I_C` = one value) | 19,330 | 2,110 | 21 |
+| unbound variable source | 20,200 | 2,110 | 21 |
+
+26× on a toy graph, growing as `|D_G| / |V_s|`. No §5 measurement is affected — every
+reported path query uses a constant source — but composing atoms, which this change
+enabled, makes such a query easy to write.
+
+Pinned by `CircuitRewriterTest.aBoundVariableSourceIsConstructedPerSourceBinding`,
+currently `@Ignore`d: with `?x` pinned to `a0` the atom must build exactly the reach
+gates the constant `a0` builds, and none mentioning the unreachable chain.
+
+Closing it needs two things the engine lacks, both now within reach: a plan step that
+declares a dependency on a predecessor's materialized relation (that relation *is*
+`I_C`), and a minimal bind-join rule choosing which sibling operand binds the source —
+rejecting the atom when none does, which is what §3 says to do. Gate identity already
+cooperates: `reachIri` keys on `(fingerprint, level, from, to)`, matching §4.3's "gate
+keys contain e, s, i, and the endpoint", so per-source runs mint distinct gates with
+no change.
 
 ---
 
