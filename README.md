@@ -1,4 +1,4 @@
-# SPARQLcirc: Exact Probabilistic SPARQL via Provenance Circuits Built by Unmodified Engines
+# SPARQLcirc: Native-SPARQL Provenance Circuits for Exact Probabilistic Query Evaluation
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-11%2B-orange.svg)
