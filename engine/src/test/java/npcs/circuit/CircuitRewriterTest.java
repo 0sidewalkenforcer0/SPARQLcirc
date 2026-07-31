@@ -359,6 +359,73 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * OPTIONAL is no longer planned by a dedicated planner: normalize expands
+     * {@code A OPT B ≡ Join(A,B) ∪ (A DIFF B)} — §3's own definition — so a UNION may now sit on
+     * either side of it. The expansion has to keep the two difference operators apart, which is what
+     * this pins down on domain-DISJOINT operands, where they disagree:
+     * <ul>
+     *   <li>OPTIONAL's negative branch is the UNGUARDED anti-join. Its {@code ?w}-unbound answer must
+     *       denote {@code t1 ∧ ¬t2}, so it is FALSE in the world where the optional matched.
+     *       A guarded difference would leave it unconditionally true — a bare left answer standing
+     *       next to the matched one.</li>
+     *   <li>User MINUS keeps the W3C guard, so on disjoint operands it removes nothing.</li>
+     * </ul>
+     */
+    @Test
+    public void optionalKeepsTheUnguardedDifferenceAndMinusKeepsTheGuard() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:s", "urn:p", "urn:b");
+            reify(con, "urn:r:t2", "urn:z", "urn:r", "urn:e");
+            Set<String> bothPresent = new LinkedHashSet<>(java.util.Arrays.asList("urn:r:t1", "urn:r:t2"));
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                // disjoint operands: ?x from the left, ?u/?w from the optional
+                Model optional = executePlan(con,
+                        "SELECT ?x ?w WHERE { ?x <urn:p> ?y OPTIONAL { ?u <urn:r> ?w } }", mode);
+                Set<Resource> roots = answerRoots(optional);
+                assertEquals(mode + ": a matched answer and a ?w-unbound one", 2, roots.size());
+                int trueWhenOptionalMatched = 0;
+                for (Resource root : roots) {
+                    if (evaluate(optional, root, bothPresent, new HashMap<>())) trueWhenOptionalMatched++;
+                }
+                assertEquals(mode + ": with the optional matched only the extended answer may hold; "
+                        + "an unguarded difference is what removes the other one", 1, trueWhenOptionalMatched);
+
+                Model minus = executePlan(con,
+                        "SELECT ?x WHERE { ?x <urn:p> ?y MINUS { ?u <urn:r> ?w } }", mode);
+                Set<Resource> minusRoots = answerRoots(minus);
+                assertEquals(mode + ": MINUS on disjoint operands is a no-op", 1, minusRoots.size());
+                assertTrue(mode + ": and its answer survives, guard intact",
+                        evaluate(minus, minusRoots.iterator().next(), bothPresent, new HashMap<>()));
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** A UNION on either side of an OPTIONAL, unlocked by the same expansion. */
+    @Test
+    public void aUnionMayBeAnOptionalOperand() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:s", "urn:p", "urn:b");
+            reify(con, "urn:r:t3", "urn:s", "urn:r", "urn:e");
+            reify(con, "urn:r:t4", "urn:s", "urn:t", "urn:f");
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                assertFalse(mode + ": UNION as the OPTIONAL's left operand", answerRoots(executePlan(con,
+                        "SELECT ?x WHERE { { { ?x <urn:p> ?y } UNION { ?x <urn:r> ?w } } "
+                      + "OPTIONAL { ?x <urn:t> ?v } }", mode)).isEmpty());
+                assertFalse(mode + ": UNION as the OPTIONAL's right operand", answerRoots(executePlan(con,
+                        "SELECT ?x WHERE { ?x <urn:p> ?y OPTIONAL { { ?x <urn:r> ?w } "
+                      + "UNION { ?x <urn:t> ?v } } }", mode)).isEmpty());
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

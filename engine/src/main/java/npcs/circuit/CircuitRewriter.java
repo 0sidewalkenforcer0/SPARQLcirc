@@ -127,6 +127,11 @@ public class CircuitRewriter {
         for (ProjectionElem pe : projection.getProjectionElemList().getElements()) {
             if (!W.contains(pe.getName())) W.add(pe.getName());
         }
+        // θ is taken from the query's OWN algebra, before normalization. Def. 4.6 calls it "the prefix
+        // serialization of the algebra syntax", and keying on the parsed shape rather than on our
+        // internal normal form means a change to normalize() cannot silently move every answer-gate
+        // IRI (expanding OPTIONAL into Union(Join,Diff) otherwise would have).
+        answerTag = answerTag(projection.getArg(), W);
         TupleExpr body = normalize(projection.getArg());
         int branches = unionBranchCount(body);
         if (branches > MAX_UNION_BRANCHES) {
@@ -136,7 +141,6 @@ public class CircuitRewriter {
               + "CONSTRUCT, so the plan would be impractical. Reduce the number of UNIONs combined by "
               + "joins, or split the query.");
         }
-        answerTag = answerTag(body, W);              // Def. 4.6 θ; must precede every emitted step
         TupleExpr bgpCandidate = unwrapSetWrappers(body, W);
         // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
         // operand's group, and the factored plan has no single group for it (its passes exchange
@@ -167,16 +171,44 @@ public class CircuitRewriter {
     public ConstructionMode constructionMode() { return constructionMode; }
 
     /**
-     * Normalize the algebra so every {@code Difference} (MINUS) has operands {@link
-     * #branchPlan}/{@link #minusPlan} can build, by algebraically reducing composite MINUS
-     * operands to the verified BGP/UNION-operand plan (all PQE-valid):
+     * A {@code Difference} that must NOT take the W3C shared-variable guard.
+     *
+     * <p>There are two difference operators and the algebra has one node kind for them. User-level
+     * {@code MINUS} removes μ only when a compatible ν <em>also shares a bound variable</em>;
+     * OPTIONAL's negative branch is the algebraic anti-join, which removes μ whenever some compatible
+     * ν exists, disjoint domains included. They used to be told apart by which planner ran
+     * ({@code minusPlan} vs the old {@code optionalPlan}). Once an OPTIONAL is expanded into
+     * {@code Union(Join, Diff)} both kinds coexist in one tree, so the kind has to travel on the node.
+     *
+     * <p>{@code AbstractQueryModelNode.clone()} goes through {@code Object.clone()}, so the runtime
+     * class survives the cloning normalize does.
+     */
+    private static final class UnguardedDifference extends Difference {
+        UnguardedDifference(TupleExpr leftArg, TupleExpr rightArg) { super(leftArg, rightArg); }
+    }
+
+    private static boolean isGuarded(Difference d) { return !(d instanceof UnguardedDifference); }
+
+    private static Difference diff(boolean guarded, TupleExpr left, TupleExpr right) {
+        return guarded ? new Difference(left, right) : new UnguardedDifference(left, right);
+    }
+
+    /**
+     * Normalize the algebra into the shape the plan builder can emit, using only Boolean identities
+     * on the answer's provenance (all PQE-valid):
+     * <pre>
+     *   A OPT B              ≡ Join(A,B) ∪ (A DIFF B)        -- the paper's own §3 definition of Opt
+     *   Join(A∪B, Z)         ≡ (A⋈Z) ∪ (B⋈Z)
      *   (A∪B) MINUS P        ≡ (A MINUS P) ∪ (B MINUS P)
-     *   (A OPT B) MINUS P    ≡ (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P)  [B: DIFF, not MINUS]
-     *   P MINUS (C OPT D)    ≡ P MINUS C                                 [P shares no D-only var]
-     *   (A MINUS P) MINUS Q  ≡ A MINUS (P∪Q)                             [(A∖P)∖Q = A∖(P∪Q)]
-     * Residuals left for minusPlan/collect to reject safely: right-nested MINUS
-     * A MINUS (P MINUS Q) (introduces a join), and the two pathological OPTIONAL-as-MINUS-operand
-     * shapes. (A bare cross-product OPTIONAL is NOT a residual — optionalPlan handles it correctly.)
+     *   P MINUS (C OPT D)    ≡ P MINUS C                     [P shares no D-only var]
+     *   (A ∖ B) ∖ P          ≡ A ∖ (B ∪ P)                   [see the chained rule for the kinds]
+     * </pre>
+     * Expanding OPTIONAL and pushing UNION upward is what makes the rest compositional: afterwards a
+     * clause is built from BGP/Join/Diff/Filter only, and every operand is <em>total</em> on a fixed
+     * scope, so it can be materialized as an ordinary relation with no nullable columns.
+     *
+     * <p>Residual, still left for the plan builder to reject until operand materialization lands: a
+     * Diff or a composite in JOIN-operand position, and a guarded Diff under an unguarded one.
      */
     private static TupleExpr normalize(TupleExpr node) {
         if (node instanceof Union) {
@@ -206,49 +238,68 @@ public class CircuitRewriter {
                 return normalize(new LeftJoin(lj.getLeftArg().clone(),
                         new Filter(lj.getRightArg().clone(), lj.getCondition().clone())));
             }
-            return new LeftJoin(normalize(lj.getLeftArg().clone()), normalize(lj.getRightArg().clone()));
+            // A OPT B ≡ Join(A,B) ∪ (A DIFF B) — §3's own definition of unfiltered Opt. The negative
+            // branch is the UNGUARDED anti-join: it must remove a match even when the operands share
+            // no variable, which user-level MINUS would not. Expanding here (rather than in a
+            // dedicated optionalPlan) is what lets an OPTIONAL appear as an operand at all, since the
+            // two disjuncts are each total on a fixed scope.
+            TupleExpr optLeft = normalize(lj.getLeftArg().clone());
+            TupleExpr optRight = normalize(lj.getRightArg().clone());
+            return normalize(new Union(
+                    new Join(optLeft.clone(), optRight.clone()),
+                    new UnguardedDifference(optLeft.clone(), optRight.clone())));
         }
         if (node instanceof Difference) {
             Difference d = (Difference) node;
-            TupleExpr nl = normalize(d.getLeftArg().clone());
-            TupleExpr nr = normalize(d.getRightArg().clone());
-            // OPTIONAL left operand: (A OPT B) MINUS P ≡ (Join(A,B) MINUS P) ∪ ((A DIFF B) MINUS P).
-            // A OPT B's negative branch is UNGUARDED DIFF, so B needs DIFF, not MINUS. We realize the
-            // second disjunct as A MINUS (B∪P) — equal to (A DIFF B) MINUS P ONLY when A,B share a
-            // variable (then A DIFF B = A MINUS B, and (A∖B)∖P = A∖(B∪P)). Hence the guard below; the
-            // no-shared-var case (cross-product OPTIONAL) falls through and is safely rejected.
-            if (nl instanceof LeftJoin) {
-                LeftJoin lj = (LeftJoin) nl;
-                if (!intersect(varsOf(lj.getLeftArg()), varsOf(lj.getRightArg())).isEmpty()) {
-                    return normalize(new Union(
-                            new Difference(new Join(lj.getLeftArg().clone(), lj.getRightArg().clone()), nr.clone()),
-                            new Difference(lj.getLeftArg().clone(), new Union(lj.getRightArg().clone(), nr.clone()))));
-                }
-            }
-            // OPTIONAL right operand: P1 MINUS (C OPT D) ≡ P1 MINUS C when P1 shares no D-only
-            // variable (the optional D-part washes out of the subtrahend: matched ⊕ unmatched = always).
-            if (nr instanceof LeftJoin) {
-                LeftJoin lj = (LeftJoin) nr;
+            boolean guarded = isGuarded(d);
+            // MUST run before the right operand is normalized, which would expand the OPTIONAL away:
+            // P MINUS (C OPT D) ≡ P MINUS C when P shares no D-only variable (the optional D-part
+            // washes out of the subtrahend: matched ⊕ unmatched = always). Without this the
+            // subtrahend would become a UNION with a Diff branch, which no subtrahend plan can read.
+            if (d.getRightArg() instanceof LeftJoin && ((LeftJoin) d.getRightArg()).getCondition() == null) {
+                LeftJoin lj = (LeftJoin) d.getRightArg();
                 LinkedHashSet<String> dOnly = varsOf(lj.getRightArg());
                 dOnly.removeAll(varsOf(lj.getLeftArg()));         // vars(D) \ vars(C)
-                LinkedHashSet<String> shareD = varsOf(nl);
+                LinkedHashSet<String> shareD = varsOf(d.getLeftArg());
                 shareD.retainAll(dOnly);
                 if (shareD.isEmpty()) {
-                    return normalize(new Difference(nl.clone(), lj.getLeftArg().clone()));
+                    return normalize(diff(guarded, d.getLeftArg().clone(), lj.getLeftArg().clone()));
                 }
             }
-            if (nl instanceof Union) {          // (A∪B) MINUS P → (A MINUS P) ∪ (B MINUS P)
+            TupleExpr nl = normalize(d.getLeftArg().clone());
+            TupleExpr nr = normalize(d.getRightArg().clone());
+            if (nl instanceof Union) {          // (A∪B) ∖ P → (A ∖ P) ∪ (B ∖ P)
                 Union u = (Union) nl;
                 return normalize(new Union(
-                        new Difference(u.getLeftArg().clone(), nr.clone()),
-                        new Difference(u.getRightArg().clone(), nr.clone())));
+                        diff(guarded, u.getLeftArg().clone(), nr.clone()),
+                        diff(guarded, u.getRightArg().clone(), nr.clone())));
             }
-            if (nl instanceof Difference) {     // (A MINUS P) MINUS Q → A MINUS (P ∪ Q)  [(A∖P)∖Q=A∖(P∪Q)]
+            if (nl instanceof Difference) {
+                // (A ∖_i B) ∖_o P. Merging the two subtrahends is only sound when both removals ask
+                // the same question of a candidate μ:
+                //   same kind                -> A ∖ (B ∪ P)
+                //   inner unguarded, outer guarded -> the outer guard is decided statically here,
+                //        since every variable of a BGP operand is always bound: no shared variable
+                //        makes the outer MINUS a no-op, a shared variable makes it coincide with the
+                //        unguarded anti-join, so the merged subtrahend is unguarded.
+                //   inner guarded, outer unguarded -> B needs the guard and P does not; they cannot
+                //        share one subtrahend. Left nested (rejected until operands can be
+                //        materialized).
                 Difference inner = (Difference) nl;
-                return normalize(new Difference(inner.getLeftArg().clone(),
-                        new Union(inner.getRightArg().clone(), nr.clone())));
+                boolean innerGuarded = isGuarded(inner);
+                if (guarded && !innerGuarded) {
+                    if (intersect(varsOf(inner.getLeftArg()), varsOf(nr)).isEmpty()) {
+                        return inner;                                   // outer MINUS removes nothing
+                    }
+                    return normalize(new UnguardedDifference(inner.getLeftArg().clone(),
+                            new Union(inner.getRightArg().clone(), nr.clone())));
+                }
+                if (guarded == innerGuarded) {
+                    return normalize(diff(guarded, inner.getLeftArg().clone(),
+                            new Union(inner.getRightArg().clone(), nr.clone())));
+                }
             }
-            return new Difference(nl, nr);
+            return diff(guarded, nl, nr);
         }
         if (node instanceof Join) {
             // Join(A∪B, Z) ≡ (A⋈Z) ∪ (B⋈Z)  [(a∨b)∧z = (a∧z)∨(b∧z)], and symmetrically on the right.
@@ -313,10 +364,8 @@ public class CircuitRewriter {
             return plan;
         }
         if (body instanceof Difference) {
-            return minusPlan((Difference) body, W);      // handles the shared-var guard + UNION right operand
-        }
-        if (body instanceof LeftJoin) {
-            return optionalPlan((LeftJoin) body, W);
+            // guarded = user MINUS; unguarded = the negative branch normalize() split out of an OPTIONAL
+            return minusPlan((Difference) body, W, isGuarded((Difference) body));
         }
         if (body instanceof ZeroLengthPath) {                 // zero-length path, e.g. the ?-branch of :p?
             List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
@@ -429,12 +478,16 @@ public class CircuitRewriter {
      * iff it matches SOME branch). A branch sharing no variable with P1 is a no-op and
      * is skipped; if no branch overlaps, MINUS is a no-op (= P1).
      */
-    private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W) {
+    private List<CircuitConstructionPlan.Step> minusPlan(Difference diff, List<String> W, boolean guarded) {
         Block L = collectBlock(diff.getLeftArg());
         LinkedHashSet<String> V1 = vars(L.patterns);
         List<Block> removing = new ArrayList<>();
         for (Block Rb : unionBlocks(diff.getRightArg())) {
-            if (!intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);   // overlap ⇒ can remove
+            // The W3C guard applies to user MINUS only. OPTIONAL's negative branch is UNGUARDED: it
+            // must subtract even from a domain-disjoint operand, where subFeeds' single WHERE
+            // cross-products P1 against P2 so every P2 feeds every P1 subtrahend. Guarding it would
+            // leave a bare P1 answer standing even though the OPTIONAL matched.
+            if (!guarded || !intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         if (removing.isEmpty()) {                                      // no overlap ⇒ MINUS is a no-op
@@ -537,29 +590,10 @@ public class CircuitRewriter {
         return q.toString();
     }
 
-    // --------------------------- OPTIONAL = (P1 AND P2) UNION (P1 DIFF P2) ---------------------------
-    private List<CircuitConstructionPlan.Step> optionalPlan(LeftJoin lj, List<String> W) {
-        Block L = collectBlock(lj.getLeftArg());
-        Block R = collectBlock(lj.getRightArg());
-        Block both = Block.concat(L, R);
-
-        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
-        plan.addAll(bgpSteps(both, W));                                  // AND-branch: ⊗ over P1∪P2 -> answer (factored)
-        // DIFF-branch: P1-only answers with ⊖. UNLIKE MINUS this is UNGUARDED — OPTIONAL's negative
-        // branch must subtract even when the operands share no variable. subFeeds reifies P1 and P2
-        // in one WHERE, so disjoint operands cross-product and every P2 feeds every P1 subtrahend
-        // (⊖(⊕_{P1}, ⊕ all P2)); a shared variable instead makes it a natural join. Guarding this on
-        // shared variables (as MINUS does) would leave a bare P1 present even when P2 matches — wrong.
-        LinkedHashSet<String> V1 = vars(L.patterns), V2 = vars(R.patterns);
-        String p1Tag = "P1@" + bgpFingerprint(L);
-        String p2Tag = "P2@" + bgpFingerprint(R);
-        String opFp = diffFingerprint(L, Collections.singletonList(R));
-        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
-        plan.addAll(marginalPlus(R, "b", "urn:g:p2:", p2Tag, V2));
-        plan.add(flatStep(subFeeds(L, R, V1, V2, p2Tag, opFp), "sub"));
-        plan.add(flatStep(minusRoot(L, V1, W, p1Tag, opFp), "minusRoot"));
-        return plan;
-    }
+    // OPTIONAL has no planner of its own: normalize() expands `A OPT B` into
+    // `Join(A,B) ∪ UnguardedDifference(A,B)` (§3's definition of Opt), so the AND-branch is planned as
+    // an ordinary BGP and the negative branch by minusPlan with the guard switched off. That expansion
+    // emits exactly the plan the former optionalPlan did, in the same order.
 
     /**
      * ⊕ keyed by {@code groupVars} (the P1/P2 marginal that feeds a ⊖). In FACTORED mode this is min-scope
