@@ -60,6 +60,25 @@ public class CircuitRewriter {
     private final ConstructionMode constructionMode;
     private final String workspaceId;
     private String generatedPrefix = "__sc0_";
+    /**
+     * The answer ⊕'s PATTERN TAG (Def. 4.6's θ): a canonical serialization of the outer
+     * projection node — the normalized query body plus the projected variable tuple.
+     *
+     * <p>Every other ⊕/⊖ gate already carries one ({@code P1@}/{@code P2@}/{@code SUB@}/{@code M@}
+     * from {@link #bgpSemanticKey}, {@code BASE@}/{@code MARG@} from {@link FactoredBgpRewriter},
+     * {@code R|<fp>} from the path plan). The answer gate used the bare constant {@code "A"}, so two
+     * DIFFERENT queries minted byte-identical answer roots for the same binding; merging their
+     * circuits in one store silently OR-ed unrelated Boolean functions together. A ⊗ gate may safely
+     * collide across queries — its id is its sorted child multiset, so equal id ⇒ equal function —
+     * but a ⊕/⊖ id is (tag, binding) and its function is whatever {@code c:feeds}/{@code c:minuend}
+     * edges accumulate, so an untagged collision is aliasing, not sharing. Hence Def. 4.6 gives
+     * {@code id_⊗} no pattern tag and {@code id_⊕^θ}/{@code id_⊖^θ} one.
+     *
+     * <p>Set once per query, BEFORE any plan step is emitted, and used byte-identically by every
+     * answer-gate site (flat BGP, factored BGP, MINUS/OPTIONAL root, zero-length branch, path
+     * projection) so those branches still converge on ONE shared answer ⊕.
+     */
+    private String answerTag = "A";
 
     public CircuitRewriter(Reification scheme) {
         this(scheme, ConstructionMode.FACTORED);
@@ -109,6 +128,7 @@ public class CircuitRewriter {
             if (!W.contains(pe.getName())) W.add(pe.getName());
         }
         TupleExpr body = normalize(projection.getArg());
+        answerTag = answerTag(body, W);              // Def. 4.6 θ; must precede every emitted step
         TupleExpr bgpCandidate = unwrapSetWrappers(body);
         // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
         // operand's group, and the factored plan has no single group for it (its passes exchange
@@ -121,7 +141,7 @@ public class CircuitRewriter {
         }
         if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)) {
             return FactoredBgpRewriter.build(scheme, generatedPrefix, workspaceId,
-                    collect(bgpCandidate), W);
+                    collect(bgpCandidate), W, answerTag);
         }
 
         List<CircuitConstructionPlan.Step> steps = branchPlan(body, W);
@@ -274,7 +294,7 @@ public class CircuitRewriter {
     private List<CircuitConstructionPlan.Step> bgpSteps(Block block, List<String> W) {
         if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
             return new ArrayList<>(FactoredBgpRewriter.build(
-                    scheme, generatedPrefix, workspaceId, block.patterns, W).steps());
+                    scheme, generatedPrefix, workspaceId, block.patterns, W, answerTag).steps());
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         plan.add(flatStep(bgp(block, W), "flat-bgp"));
@@ -297,7 +317,11 @@ public class CircuitRewriter {
         for (String w : W)
             if ((!s.hasValue() && w.equals(s.getName())) || (!o.hasValue() && w.equals(o.getName())))
                 zv.add(w);
-        StringBuilder rk = new StringBuilder("CONCAT(\"A\""), idk = new StringBuilder("CONCAT(\"A\"");
+        // rk keeps the bare "A" (a human-readable c:answer label, not an identity); idk carries the
+        // query's pattern tag so this branch's answer gate is the SAME gate the sibling BGP branch of
+        // a `:p?` UNION builds, and a DIFFERENT gate from any other query's.
+        StringBuilder rk = new StringBuilder("CONCAT(\"A\"");
+        StringBuilder idk = new StringBuilder("CONCAT(\"").append(answerTag).append("\"");
         for (String w : zv) {                                  // rk = readable label; idk = identity
             rk.append(", \"|").append(w).append("=\", STR(").append(u).append(")");
             idk.append(", ").append(termHash(w, u));
@@ -344,7 +368,7 @@ public class CircuitRewriter {
          .append("}\nWHERE {\n").append(where);
         q.append(bind(anskey, ansKey(W, setOf(W))));                 // readable label (display/debug)
         q.append(bindIri(times, "urn:g:t:", tkey));
-        q.append(bindIri(ans, "urn:g:a:", idKey(W, "A")));           // collision-resistant identity
+        q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));     // collision-resistant identity
         q.append(bindingWhere(W));                                      // recoverable per-var RDF bindings
         q.append("}\n");
         return q.toString();
@@ -461,7 +485,7 @@ public class CircuitRewriter {
         q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
         q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + opFp)));
         q.append(bind(anskey, ansKey(W, V1)));                        // readable label (W vars not in V1 -> NULL)
-        q.append(bindIri(ans, "urn:g:a:", idKey(W, "A")));            // collision-resistant identity
+        q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));      // collision-resistant identity
         q.append(bindingWhere(W));
         q.append("}\n");
         return q.toString();
@@ -641,6 +665,83 @@ public class CircuitRewriter {
     }
 
     /**
+     * Def. 4.6's pattern tag θ for the outer projection: {@code "A@" + SHA256(<body key>|W<vars>)}.
+     * Hex-only, so it embeds in a CONSTRUCT string literal without escaping, and derived purely from
+     * the normalized algebra, so it is identical on every engine (byte-identity is unaffected).
+     */
+    private static String answerTag(TupleExpr body, List<String> W) {
+        StringBuilder key = new StringBuilder("ANSWER").append(part(querySemanticKey(body))).append("|W");
+        for (String w : W) key.append(part(w));                // projection order is part of the node
+        return "A@" + sha256hex(key.toString());
+    }
+
+    /**
+     * Canonical prefix serialization of a (sub)pattern, extending {@link #bgpSemanticKey} from a BGP
+     * operand to the whole normalized body. Commutative operators are sorted so that a harmless
+     * re-association by the parser cannot change the tag: BGP conjunction inside
+     * {@code bgpSemanticKey}, and UNION alternatives here (Boolean union is associative, commutative
+     * and idempotent — the same normalization {@link #diffFingerprint} already applies). DIFF and
+     * OPTIONAL keep operand order, which is semantically load-bearing.
+     *
+     * <p>A subtree outside the fragment falls back to its node kind: the plan builder rejects such a
+     * query moments later with its own diagnostic, so the tag value is never observable — this only
+     * keeps the fingerprint from pre-empting that error message.
+     */
+    private static String querySemanticKey(TupleExpr node) {
+        if (node instanceof Distinct)   return querySemanticKey(((Distinct) node).getArg());
+        if (node instanceof Projection) return querySemanticKey(((Projection) node).getArg());
+        if (node instanceof Union) {
+            List<String> branches = new ArrayList<>();
+            flattenUnionKeys(node, branches);
+            Collections.sort(branches);
+            StringBuilder out = new StringBuilder("UNION");
+            String previous = null;
+            for (String branch : branches) {
+                if (!branch.equals(previous)) out.append(part(branch));   // ∪ is idempotent
+                previous = branch;
+            }
+            return out.toString();
+        }
+        if (node instanceof Difference) {
+            Difference d = (Difference) node;
+            return "DIFF" + part(querySemanticKey(d.getLeftArg()))
+                          + part(querySemanticKey(d.getRightArg()));
+        }
+        if (node instanceof LeftJoin) {
+            LeftJoin lj = (LeftJoin) node;
+            String key = "OPT" + part(querySemanticKey(lj.getLeftArg()))
+                               + part(querySemanticKey(lj.getRightArg()));
+            return lj.getCondition() == null ? key : key + "COND" + part(Filters.render(lj.getCondition()));
+        }
+        if (node instanceof ZeroLengthPath) {
+            ZeroLengthPath z = (ZeroLengthPath) node;
+            return "ZLP" + part(varSemanticKey(z.getSubjectVar()))
+                         + part(varSemanticKey(z.getObjectVar()));
+        }
+        if (node instanceof ArbitraryLengthPath) {
+            ArbitraryLengthPath a = (ArbitraryLengthPath) node;
+            return "ALP" + part(Long.toString(a.getMinLength()))
+                         + part(varSemanticKey(a.getSubjectVar()))
+                         + part(varSemanticKey(a.getObjectVar()))
+                         + part(querySemanticKey(a.getPathExpression()));
+        }
+        try {
+            return bgpSemanticKey(collectBlock(node));         // BGP (+ its FILTERs)
+        } catch (UnsupportedOperationException outsideFragment) {
+            return "OTHER" + part(node.getClass().getSimpleName());
+        }
+    }
+
+    private static void flattenUnionKeys(TupleExpr node, List<String> out) {
+        if (node instanceof Union) {
+            flattenUnionKeys(((Union) node).getLeftArg(), out);
+            flattenUnionKeys(((Union) node).getRightArg(), out);
+        } else {
+            out.add(querySemanticKey(node));
+        }
+    }
+
+    /**
      * Fingerprint the semantic anti-join operator, not its traversal position.  Equivalent repeated
      * DIFFs therefore hash-cons, while a different right operand (the historical
      * {@code {A MINUS P} UNION {A MINUS Q}} collision) necessarily gets a different SUB/M identity.
@@ -693,6 +794,12 @@ public class CircuitRewriter {
 
     private static String part(String value) {
         return value.length() + ":" + value;
+    }
+
+    private static String partsOf(List<String> values) {
+        StringBuilder out = new StringBuilder();
+        for (String value : values) out.append(part(value));
+        return out.toString();
     }
 
     private static List<String> canonicalVars(Set<String> vars) {
@@ -988,8 +1095,11 @@ public class CircuitRewriter {
              .append(bindIri(times, "urn:g:t:", tkeys.get(i))).append("}\n");
             baseC.add(q.toString());
         }
+        // The reach/base gates were already isolated per path by `fp`; the ANSWER gate was not, so two
+        // different path queries collapsed onto one root. Reuse `fp` as this projection's pattern tag.
+        answerTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
         return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
-                star, W, fp, generatedPrefix);
+                star, W, fp, generatedPrefix, answerTag);
     }
 
     private static PathQuery.End endOf(Var v, String name) {
@@ -1032,12 +1142,13 @@ public class CircuitRewriter {
         private final List<String> W;
         private final String fp;                                 // per-path fingerprint (isolates reach/base gates)
         private final String gp;                                 // capture-avoiding generated-variable prefix
+        private final String answerTag;                          // Def. 4.6 θ for the answer ⊕ (isolates roots)
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
         PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj,
-                  boolean star, List<String> W, String fp, String generatedPrefix) {
+                  boolean star, List<String> W, String fp, String generatedPrefix, String answerTag) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
             this.subj = subj; this.obj = obj; this.star = star; this.W = W; this.fp = fp;
-            this.gp = generatedPrefix;
+            this.gp = generatedPrefix; this.answerTag = answerTag;
         }
         private static String pv(String gp, String hint) { return "?" + gp + hint; }
         private String v(String hint) { return pv(gp, hint); }
@@ -1146,7 +1257,8 @@ public class CircuitRewriter {
                             : (obj.isVar && w.equals(obj.var) ? v("v") : null);
                 if (term != null) proj.add(new String[]{w, term});
             }
-            StringBuilder rk = new StringBuilder("CONCAT(\"A\""), idk = new StringBuilder("CONCAT(\"A\"");
+            StringBuilder rk = new StringBuilder("CONCAT(\"A\"");            // readable c:answer label
+            StringBuilder idk = new StringBuilder("CONCAT(\"").append(answerTag).append("\"");
             StringBuilder ctor = new StringBuilder(), binds = new StringBuilder();
             String ans = v("ans"), anskey = v("anskey"), rg = v("rg");
             for (String[] p : proj) {

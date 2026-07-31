@@ -1,32 +1,37 @@
+# ---- construction mode: requested=flat, effective=flat ----
 # ---- circuit construction plan: 1 CONSTRUCT(s) ----
 # --- step 1 ---
 PREFIX c: <urn:circuit:>
 CONSTRUCT {
-  ?t a c:Times ; c:in ?a0 ; c:in ?a1 ; c:in ?a2 ; c:feeds ?ans .
-  ?ans a c:Plus ; c:answer ?anskey .
+  ?__sc0_t a c:Times ; c:in ?__sc0_a0 ; c:in ?__sc0_a1 ; c:in ?__sc0_a2 ; c:feeds ?__sc0_ans .
+  ?__sc0_ans a c:Plus ; c:answer ?__sc0_anskey .
+  ?__sc0_ans c:binding ?__sc0_b_z . ?__sc0_b_z c:var "z" ; c:val ?z .
 }
 WHERE {
-	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:d:Aspirin> . 
-	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
-	?a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?x . 
-	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
-	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
-	?a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
-	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
-	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
-	?a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?z . 
-  BIND(SHA256(STR(?a0)) AS ?srt0)
-  BIND(SHA256(STR(?a1)) AS ?srt1)
-  BIND(SHA256(STR(?a2)) AS ?srt2)
-  BIND(IF(?srt0 <= ?srt1, ?srt0, ?srt1) AS ?srt3)
-  BIND(IF(?srt0 <= ?srt1, ?srt1, ?srt0) AS ?srt4)
-  BIND(IF(?srt4 <= ?srt2, ?srt4, ?srt2) AS ?srt5)
-  BIND(IF(?srt4 <= ?srt2, ?srt2, ?srt4) AS ?srt6)
-  BIND(IF(?srt3 <= ?srt5, ?srt3, ?srt5) AS ?srt7)
-  BIND(IF(?srt3 <= ?srt5, ?srt5, ?srt3) AS ?srt8)
-  BIND(CONCAT("A", "|z=", STR(?z)) AS ?anskey)
-  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?srt7, "|", ?srt8, "|", ?srt6)))) AS ?t)
-  BIND(IRI(CONCAT("urn:g:a:", SHA256(?anskey))) AS ?ans)
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:d:Aspirin> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?x . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?y . 
+	?__sc0_a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?y . 
+	?__sc0_a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:iw> . 
+	?__sc0_a2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?z . 
+  BIND(SHA256(STR(?__sc0_a0)) AS ?__sc0_srt0)
+  BIND(SHA256(STR(?__sc0_a1)) AS ?__sc0_srt1)
+  BIND(SHA256(STR(?__sc0_a2)) AS ?__sc0_srt2)
+  BIND(IF(?__sc0_srt0 <= ?__sc0_srt1, ?__sc0_srt0, ?__sc0_srt1) AS ?__sc0_srt3)
+  BIND(IF(?__sc0_srt0 <= ?__sc0_srt1, ?__sc0_srt1, ?__sc0_srt0) AS ?__sc0_srt4)
+  BIND(IF(?__sc0_srt4 <= ?__sc0_srt2, ?__sc0_srt4, ?__sc0_srt2) AS ?__sc0_srt5)
+  BIND(IF(?__sc0_srt4 <= ?__sc0_srt2, ?__sc0_srt2, ?__sc0_srt4) AS ?__sc0_srt6)
+  BIND(IF(?__sc0_srt3 <= ?__sc0_srt5, ?__sc0_srt3, ?__sc0_srt5) AS ?__sc0_srt7)
+  BIND(IF(?__sc0_srt3 <= ?__sc0_srt5, ?__sc0_srt5, ?__sc0_srt3) AS ?__sc0_srt8)
+  BIND(CONCAT("A", "|z=", IF(BOUND(?z), STR(?z), "NULL")) AS ?__sc0_anskey)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt7, "|", ?__sc0_srt8, "|", ?__sc0_srt6)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(CONCAT("A@388ead5cd722bda81bbe92aa063e88671722783c2664d859ac05c26dc0f264b9", SHA256(CONCAT("z=", IF(!BOUND(?z), "u", IF(isIRI(?z), CONCAT("i", SHA256(STR(?z))), IF(isBlank(?z), CONCAT("b", SHA256(STR(?z))), IF(isLiteral(?z), CONCAT("l", SHA256(STR(?z)), SHA256(STR(DATATYPE(?z))), SHA256(LCASE(LANG(?z)))), "x")))))))))) AS ?__sc0_ans)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#z")) AS ?__sc0_b_z)
 }
 
-# circuit triples: 19
+# step label: flat-bgp
+# construction_ms: 76
+# circuit triples: 25

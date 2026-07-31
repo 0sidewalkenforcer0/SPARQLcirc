@@ -134,11 +134,28 @@ final SHA-256 and closes NPCS's ambiguous-concatenation hole; the resulting IRI 
 not mathematically collision-free. Repeated RDF edges are still folded by the Boolean serialization
 boundary in §3.2. **[impl]**
 
-**Answer identity & recovery.** An answer ⊕'s IDENTITY is a term-type-aware key (`idKey`): per projected
+**⊗ may share across queries, ⊕/⊖ may not.** A ⊗ gate's IRI *is* its sorted child multiset, so equal
+IRI ⇒ equal Boolean function and two queries that share a derivation may safely share the gate. A ⊕/⊖
+IRI is `(pattern tag, binding)` and says nothing about the `c:feeds`/`c:minuend` edges that later
+accumulate on it, so an IRI shared by two *different* algebra nodes is **aliasing, not sharing** — it
+ORs unrelated functions together. Hence Def. 4.6 gives `id_⊗` no pattern tag and `id_⊕^θ`/`id_⊖^θ` one,
+and every ⊕/⊖ here carries one: `P1@`/`P2@`/`SUB@`/`M@` (`bgpSemanticKey` over the operand's patterns
+*and* its FILTERs), `BASE@`/`MARG@` (factored internals), `R|<fp>` (path reach/base, plus a `c:rpath`
+guard on every match pattern), and `A@<θ>` for the answer ⊕. **[impl, verified]**
+
+**Answer identity & recovery.** An answer ⊕'s IDENTITY is its query's pattern tag `A@SHA256(θ)` — θ a
+canonical prefix serialization of the normalized body and the projected variable tuple, with commutative
+operators (BGP conjunction, UNION alternatives) sorted so a parser re-association cannot change it —
+followed by a term-type-aware key (`idKey`): per projected
 variable, a kind-tagged (IRI / blank / literal-with-datatype-and-lang / unbound) SHA-256 component, so
 distinct solutions — IRI vs same-lexical literal, differing datatype/lang, bound vs unbound — get distinct
-gate IRIs. This is **collision-resistant** (modulo SHA-256), *not* mathematically injective; the injective
-part is the delimiter-free serialization before the hash. The recoverable binding is carried by structured
+gate IRIs. θ is ONE value per query, so a UNION's branches, a MINUS root, a factored BGP and a flat BGP
+still converge on the SAME answer ⊕ — that convergence is what makes the circuit shared — while two
+different queries never do. This is **collision-resistant** (modulo SHA-256), *not* mathematically
+injective; the injective part is the delimiter-free serialization before the hash. Note θ is derived
+from the query, not the graph: the same query over two different base graphs mints the same answer IRI
+with different children, so a cross-dataset circuit store would need a dataset id in the scope.
+The recoverable binding is carried by structured
 `c:binding`/`c:var`/`c:val` nodes (the real RDF term; a variable unbound in that solution has no `c:val`).
 A literal `c:answer = "A|v=<val>|…"` is *also* emitted but is only a **human-readable debug label** —
 consumers recover answers from `c:binding`, never by parsing that string.

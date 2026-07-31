@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -61,22 +62,75 @@ public class CircuitFilterTest {
                     leaves(filtered).contains("urn:r:b"));
             assertTrue("the surviving tokens must still appear", leaves(filtered).contains("urn:r:a"));
 
-            // Def. 4.5 clause 6: no gate is created or renamed by a filter. Answer-gate identity is
-            // plan-independent, so it holds across the default (factored) route too.
-            assertTrue("a filtered BGP's answer gates must be a subset of the unfiltered ones, byte for byte",
-                    answerRoots(unfiltered).containsAll(answerRoots(filtered)));
+            // The ANSWER ⊕ is keyed by (pattern tag, binding) and its function is
+            // whatever c:feeds edges accumulate, so an id shared across queries is ALIASING, not
+            // sharing. It must therefore carry Def. 4.6's pattern tag θ, which includes the operand's
+            // FILTERs. Sharing it here would look harmless because ?y is projected (every derivation
+            // of one answer then agrees on the condition) — but the tag cannot depend on that: with
+            // the condition on a NON-projected variable the two queries give one binding genuinely
+            // different derivation sets, and an aliased root returns the unfiltered probability for
+            // the filtered query as soon as both circuits reach one store. See
+            // filterOnANonProjectedVariableDoesNotAliasTheUnfilteredAnswer below.
+            assertTrue("a filtered query's answer roots must be disjoint from the unfiltered query's",
+                    Collections.disjoint(answerRoots(unfiltered), answerRoots(filtered)));
 
-            // The full sub-circuit property is a statement about ONE plan: compare flat with flat
-            // (the unfiltered query would otherwise take the factored route, whose internal gates
-            // legitimately differ while the answer gates agree).
+            // Def. 4.7 clause 7 ("a filter builds no gate and renames none"), stated where it is
+            // actually sound: the CONTENT-addressed layer. A ⊗ gate's id IS its sorted child multiset,
+            // so equal id implies equal Boolean function and sharing one across queries is safe.
+            // Compared flat with flat, because a filtered BGP falls back to the flat plan while the
+            // unfiltered one takes the factored route, whose internal gates legitimately differ.
             Model flatUnfiltered = executePlan(con,
                     "SELECT ?y WHERE { <urn:s> <urn:p> ?y }", ConstructionMode.FLAT);
             Model flatFiltered = executePlan(con,
                     "SELECT ?y WHERE { <urn:s> <urn:p> ?y FILTER(?y != <urn:b>) }", ConstructionMode.FLAT);
-            assertTrue("the filtered circuit must be a sub-circuit of the unfiltered one",
-                    flatUnfiltered.containsAll(flatFiltered));
+            assertTrue("the filtered circuit's product layer must be a sub-circuit of the unfiltered one",
+                    productGates(flatUnfiltered).containsAll(productGates(flatFiltered)));
             assertFalse("and a strict one, since one answer is gone",
-                    flatFiltered.containsAll(flatUnfiltered));
+                    productGates(flatFiltered).containsAll(productGates(flatUnfiltered)));
+            assertTrue("a filter must introduce no leaf of its own",
+                    leaves(flatUnfiltered).containsAll(leaves(flatFiltered)));
+            // Everything below the answer gates is shared; only the roots separate.
+            assertTrue("only the answer gates may distinguish the two circuits",
+                    flatUnfiltered.containsAll(withoutAnswerLayer(flatFiltered)));
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /**
+     * The reason the answer ⊕ must carry Def. 4.6's pattern tag θ, and why θ must include the
+     * operand's FILTERs.
+     *
+     * <p>{@code ?x} has two derivations that differ only in the non-projected {@code ?z}. The
+     * condition keeps one of them, so the filtered and unfiltered queries give the SAME binding
+     * genuinely DIFFERENT derivation sets — Pr = 0.25 against 0.4375 at p = 0.5. An untagged answer
+     * gate gave both the same IRI; merging the two circuits (a shared circuit store, {@code
+     * CIRCUIT_PERSIST}, a cross-query cache) then silently answered the filtered query with the
+     * unfiltered function. Unlike a ⊗ gate, whose id determines its children, a ⊕ gate's id says
+     * nothing about the {@code c:feeds} edges that will accumulate on it, so this is aliasing.
+     */
+    @Test
+    public void filterOnANonProjectedVariableDoesNotAliasTheUnfilteredAnswer() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:1", "urn:s1", "urn:p", "urn:m1");
+            reifyLiteral(con, "urn:r:2", "urn:m1", "urn:q", 3);
+            reify(con, "urn:r:3", "urn:s1", "urn:p", "urn:m2");
+            reifyLiteral(con, "urn:r:4", "urn:m2", "urn:q", 9);
+
+            String unfilteredQuery = "SELECT ?x WHERE { ?x <urn:p> ?y . ?y <urn:q> ?z }";
+            String filteredQuery =
+                    "SELECT ?x WHERE { ?x <urn:p> ?y . ?y <urn:q> ?z FILTER(?z > 5) }";
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Set<Resource> unfiltered = answerRoots(executePlan(con, unfilteredQuery, mode));
+                Set<Resource> filtered = answerRoots(executePlan(con, filteredQuery, mode));
+                assertEquals(mode + ": one answer either way", 1, unfiltered.size());
+                assertEquals(mode + ": one answer either way", 1, filtered.size());
+                assertTrue(mode + ": the two queries must not share an answer root — their derivation "
+                                + "sets for ?x=s1 differ",
+                        Collections.disjoint(unfiltered, filtered));
+            }
         } finally {
             repo.shutDown();
         }
@@ -304,6 +358,37 @@ public class CircuitFilterTest {
     private static Set<Resource> answerRoots(Model model) {
         IRI answer = SimpleValueFactory.getInstance().createIRI(C, "answer");
         return new LinkedHashSet<>(model.filter(null, answer, null).subjects());
+    }
+
+    /**
+     * The circuit below the answer layer: drop every statement mentioning an answer gate or one of
+     * the binding nodes derived from it (those are named {@code <answerIRI>#var}, so they carry the
+     * answer IRI as a prefix and separate along with it).
+     */
+    private static Model withoutAnswerLayer(Model model) {
+        Set<String> roots = new LinkedHashSet<>();
+        for (Resource root : answerRoots(model)) roots.add(root.stringValue());
+        Model out = new LinkedHashModel();
+        for (Statement st : model) {
+            if (mentionsAnswerLayer(st.getSubject(), roots) || mentionsAnswerLayer(st.getObject(), roots)) {
+                continue;
+            }
+            out.add(st);
+        }
+        return out;
+    }
+
+    private static boolean mentionsAnswerLayer(Value term, Set<String> roots) {
+        for (String root : roots) {
+            if (term.stringValue().startsWith(root)) return true;
+        }
+        return false;
+    }
+
+    /** The ⊗ gates: content-addressed, so equal id ⇒ equal Boolean function ⇒ safe to share. */
+    private static Set<Resource> productGates(Model model) {
+        IRI times = SimpleValueFactory.getInstance().createIRI(C, "Times");
+        return new LinkedHashSet<>(model.filter(null, RDF.TYPE, times).subjects());
     }
 
     private static Set<Resource> minusRoots(Model model) {

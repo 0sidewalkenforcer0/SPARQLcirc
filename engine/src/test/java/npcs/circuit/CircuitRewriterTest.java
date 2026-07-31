@@ -241,6 +241,61 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * The answer ⊕ carries Def. 4.6's pattern tag θ, so it isolates queries without breaking the
+     * convergence the rewriting depends on.
+     *
+     * <p>Two properties, and they pull in opposite directions:
+     * <ul>
+     *   <li><b>Isolation across queries.</b> Two queries denoting different events must not mint the
+     *       same root. Before θ, {@code SELECT ?z WHERE {&lt;s&gt; &lt;p&gt; ?z}} and
+     *       {@code SELECT ?z WHERE {?z &lt;p&gt; &lt;o&gt;}} produced byte-identical answer gates for a
+     *       shared binding, and merging their circuits OR-ed the two functions together.</li>
+     *   <li><b>Convergence inside one query.</b> θ is one value per query, so UNION branches, a MINUS
+     *       root and a factored BGP still land on ONE shared answer ⊕ — which is what makes the
+     *       shared circuit shared.</li>
+     * </ul>
+     */
+    @Test
+    public void answerGatesAreIsolatedPerQueryButSharedAcrossBranchesOfOne() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:1", "urn:s", "urn:p", "urn:m");
+            reify(con, "urn:r:2", "urn:m", "urn:p", "urn:o");
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                // ?z = urn:m is an answer to both, via different events (r1 vs r2).
+                Set<Resource> forward = answerRoots(executePlan(con,
+                        "SELECT ?z WHERE { <urn:s> <urn:p> ?z }", mode));
+                Set<Resource> backward = answerRoots(executePlan(con,
+                        "SELECT ?z WHERE { ?z <urn:p> <urn:o> }", mode));
+                assertEquals(mode + ": one answer each", 1, forward.size());
+                assertEquals(mode + ": one answer each", 1, backward.size());
+                assertTrue(mode + ": distinct queries must not share an answer root",
+                        java.util.Collections.disjoint(forward, backward));
+
+                // Same query, two UNION branches, one binding: exactly ONE root, not two.
+                Set<Resource> union = answerRoots(executePlan(con,
+                        "SELECT ?z WHERE { { <urn:s> <urn:p> ?z } UNION { ?z <urn:p> <urn:o> } }", mode));
+                assertEquals(mode + ": the UNION branches must converge on one shared answer ⊕",
+                        1, union.size());
+                assertTrue(mode + ": and that root belongs to the UNION query, not to either branch "
+                                + "query taken on its own",
+                        java.util.Collections.disjoint(union, forward)
+                                && java.util.Collections.disjoint(union, backward));
+            }
+
+            // Flat and factored are two plans for the SAME query: their answer roots must agree
+            // byte for byte, or a factored branch could never merge with a flat one.
+            String query = "SELECT ?z WHERE { <urn:s> <urn:p> ?y . ?y <urn:p> ?z }";
+            assertEquals("θ is plan-independent",
+                    answerRoots(executePlan(con, query, ConstructionMode.FLAT)),
+                    answerRoots(executePlan(con, query, ConstructionMode.FACTORED)));
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());

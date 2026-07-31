@@ -50,9 +50,15 @@ final class FactoredBgpRewriter {
         this.queryFingerprint = queryFingerprint;
     }
 
+    /**
+     * @param answerTag the query's answer-gate pattern tag (Def. 4.6 θ), supplied by
+     *     {@code CircuitRewriter} so a factored branch and a flat branch of the SAME query converge
+     *     on one answer ⊕ while two DIFFERENT queries never do. Must be byte-identical to the tag
+     *     {@code CircuitRewriter.bgp}/{@code minusRoot} use.
+     */
     static CircuitConstructionPlan build(Reification scheme, String generatedPrefix,
                                          String workspaceId, List<StatementPattern> inputPatterns,
-                                         List<String> outputVariables) {
+                                         List<String> outputVariables, String answerTag) {
         if (inputPatterns.isEmpty()) {
             throw new UnsupportedOperationException("Factored construction requires a non-empty BGP.");
         }
@@ -75,13 +81,14 @@ final class FactoredBgpRewriter {
 
         FactoredBgpRewriter planner = new FactoredBgpRewriter(
                 scheme, generatedPrefix, workspaceId, fp);
-        return planner.plan(patterns, outputVariables);
+        return planner.plan(patterns, outputVariables, answerTag);
     }
 
-    private CircuitConstructionPlan plan(List<PatternEntry> patterns, List<String> outputVariables) {
+    private CircuitConstructionPlan plan(List<PatternEntry> patterns, List<String> outputVariables,
+                                         String answerTag) {
         Relation result = eliminate(patterns, new HashSet<>(outputVariables));
         steps.add(new CircuitConstructionPlan.Step(
-                answerQuery(result, outputVariables), false, "answers"));
+                answerQuery(result, outputVariables, answerTag), false, "answers"));
         return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
                 ConstructionMode.FACTORED, null);
     }
@@ -302,7 +309,7 @@ final class FactoredBgpRewriter {
         return output;
     }
 
-    private String answerQuery(Relation input, List<String> outputVariables) {
+    private String answerQuery(Relation input, List<String> outputVariables, String answerTag) {
         String inputRow = qv("f_input_row"), source = qv("f_source");
         String answer = qv("ans"), answerKey = qv("anskey");
         StringBuilder ctor = new StringBuilder();
@@ -326,7 +333,7 @@ final class FactoredBgpRewriter {
              .append(rowPattern(inputRow, input, source))
              .append("  BIND(").append(answerLabel(outputVariables, present)).append(" AS ")
              .append(answerKey).append(")\n")
-             .append(bindIri(answer, "urn:g:a:", bindingKey("A", outputVariables)))
+             .append(bindIri(answer, "urn:g:a:", bindingKey(answerTag, outputVariables)))
              .append(binds)
              .append("}\n");
         return query.toString();
