@@ -131,7 +131,8 @@ public class CircuitRewriterTest {
             Model factored = executePlan(con, query, ConstructionMode.FACTORED, "session-one");
             Model repeated = executePlan(con, query, ConstructionMode.FACTORED, "session-two");
             Model flat = executePlan(con, query, ConstructionMode.FLAT);
-            assertEquals("private session ids must not affect circuit gate identities", factored, repeated);
+            assertEquals("private session ids must not affect circuit gate identities",
+                    canonicalStatements(factored), canonicalStatements(repeated));
             Set<Resource> factoredRoots = answerRoots(factored);
             Set<Resource> flatRoots = answerRoots(flat);
             assertEquals(flatRoots, factoredRoots);
@@ -194,7 +195,7 @@ public class CircuitRewriterTest {
             Model firstCircuit = first.get(30, TimeUnit.SECONDS);
             Model secondCircuit = second.get(30, TimeUnit.SECONDS);
             assertEquals("session-local feedback must produce identical public circuits",
-                    firstCircuit, secondCircuit);
+                    canonicalStatements(firstCircuit), canonicalStatements(secondCircuit));
             assertEquals(2, answerRoots(firstCircuit).size());
             try (RepositoryConnection audit = repo.getConnection()) {
                 assertNoFactoredMetadata(audit);
@@ -439,6 +440,28 @@ public class CircuitRewriterTest {
                 Reification.STANDARD, mode, workspace).constructionPlan(query);
         CircuitRun.executeConstructionPlan(con, plan, circuit, false);
         return circuit;
+    }
+
+    /**
+     * A circuit as its canonical N-Triples line set — the same thing the cross-engine byte-identity
+     * comparison uses, and the right way to compare two circuits here.
+     *
+     * <p>{@code Model.equals} is NOT: a circuit mixes terms owned by the store ({@code MemIRI},
+     * {@code MemLiteral}) with terms the CONSTRUCT mints ({@code SimpleIRI}, {@code SimpleLiteral}),
+     * which class a given term comes back as depends on timing, and {@code LinkedHashModel}'s indexed
+     * {@code contains} can then miss a statement that is equal as RDF. Measured over 60 concurrent
+     * runs of the test below: {@code Model.equals} reported unequal twice while the sorted triple
+     * text differed zero times. Comparing models directly made this a ~1-in-10 flake with no
+     * underlying defect.
+     */
+    private static Set<String> canonicalStatements(Model model) {
+        Set<String> out = new java.util.TreeSet<>();
+        for (Statement st : model) {
+            out.add(org.eclipse.rdf4j.rio.ntriples.NTriplesUtil.toNTriplesString(st.getSubject()) + " "
+                  + org.eclipse.rdf4j.rio.ntriples.NTriplesUtil.toNTriplesString(st.getPredicate()) + " "
+                  + org.eclipse.rdf4j.rio.ntriples.NTriplesUtil.toNTriplesString(st.getObject()) + " .");
+        }
+        return out;
     }
 
     private static Set<Resource> answerRoots(Model model) {
