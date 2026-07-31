@@ -21,7 +21,7 @@ Parity is the robust, order-independent result (as in R8.3 / E7).
 ## Scale trend — FAIR, uncontended, 3-run (`g2a_provsql_vs_ours.csv`)
 Both sides measured with **nothing else running** (load ≈ 0.1), 1 warm-up + 3 timed, median. **ProvSQL** =
 `sieve` (its practical in-process exact method; the `NULL` default auto-picks the same and agrees within
-noise). **Ours** = end-to-end construct + shared ROBDD compile + WMC with the **O(N)** ordering (`1eb35bf`).
+noise). **Ours** = end-to-end construct + shared ROBDD compile + WMC with the **O(N)** ordering (`26f38df`).
 
 | SF | answers | ProvSQL (sieve) | ours end-to-end | **ours faster** |
 |--:|--:|--:|--:|--:|

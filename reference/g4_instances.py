@@ -2,7 +2,7 @@
 the 5-run median±sd of g4_rigor.py). We vary the TPC-H Q3 SPJ shape across all 5 mktsegments — 5 distinct
 instances — on BOTH ours (construct->compile->WMC) and ProvSQL, each 1 warm-up + 5 timed runs. Reports
 per-instance median [min-max] and the cross-instance mean±sd (does the latency hold across instances, not
-just runs?). Post-1e67021 jar. `g4_instances.csv`.
+just runs?). Post-2e58788 jar. `g4_instances.csv`.
 
   D4=.. LD_LIBRARY_PATH=$CONDA_PREFIX/lib PGHOST=$WS/pgsock PGPORT=54320 python3 g4_instances.py
 """

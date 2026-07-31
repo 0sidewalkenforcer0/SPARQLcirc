@@ -56,7 +56,7 @@ RDF4J reference. `SHA256` smoke test first (content-addressing depends on it).
 | distinct        | 16 | ✓ | ✓ | ✓ | ✓ |
 | **`SHA256` fn** | — | ✓ (live) | ✓ | ✓ (live) | ✓ (live) |
 
-Counts re-verified against engine fix **1e67021** (term-type-aware gate identity + recoverable
+Counts re-verified against engine fix **2e58788** (term-type-aware gate identity + recoverable
 `urn:circuit:binding` metadata; the binding triples raise the per-shape triple count vs the earlier
 pre-fix table but the byte-identity holds). **All four engines re-run on the post-fix jar** — GraphDB /
 QLever / MillenniumDB live via `verify_http.py`, Oxigraph via in-process `verify_oxigraph.py` (0.5.9) —

@@ -2,15 +2,15 @@
 
 **Single authoritative source for every headline timing (R8.1).** Regenerated on **current HEAD** under
 the corrected timer boundaries. The narrative result notes (`RESULTS.md`) deliberately carry no
-wall-clock numbers; every superseded pre-`1e67021` or single-run table was removed rather than kept as a
+wall-clock numbers; every superseded pre-`2e58788` or single-run table was removed rather than kept as a
 second source (they remain in git history). No query appears with two different totals across the repo.
 
 ## Provenance of these numbers
 
 - **Jar:** engine @ current HEAD — incl. **`PathIsoSeq`** (per-path reach/base-gate fingerprint isolation,
-  `7882a1e`) + `1e67021` (term-type-aware identity + `c:binding`); rebuilt **2026-07-12 23:56**.
-- **Timer boundaries (`90c3c3c`):** *construct* = engine CONSTRUCTs + RDF parse + answer recovery;
-  *compile* = **variable ordering + ROBDD build/init**; *WMC* = weighted count. Wider than the pre-`90c3c3c`
+  `579a7c8`) + `2e58788` (term-type-aware identity + `c:binding`); rebuilt **2026-07-12 23:56**.
+- **Timer boundaries (`7251fb7`):** *construct* = engine CONSTRUCTs + RDF parse + answer recovery;
+  *compile* = **variable ordering + ROBDD build/init**; *WMC* = weighted count. Wider than the pre-`7251fb7`
   split (which is why Q3's compile jumps from 148 ms to 3.3 s — the global variable ordering is now counted).
 - **Protocol (G4):** 1 warm-up + **5 timed runs**, median [min–max], 300 s timeout. `g4_rigor.py` → `g4_rigor.csv`.
 - **Environment:** `aisa-mgmt01`, 32 cores, 131 GB; **shared** HPC box (jobs logged); **warm** cache;
@@ -30,7 +30,7 @@ second source (they remain in git history). No query appears with two different 
   16 answers, **OBDD==PWE 15/15** — correctness holds. The order-robust-d4 motivation *for paths* is
   largely removed (it now applies to Q3's ordering step, below — not to paths).
 - **TPC-H Q3 compile+WMC is back to near-free — the earlier "3.3 s ordering" was an O(N²) bug (fixed
-  `1eb35bf`).** `leaf_order`/`global_order` used `if pl not in order` (linear list scan per leaf) = O(N²);
+  `26f38df`).** `leaf_order`/`global_order` used `if pl not in order` (linear list scan per leaf) = O(N²);
   at ~45 k tokens that was 9.9 s in isolation. Replaced by set-backed membership → **O(N), 14 ms** for the
   *identical* variable order (byte-for-byte the same DFS first-appearance list), so **WMC is unchanged**
   (re-verified: tests.py 171/171, verify_differential 24 DAGs × 5 backends 1e-16). Q3 compile+WMC is now
@@ -44,7 +44,7 @@ second source (they remain in git history). No query appears with two different 
 
 **Ours ~3× faster — honestly, after the O(N²) ordering fix.** Both numbers are 5-run under one protocol
 (ProvSQL forced-eval `sum(probability_evaluate(provenance()))`, consumed-probability checksum `sum=0.125·n`
-verified per run; ours = construct + shared ROBDD compile + WMC with the O(N) ordering, `1eb35bf`). The
+verified per run; ours = construct + shared ROBDD compile + WMC with the O(N) ordering, `26f38df`). The
 previous "comparable (6.45 vs 7.46 s)" was inflated on our side by the removable O(N²) ordering scan — with
 that gone, ours is **2.63 s** and genuinely faster. Probability **parity is exact** (both 0.125·n). Framing
 (G2a): the *same* exact PQE on a **stock, unforked** engine over a **broader fragment**, now also faster
@@ -70,7 +70,7 @@ per-query at this scale — but the contribution is the unforked/broader-fragmen
 | Qrecon (reconvergent) | SF 0.01 |  247 | **316 ms** [311–323] | 795 ms [747–817] | **ours 2.5×** |
 | Qrecon (reconvergent) | SF 0.1  | 2086 | **2.97 s** [2.92–3.17] | 6.79 s [6.58–6.88] | **ours 2.3×** |
 
-5-run (1 warm-up + 5), O(N)-ordering compiler (`1eb35bf`). A naive per-answer product-sum would exceed 1
+5-run (1 warm-up + 5), O(N)-ordering compiler (`26f38df`). A naive per-answer product-sum would exceed 1
 for 243/247 (SF 0.01) and 2058/2086 (SF 0.1); the shared circuit (and ProvSQL) get it right.
 **Probability parity — definitively established** (`r8_3_reconvergent.py`, keyed by `c_custkey`): ours
 **== the closed form** `0.5·(1−0.5^K)` per answer (`cf_maxerr = 0.0`) **and** ours **== ProvSQL** per
@@ -81,7 +81,7 @@ K products — is the case the shared circuit is built for, and it wins end-to-e
 
 ## Still open
 
-- **✓ TPC-H Q3 SF 0.1 / SF 0.3 full-pipeline ours — RESOLVED by the O(N) ordering fix** (`1eb35bf`). The
+- **✓ TPC-H Q3 SF 0.1 / SF 0.3 full-pipeline ours — RESOLVED by the O(N) ordering fix** (`26f38df`). The
   "pure-Python compile bottleneck" was the O(N²) list-scan; with it gone, full end-to-end is
   **SF 0.1 = 23.3 s, SF 0.3 = 70.1 s** (fair uncontended 3-run, `g2a_provsql_vs_ours.csv`), compile+WMC now
   O(N). SF 1 still not loaded (disk).

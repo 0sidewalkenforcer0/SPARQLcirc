@@ -75,7 +75,7 @@ smaller" — dimensionless nonsense. Sizes are three separate comparisons, never
 | P2-unbound      | 149 998 | 299 996 / 749 990 = **0.4×** | 20.8 MB / 262.8 MB = **0.08×** |
 
 (structural = NPCS flat token-occurrences ÷ our shared gates+edges, with `T_string` = *actual* per-product
-tokens (`406ddbe`); serialized = raw UTF-8 string bytes ÷ N-Triples bytes. Ratio < 1 ⇒ **ours larger**.)
+tokens (`e6fa2c7`); serialized = raw UTF-8 string bytes ÷ N-Triples bytes. Ratio < 1 ⇒ **ours larger**.)
 
 **Findings.**
 
@@ -227,8 +227,8 @@ by a **local linear WMC of the dump** (`ddnnf_wmc.py`), never `d4 -mc`.
 - **Real-circuit probabilities are ground-truth correct and order-independent** — 26/26 sampled answers,
   including all 16 reconvergent property-path answers. PWE uses no compilation and no variable order, so
   the headline numbers do not depend on the OBDD heuristic.
-- **`PathIsoSeq` removed the reconvergent-path blow-up.** The `1e67021` un-merging briefly produced huge
-  WD-path cones (19 → 233 tokens); per-path fingerprint isolation (`7882a1e`) collapses them to **≤ 20
+- **`PathIsoSeq` removed the reconvergent-path blow-up.** The `2e58788` un-merging briefly produced huge
+  WD-path cones (19 → 233 tokens); per-path fingerprint isolation (`579a7c8`) collapses them to **≤ 20
   tokens**, so the fixed-order OBDD compiles them trivially and PWE covers all 16. The
   "order-robust d4 for paths" motivation is gone for these paths; E4's synthetic high-treewidth families
   remain the real order-robustness case.
@@ -242,7 +242,7 @@ by a **local linear WMC of the dump** (`ddnnf_wmc.py`), never `d4 -mc`.
 
 ## 6. Space and memory at scale *(G8)*
 
-`g8_space_memory.py` → `g8_space_memory.csv`, post-`1e67021` jar.
+`g8_space_memory.py` → `g8_space_memory.csv`, post-`2e58788` jar.
 
 **Peak build memory.** Building the Wikidata `P279+` path on a **2.13-billion-triple** store, the
 `CircuitRun` client peaks at **161 MB** RSS (8 g cap, 2.6 s wall). The client footprint is bounded by
@@ -261,7 +261,7 @@ heap. This is the memory result behind "paths at KG scale".
 **Findings.**
 
 - **Provenance structure is unchanged by the identity fix; raw bytes roughly doubled.** `gates+edges` is
-  identical pre/post-`1e67021` for these BGP shapes; the N-Triples growth (P2-unbound 133 → 263 MB) is
+  identical pre/post-`2e58788` for these BGP shapes; the N-Triples growth (P2-unbound 133 → 263 MB) is
   purely the `urn:circuit:binding` / `c:var` / `c:val` **answer-recovery metadata**, a separable
   recoverability feature.
 - **The compiled form is tiny; the serialization is IRI-heavy.** Gates are content-addressed with

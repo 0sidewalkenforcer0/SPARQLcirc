@@ -129,6 +129,15 @@ authoritative for commit, binary hashes, runtime values and endpoint probes.
 An inapplicable gate must be stated as such; it must not silently become a zero, a timeout, or a
 substituted implementation.
 
+**One caveat on the recorded commit (item 1).** On 2026-08-01 the history was rewritten to drop
+co-author trailers from commit messages. Every tree is byte-identical across the rewrite, but every SHA
+moved, so the 40-character `commit` value stored in the result CSVs points at a pre-rewrite commit that
+`git show` no longer resolves. Those columns were deliberately **not** edited: `commit` is hashed into
+each row's `run_identity_sha256` and cross-checked against the completion proof and the circuit-cache
+sidecars, so rewriting it in place would break the very audit chain it exists to protect. Resolve an old
+value through [`../reference/paper/commit_map_2026-08-01.tsv`](../reference/paper/commit_map_2026-08-01.tsv)
+(all 252 commits, `old_sha` → `new_sha`) instead.
+
 **Reference host** (the environment behind the committed numbers): AlmaLinux 9.7, kernel 5.14 x86_64,
 AMD EPYC 7302 16-core (1 socket, 32 logical CPUs, 1 NUMA node, 128 MiB L3), 125 GiB RAM, 48 GiB swap,
 NFS repository filesystem with local `/tmp` for scratch. Keep compiler scratch and per-run CNFs **off

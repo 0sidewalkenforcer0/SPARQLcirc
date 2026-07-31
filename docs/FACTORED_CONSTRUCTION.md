@@ -139,7 +139,7 @@ Query: `SELECT ?x WHERE { ?x :hobby ?s . ?x :skill ?k }` (project `?x`; `?s,?k` 
 
 ## 6. Current implementation status
 
-Factored BGP is **implemented in the Java engine and is the default** (`ConstructionMode.FACTORED`, `49d3120`);
+Factored BGP is **implemented in the Java engine and is the default** (`ConstructionMode.FACTORED`, `6ba3ebd`);
 flat is retained for **ablations and read-only endpoints**.
 
 | | factored (default) | flat (ablation / read-only) |
@@ -219,7 +219,7 @@ minusRoot       → ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?
 1. **Positioning is settled — it is a core system contribution.** Factored BGP is the shipped engine default
    (`ConstructionMode.FACTORED`), not a reference-only optimization; E2/E5 compactness is a property of the
    Java engine, reproducible on any writable endpoint.
-2. **~~Port factored BGP into the Java engine.~~ Done** (`49d3120`; hardened by `dc13dd2`/`a2b9c7c`).
+2. **~~Port factored BGP into the Java engine.~~ Done** (`6ba3ebd`; hardened by `72fb887`/`11d8a07`).
    `FactoredBgpRewriter` emits one CONSTRUCT per eliminated variable (base → join → marginalize → answers) as a
    `CircuitConstructionPlan`, dispatched from `CircuitRewriter.constructionPlan()` for pure BGPs. Needs a
    **writable endpoint** — each step INSERTs a private `urn:sc:` message relation fed back by `CircuitRun`
@@ -240,7 +240,7 @@ minusRoot       → ?m a c:Minus ; c:minuend ?p1 ; c:subtrahend ?sub ; c:feeds ?
    selective shapes are now S-star **9.5×** (874→92 gates @100M), L-path/F-snow a **tie** (158/26 vs 249/35),
    MINUS identical. The decisive win is the **unbound reconvergent** regime the bound cells never exercised —
    `unbound_factored_vs_flat.py`: flat exponential vs factored polynomial, **26.4× by k=7** (65 552 vs 2 480).
-8. **~~Source-restriction pushdown~~ Done** (`6505ab8`) — see §6 update; verified `WMC(flat)==WMC(factored)`
+8. **~~Source-restriction pushdown~~ Done** (`5472a41`) — see §6 update; verified `WMC(flat)==WMC(factored)`
    (max 6e-17) and unbound gate counts byte-identical before/after (scoped strictly to selective queries).
 9. **Lock the invariant in CI.** `WMC(flat) == WMC(factored) == PWE` on every shape (extends E5 + gallery),
    so a factoring bug shows up as a probability mismatch, not a silent wrong answer.

@@ -9,9 +9,9 @@ on the same 2.13 B-triple Wikidata graph, same `P279+` query (16 answers).
 
 | variant | reach/answer-gate keying | correctness | WD-path cones | OBDD compile | source |
 |---|---|:--:|--:|--:|---|
-| **merged** (pre-`1e67021`) | raw `CONCAT("A\|x=",STR(?x),…)` — erases term type/datatype/lang/bound; unescaped `\|` delimiter | **✗ WRONG** | (small — wrongly) | ~1 ms | `verify_answer_keys.py` (6 counterexamples) |
-| **shared** (`1e67021`) | `termHash()` — kind-tagged (i/l/b/u), keeps lexical+datatype+lang; but reach gates **shared across paths** | ✓ OBDD==PWE | **19 → 233 tok** | **5.75 s** | measured pre-`PathIsoSeq` (git history) |
-| **isolated** (`7882a1e` `PathIsoSeq`) | `termHash()` **+ per-path fingerprint** on reach/base gates | ✓ OBDD==PWE | **1 → 20 tok** | **~1 ms** | `CANONICAL_TIMINGS.md`, `RESULTS.md` §5 |
+| **merged** (pre-`2e58788`) | raw `CONCAT("A\|x=",STR(?x),…)` — erases term type/datatype/lang/bound; unescaped `\|` delimiter | **✗ WRONG** | (small — wrongly) | ~1 ms | `verify_answer_keys.py` (6 counterexamples) |
+| **shared** (`2e58788`) | `termHash()` — kind-tagged (i/l/b/u), keeps lexical+datatype+lang; but reach gates **shared across paths** | ✓ OBDD==PWE | **19 → 233 tok** | **5.75 s** | measured pre-`PathIsoSeq` (git history) |
+| **isolated** (`579a7c8` `PathIsoSeq`) | `termHash()` **+ per-path fingerprint** on reach/base gates | ✓ OBDD==PWE | **1 → 20 tok** | **~1 ms** | `CANONICAL_TIMINGS.md`, `RESULTS.md` §5 |
 
 ## What each variant shows
 
@@ -48,7 +48,7 @@ reinterpreted as this ablation).
 
 - The **merged** row's correctness failure is demonstrated by `verify_answer_keys.py` on minimal reified
   data (runnable on the current jar as a *regression* — it asserts the fix); the historical *timing* of the
-  merged variant is not re-measured (it would require rebuilding the pre-`1e67021` jar, and its circuit is
+  merged variant is not re-measured (it would require rebuilding the pre-`2e58788` jar, and its circuit is
   wrong anyway). The **shared** and **isolated** timings are this session's measured 5-run numbers.
 - Orthogonal path dimensions not varied here (single-source vs all-pairs, `p+`/`p*`/`p?`, `P279+`/`P131+`)
   are a *coverage* axis (which paths the method supports), separate from this *design/keying* ablation.
@@ -66,7 +66,7 @@ check the circuit builds with correct WMC. All on the current jar; `WMC==PWE` sa
 
 ### Honest limits found in the sweep
 
-- **Compound `alt`/inverse closure** — the engine **fail-fasts** (rc=1, the `90c3c3c` path-modifier guard)
+- **Compound `alt`/inverse closure** — the engine **fail-fasts** (rc=1, the `7251fb7` path-modifier guard)
   rather than silently mis-computing an unsupported compound path. Correct behaviour, but a coverage
   boundary: bounded single-predicate `p+`/`p*`/`p?` are supported; arbitrary compound-subpath closures not.
 - **Dense cyclic `friendOf+`** from a highly-connected WatDiv user (225 direct edges) fails the build with

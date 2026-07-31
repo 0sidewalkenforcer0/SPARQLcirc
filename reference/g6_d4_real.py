@@ -81,7 +81,7 @@ def main():
         pwe_ok = pwe_tot = d4_ok = d4_tot = 0; dsizes = []; dms = []
         for i, (node, key) in enumerate(roots):
             ntok = len(compile_bdd.leaf_order(circ, node))
-            # OBDD/PWE only for small cones — post-1e67021 path cones reach 200+ tokens where a
+            # OBDD/PWE only for small cones — post-2e58788 path cones reach 200+ tokens where a
             # fixed-order ROBDD (and brute PWE = 2^tok) blow up; those are reported by d4 (d-DNNF) only.
             small = ntok <= PWE_MAX_TOK
             obdd = compile_bdd.probability(circ, node, P)[0] if small else None

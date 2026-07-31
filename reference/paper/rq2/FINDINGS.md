@@ -70,7 +70,7 @@ IRIs (`.../wsdbm/User71713`), so `npcs_leaves` is an exact statement-id count. N
 
 ## E-C1b non-monotone coverage (2026-07-24)
 
-Spec `b35a5fd` asked for factored on OPTIONAL and N+flat+factored on MINUS.
+Spec `30dda02` asked for factored on OPTIONAL and N+flat+factored on MINUS.
 
 ### factored on OPTIONAL / MINUS: BLOCKED (engine limitation)
 `--methods C` without `PCM_FORCE_FLAT` on O and M returns **`ConstructionProtocolError` (requested=factored, effective=flat) on all 10 cells**. CircuitRun emits a factored (feedback) plan only for pure BGP (C/F/L/S); for OPTIONAL/MINUS it produces a flat plan, and the harness flags the mismatch. So factored-O/M is not a run gap but an **engine capability gap** (paper_construction_matrix.py:1725,1787). Realising the spec's idea (compress reconvergent OPTIONAL via factoring) needs CircuitRun to support factored variable-elimination on the non-monotone positive part.
@@ -89,7 +89,7 @@ Spec `b35a5fd` asked for factored on OPTIONAL and N+flat+factored on MINUS.
 
 ## E-C1b factored O/M now runs (engine fix) — but factored ≈ flat on WatDiv (2026-07-25)
 
-The engine now supports factored construction for OPTIONAL/MINUS/UNION (was flat-only; commit 9df1028).
+The engine now supports factored construction for OPTIONAL/MINUS/UNION (was flat-only; commit 2d14a0a).
 Verified exact: factored MINUS/OPTIONAL WMC == possible-world enumeration == flat (Δ=0); 10/10 unit
 tests; flat-mode output unchanged. So factored O/M can now enter the figure.
 
@@ -111,7 +111,7 @@ sub-structure — there is nothing for variable elimination to factor, hence fac
 bound-BGP finding). Factoring's real compaction win is the *reconvergent* regime (unbound joins), which
 the synthetic sweep `reference/watdiv/unbound_factored_vs_flat.csv` already captures.
 
-**Consequence for the figure/§Compactness:** the b35a5fd hypothesis (factored compresses OPTIONAL on
+**Consequence for the figure/§Compactness:** the 30dda02 hypothesis (factored compresses OPTIONAL on
 WatDiv) does **not** hold. For O/M on WatDiv, factored = flat, so the figure can use flat; the OPTIONAL
 caveat (flat/factored-O ≫ NPCS, because NPCS lacks exact non-monotone PQE) **remains** and should be
 framed as size-for-capability. factored-MINUS is additionally more expensive to construct at scale.
