@@ -426,6 +426,98 @@ public class CircuitRewriterTest {
         }
     }
 
+    /**
+     * A composite JOIN operand. Def. 4.7 clause 3 allows any subpattern there, but the rewriting
+     * reifies operands inline, which only a BGP supports. A MINUS operand is now materialized as a
+     * private {@code urn:sc:} row relation carrying its binding columns and its ⊖ gate — clause 2's
+     * recipe for an operand that cannot be reified — and the join reads that relation, contributing
+     * the ⊖ gate as a single ⊗ child.
+     *
+     * <p>Checked over all 2^3 worlds: {@code { {A MINUS C} . D }} must denote {@code t1 ∧ ¬t2 ∧ t3}.
+     * The materialized route also needs a writable endpoint, so the plan must declare feedback.
+     */
+    @Test
+    public void aMinusMayBeAJoinOperandAndDenotesTheRightEvent() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:s", "urn:p", "urn:b");
+            reify(con, "urn:r:t2", "urn:s", "urn:r", "urn:e");
+            reify(con, "urn:r:t3", "urn:s", "urn:t", "urn:f");
+            String[] tokens = {"urn:r:t1", "urn:r:t2", "urn:r:t3"};
+            String query = "SELECT ?x WHERE { { ?x <urn:p> ?y MINUS { ?x <urn:r> ?w } } ?x <urn:t> ?v }";
+
+            assertTrue("a materialized operand needs a writable endpoint, so the plan must say so",
+                    new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-operand")
+                            .constructionPlan(query).requiresFeedback());
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Model circuit = executePlan(con, query, mode);
+                Set<Resource> roots = answerRoots(circuit);
+                assertEquals(mode + ": one answer", 1, roots.size());
+                Resource root = roots.iterator().next();
+                for (int bits = 0; bits < 8; bits++) {
+                    Set<String> world = new LinkedHashSet<>();
+                    for (int i = 0; i < 3; i++) if ((bits & (1 << i)) != 0) world.add(tokens[i]);
+                    boolean expected = world.contains("urn:r:t1") && !world.contains("urn:r:t2")
+                            && world.contains("urn:r:t3");
+                    assertEquals(mode + ": world " + world, expected,
+                            evaluate(circuit, root, world, new HashMap<>()));
+                }
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /**
+     * Two OPTIONALs — {@code LeftJoin(LeftJoin(A,B),C)} — the shape real queries hit most often and the
+     * one that could not be reached by reordering. normalize expands both into
+     * {@code Union(Join, Diff)} and distributes, leaving four branches of which one,
+     * {@code Join(Diff(A,B),C)}, is a join over a materialized operand.
+     *
+     * <p>The all-unbound answer is the discriminating one: it must denote {@code t1 ∧ ¬t2 ∧ ¬t3}.
+     */
+    @Test
+    public void twoOptionalsPlanAndTheUnmatchedAnswerIsDoublyNegated() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t1", "urn:s", "urn:p", "urn:b");
+            reify(con, "urn:r:t2", "urn:s", "urn:r", "urn:e");
+            reify(con, "urn:r:t3", "urn:s", "urn:t", "urn:f");
+            String[] tokens = {"urn:r:t1", "urn:r:t2", "urn:r:t3"};
+            String query = "SELECT ?x ?w ?v WHERE { ?x <urn:p> ?y "
+                         + "OPTIONAL { ?x <urn:r> ?w } OPTIONAL { ?x <urn:t> ?v } }";
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Model circuit = executePlan(con, query, mode);
+                Set<Resource> roots = answerRoots(circuit);
+                assertEquals(mode + ": ?w and ?v each bound or not", 4, roots.size());
+                // the answer where neither optional matched: no c:val on either optional variable
+                Resource unmatched = null;
+                for (Resource root : roots) {
+                    int bound = 0;
+                    for (Value b : circuit.filter(root, SimpleValueFactory.getInstance()
+                            .createIRI(C, "binding"), null).objects()) {
+                        if (!circuit.filter((Resource) b, SimpleValueFactory.getInstance()
+                                .createIRI(C, "val"), null).isEmpty()) bound++;
+                    }
+                    if (bound == 1) unmatched = root;                 // only ?x carries a value
+                }
+                assertNotNull(mode + ": the neither-matched answer must exist", unmatched);
+                for (int bits = 0; bits < 8; bits++) {
+                    Set<String> world = new LinkedHashSet<>();
+                    for (int i = 0; i < 3; i++) if ((bits & (1 << i)) != 0) world.add(tokens[i]);
+                    boolean expected = world.contains("urn:r:t1") && !world.contains("urn:r:t2")
+                            && !world.contains("urn:r:t3");
+                    assertEquals(mode + ": world " + world, expected,
+                            evaluate(circuit, unmatched, world, new HashMap<>()));
+                }
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     @Test
     public void circuitGeneratedVariablesCannotCaptureUserVariables() {
         Repository repo = new SailRepository(new MemoryStore());
@@ -584,10 +676,14 @@ public class CircuitRewriterTest {
                                     Map<Resource, Boolean> memo) {
         Boolean known = memo.get(node);
         if (known != null) return known;
-        IRI times = SimpleValueFactory.getInstance().createIRI(C, "Times");
-        IRI plus = SimpleValueFactory.getInstance().createIRI(C, "Plus");
-        IRI in = SimpleValueFactory.getInstance().createIRI(C, "in");
-        IRI feeds = SimpleValueFactory.getInstance().createIRI(C, "feeds");
+        SimpleValueFactory vf = SimpleValueFactory.getInstance();
+        IRI times = vf.createIRI(C, "Times");
+        IRI plus = vf.createIRI(C, "Plus");
+        IRI minus = vf.createIRI(C, "Minus");
+        IRI in = vf.createIRI(C, "in");
+        IRI feeds = vf.createIRI(C, "feeds");
+        IRI minuend = vf.createIRI(C, "minuend");
+        IRI subtrahend = vf.createIRI(C, "subtrahend");
         boolean value;
         if (model.contains(node, RDF.TYPE, times)) {
             value = true;
@@ -599,6 +695,13 @@ public class CircuitRewriterTest {
             for (Resource child : model.filter(null, feeds, node).subjects()) {
                 value |= evaluate(model, child, world, memo);
             }
+        } else if (model.contains(node, RDF.TYPE, minus)) {
+            // Eq. (3): ⊖(C,d) = (∨C) ∧ ¬d. Without this branch a ⊖ gate fell through to the leaf case
+            // and read as FALSE in every world, which silently weakened every non-monotone assertion.
+            Value pos = model.filter(node, minuend, null).objects().iterator().next();
+            Value neg = model.filter(node, subtrahend, null).objects().iterator().next();
+            value = evaluate(model, (Resource) pos, world, memo)
+                    && !evaluate(model, (Resource) neg, world, memo);
         } else {
             value = world.contains(node.stringValue());
         }

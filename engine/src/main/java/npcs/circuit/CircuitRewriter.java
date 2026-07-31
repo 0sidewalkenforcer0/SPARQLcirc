@@ -79,6 +79,8 @@ public class CircuitRewriter {
      * projection) so those branches still converge on ONE shared answer ⊕.
      */
     private String answerTag = "A";
+    /** Distinguishes the gate variables of several materialized operands in one CONSTRUCT. */
+    private int operandSerial = 0;
 
     public CircuitRewriter(Reification scheme) {
         this(scheme, ConstructionMode.FACTORED);
@@ -372,7 +374,47 @@ public class CircuitRewriter {
             plan.add(flatStep(zeroLengthPlan((ZeroLengthPath) body, W), "zerolen"));
             return plan;
         }
-        return bgpSteps(collectBlock(body), W);               // pure BGP branch: factored in FACTORED mode
+        // JOIN. Def. 4.7 clause 3 allows arbitrary subpatterns as operands; the rewriting reifies them
+        // INLINE, which only a BGP supports. normalize() has already removed UNION and OPTIONAL from
+        // operand position, so the one composite that can remain is a Difference — and clause 2 says
+        // what to do with an operand that cannot be reified inline: materialize its output as "a
+        // relation whose ordinary columns contain the extensions and whose gate column contains the
+        // corresponding root", then read that relation instead. See planOperand.
+        List<TupleExpr> parts = flattenJoin(body);
+        boolean composite = false;
+        for (TupleExpr part : parts) if (part instanceof Difference) { composite = true; break; }
+        if (!composite) {
+            return bgpSteps(collectBlock(body), W);           // pure BGP branch: factored in FACTORED mode
+        }
+        if (!Filters.of(body).isEmpty()) {
+            throw new UnsupportedOperationException(
+                "Unsupported: a FILTER over a join that has a MINUS/OPTIONAL operand. The condition's "
+              + "group spans an operand read from a materialized relation, where the filter's scope "
+              + "cannot be reproduced. Move the FILTER inside the operand that binds its variables.");
+        }
+        List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
+        List<Operand> operands = new ArrayList<>();
+        for (TupleExpr part : parts) operands.add(planOperand(part, plan));
+        plan.add(flatStep(productAnswer(operands, W), "join-operands"));
+        return plan;
+    }
+
+    /** A join's operands, with the Join spine flattened away (⋈ is associative and commutative). */
+    private static List<TupleExpr> flattenJoin(TupleExpr node) {
+        List<TupleExpr> out = new ArrayList<>();
+        flattenJoin(node, out);
+        return out;
+    }
+
+    private static void flattenJoin(TupleExpr node, List<TupleExpr> out) {
+        if (node instanceof Join) {
+            flattenJoin(((Join) node).getLeftArg(), out);
+            flattenJoin(((Join) node).getRightArg(), out);
+        } else if (node instanceof Filter) {
+            flattenJoin(((Filter) node).getArg(), out);        // the condition is handled by Filters.of
+        } else {
+            out.add(node);
+        }
     }
 
     private CircuitConstructionPlan.Step flatStep(String query, String label) {
@@ -465,6 +507,138 @@ public class CircuitRewriter {
         q.append(bindIri(times, "urn:g:t:", tkey));
         q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));     // collision-resistant identity
         q.append(bindingWhere(W));                                      // recoverable per-var RDF bindings
+        q.append("}\n");
+        return q.toString();
+    }
+
+    // --------------------------- composite join operands ---------------------------
+    /**
+     * What a JOIN can take as an operand: something that contributes a graph pattern binding its
+     * variables, plus the ⊗-children its gate contributes.
+     *
+     * <p>A BGP operand is reified inline and contributes one child per triple pattern, exactly as
+     * before. A composite operand has been materialized as a private {@code urn:sc:} row relation and
+     * contributes ONE child, its root gate — Def. 4.7's {@code reif(P, g_P)} for a non-atomic P.
+     */
+    private abstract class Operand {
+        abstract void emit(StringBuilder where, String prefix, List<String> children);
+    }
+
+    private final class BgpOperand extends Operand {
+        private final Block block;
+        BgpOperand(Block block) { this.block = block; }
+        @Override void emit(StringBuilder where, String prefix, List<String> children) {
+            where.append(reify(block, prefix, children));
+        }
+    }
+
+    private final class RelationOperand extends Operand {
+        private final String relationIri;
+        private final List<String> scope;                      // canonical order; the value columns
+        private final String gateVar;                          // without '?'
+        RelationOperand(String relationIri, List<String> scope, String gateVar) {
+            this.relationIri = relationIri; this.scope = scope; this.gateVar = gateVar;
+        }
+        @Override void emit(StringBuilder where, String prefix, List<String> children) {
+            where.append("\t?").append(generated(prefix + "row"))
+                 .append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <").append(relationIri)
+                 .append("> ; <").append(FactoredBgpRewriter.GATE).append("> ?").append(gateVar);
+            for (String v : scope) {
+                where.append(" ; <").append(FactoredBgpRewriter.valuePredicate(v)).append("> ?").append(v);
+            }
+            where.append(" . \n");
+            children.add(gateVar);                             // ONE ⊗ child: the operand's root gate
+        }
+    }
+
+    /**
+     * Turn one join operand into an {@link Operand}, appending the steps that build it.
+     *
+     * <p>A BGP needs nothing: it is reified inline. A Difference is planned exactly as
+     * {@link #minusPlan} plans it, except that the final step emits the {@code urn:sc:} row relation
+     * (binding columns + the ⊖ gate) instead of an answer gate — so the enclosing join can consume it
+     * "in the same manner as triple-pattern gates". A MINUS that removes nothing degenerates to its
+     * minuend and is inlined, so no relation is materialized for it.
+     */
+    private Operand planOperand(TupleExpr node, List<CircuitConstructionPlan.Step> plan) {
+        if (!(node instanceof Difference)) return new BgpOperand(collectBlock(node));
+        Difference d = (Difference) node;
+        boolean guarded = isGuarded(d);
+        Block L = collectBlock(d.getLeftArg());
+        LinkedHashSet<String> V1 = vars(L.patterns);
+        List<Block> removing = new ArrayList<>();
+        for (Block Rb : unionBlocks(d.getRightArg())) {
+            if (!guarded || !intersect(V1, vars(Rb.patterns)).isEmpty()) removing.add(Rb);
+        }
+        if (removing.isEmpty()) return new BgpOperand(L);      // the MINUS is a no-op: operand = P1
+        String p1Tag = "P1@" + bgpFingerprint(L);
+        String opFp = diffFingerprint(L, removing);
+        plan.addAll(marginalPlus(L, "a", "urn:g:p1:", p1Tag, V1));
+        for (Block Rb : removing) {
+            LinkedHashSet<String> V2 = vars(Rb.patterns);
+            String p2Tag = "P2@" + bgpFingerprint(Rb);
+            plan.addAll(marginalPlus(Rb, "b", "urn:g:p2:", p2Tag, V2));
+            plan.add(flatStep(subFeeds(L, Rb, V1, V2, p2Tag, opFp), "sub"));
+        }
+        List<String> scope = canonicalVars(V1);
+        String gateVar = generated("opg" + (operandSerial++));
+        // The relation is named by the operator fingerprint inside this run's private workspace, so two
+        // operands of one query never collide and two concurrent runs never share rows.
+        String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
+                           + ":operand:" + opFp;
+        plan.add(new CircuitConstructionPlan.Step(
+                minusRows(L, V1, p1Tag, opFp, relationIri, gateVar), true, "operand-rows"));
+        return new RelationOperand(relationIri, scope, gateVar);
+    }
+
+    /**
+     * {@link #minusRoot} for an operand rather than an answer: the same ⊖(⊕_{P1}, ⊕_{sub}) gate, but
+     * published as a row of a private relation (its binding columns and its gate) instead of feeding
+     * an answer ⊕. Circuit triples and {@code urn:sc:} rows travel in one CONSTRUCT; CircuitRun splits
+     * them by predicate, keeping the gates and feeding the rows back for the enclosing join to read.
+     */
+    private String minusRows(Block L, LinkedHashSet<String> V1, String p1Tag, String opFp,
+                             String relationIri, String gateVar) {
+        List<String> ta = new ArrayList<>();
+        StringBuilder where = reify(L, "a", ta);
+        String minus = "?" + gateVar, p1 = qv("p1"), sub = qv("sub"), row = qv("oprow");
+        StringBuilder q = new StringBuilder(PRE);
+        q.append("CONSTRUCT {\n");
+        q.append("  ").append(minus).append(" a c:Minus ; c:minuend ").append(p1)
+         .append(" ; c:subtrahend ").append(sub).append(" .\n");
+        q.append("  ").append(sub).append(" a c:Plus .\n");
+        q.append("  ").append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
+         .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ").append(minus);
+        for (String v : canonicalVars(V1)) {
+            q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(v)).append("> ?").append(v);
+        }
+        q.append(" .\n}\nWHERE {\n").append(where);
+        q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), p1Tag)));
+        q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + opFp)));
+        q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + opFp)));
+        q.append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
+                idKey(canonicalVars(V1), "OPROW@" + opFp)));
+        q.append("}\n");
+        return q.toString();
+    }
+
+    /** {@link #bgp} over a mixed operand list: one ⊗ per derivation, feeding the answer ⊕. */
+    private String productAnswer(List<Operand> operands, List<String> W) {
+        StringBuilder where = new StringBuilder();
+        List<String> children = new ArrayList<>();
+        for (int i = 0; i < operands.size(); i++) operands.get(i).emit(where, "j" + i + "_", children);
+        String tkey = emitSortedProdKey(where, children);
+        String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
+        StringBuilder q = new StringBuilder(PRE);
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        for (String c : children) q.append(" c:in ?").append(c).append(" ;");
+        q.append(" c:feeds ").append(ans).append(" .\n  ").append(ans)
+         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
+         .append("}\nWHERE {\n").append(where);
+        q.append(bind(anskey, ansKey(W, setOf(W))));
+        q.append(bindIri(times, "urn:g:t:", tkey));
+        q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));
+        q.append(bindingWhere(W));
         q.append("}\n");
         return q.toString();
     }

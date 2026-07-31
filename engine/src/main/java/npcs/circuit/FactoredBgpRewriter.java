@@ -30,8 +30,11 @@ import npcs.rewrite.Terms;
 final class FactoredBgpRewriter {
 
     static final String META_NS = "urn:sc:";
-    private static final String MESSAGE = META_NS + "message";
-    private static final String GATE = META_NS + "gate";
+    // Package-private: CircuitRewriter materializes a COMPOSITE join operand as a row relation in the
+    // same private vocabulary, so both readers agree on the shape and CircuitRun's urn:sc: prefix test
+    // feeds them back and cleans them up identically.
+    static final String MESSAGE = META_NS + "message";
+    static final String GATE = META_NS + "gate";
     private static final String VALUE = META_NS + "value:";
     private static final String PRE = "PREFIX c: <urn:circuit:>\n";
 
@@ -353,7 +356,7 @@ final class FactoredBgpRewriter {
         return rowTemplate(row, relation, gate);
     }
 
-    private static String valuePredicate(String variable) {
+    static String valuePredicate(String variable) {
         return VALUE + sha256hex(variable);
     }
 

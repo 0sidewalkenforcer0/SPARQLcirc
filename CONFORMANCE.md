@@ -40,7 +40,7 @@ tag. Item 1 is to be corrected on the paper side.
 | **1** | `e*` / `e?` zero-length root is `g⊤` in the paper, "source occurs in the graph" in both implementations | CONTRADICTS | paper (code is deliberate + documented) |
 | **2** | ~~Answer-gate identifier drops the pattern tag θ ⇒ distinct queries mint identical answer gates~~ | **FIXED** | code |
 | **3** | W3C MINUS is implemented and evaluated; the paper proves only algebraic Diff and disclaims the domain-disjointness rewriting | GAP | paper |
-| **4** | Thm. 4.13 "arbitrary compositions"; the engine requires normalizable shapes and pure-BGP join operands | GAP | paper |
+| **4** | Thm. 4.13 "arbitrary compositions"; the engine required pure-BGP join operands | **mostly FIXED in code** | code |
 | **5** | Closure atoms composed with other operators (Def. 4.7.2, Lem. 4.12, `I_C`, bind-join) are not implemented | GAP | paper |
 | **6** | Skolemization of blank nodes (Def. §4.2) is not implemented anywhere | GAP | code (or paper) |
 | **7** | Tseitin `T(C)` compiled once + conditioned on `y_r`; the d4 path compiles one CNF **per answer root** | GAP | paper |
@@ -245,10 +245,43 @@ and three residual shapes are rejected outright: right-nested
 `eval_minus` recurse into arbitrary subqueries. So the Python reference matches
 Thm. 4.13 and the engine does not.
 
-**Assessment.** `normalize`'s four identities are not in the paper at all, and
-they are load-bearing: without them the engine covers a strictly smaller language
-than Thm. 4.13 states. Either state the normal form and the residual rejections in
-§4.2, or scope Thm. 4.13 to the shapes the artifact builds.
+### Closed in code, not in the paper
+
+Rather than scope Thm. 4.13 down, the engine was made compositional. Three changes,
+each byte-identical on every shape that already worked:
+
+1. **`Join(A∪B, Z) ≡ (A⋈Z) ∪ (B⋈Z)`** — a UNION may be a join operand.
+2. **`A OPT B ≡ Join(A,B) ∪ (A DIFF B)`**, §3's own definition, applied in
+   `normalize` instead of in a dedicated planner. Both disjuncts are *total* on a
+   fixed scope, which is what lets an OPTIONAL sit under or over another operator.
+   Guarded (user MINUS) and unguarded (OPTIONAL's anti-join) differences then
+   coexist, so the kind travels on the node as `UnguardedDifference`.
+3. **Operand materialization** — Def. 4.7's `reif(P, g_P)` for a composite `P`. The
+   paper already says what it means, in clause 2, for closure atoms: "a relation
+   whose ordinary columns contain the extensions and whose gate column contains the
+   corresponding root". A `Difference` in join-operand position is now planned as
+   usual but published as a private `urn:sc:` row relation carrying its binding
+   columns and its ⊖ gate, and the join reads that relation, contributing the ⊖ gate
+   as a single ⊗ child. The mechanism is `FactoredBgpRewriter`'s message relations,
+   already exercised by every factored query.
+
+Accepted shapes went from 12 of 35 to 30 of 35. Newly covered, and verified against
+possible-world enumeration and the Python reference in both construction modes:
+a UNION, an OPTIONAL or a MINUS as a JOIN or OPTIONAL operand; **two OPTIONALs**;
+and an operator written anywhere in its group rather than only last — the
+restriction that made `{ A OPTIONAL {B} . C }` fail while `{ A . C OPTIONAL {B} }`
+worked.
+
+Still rejected, all the same residual: a `Difference` as an operand *of a
+Difference* (`A MINUS (P MINUS Q)`, `LeftJoin(A, Diff)`, `LeftJoin(Diff, ·)`,
+`MINUS` followed by `OPTIONAL`). Closing it means giving `minusPlan`'s minuend and
+subtrahend the same `Operand` treatment the join now has.
+
+**Paper-side remainder.** The normal form is still not described anywhere. §4.2
+should state it, because it is what makes Def. 4.7 executable: expand OPTIONAL,
+push UNION to the top, materialize a composite operand as a relation. Presenting
+`reif(P, g_P)` uniformly — inline for a triple pattern, a materialized relation for
+anything else — would also remove the special-case feel of clause 2.
 
 ---
 
