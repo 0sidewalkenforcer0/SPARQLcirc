@@ -1,0 +1,18 @@
+PHASE C START 2026-08-01T06:00:27Z
+oxigraph pids: reified=2891851 base=2891853
+both endpoints ready 06:00:32
+=== C1 L,S,F,O,M 06:00:32 ===
+C1 exit=0
+=== C2 C 07:40:51 ===
+C2 RESUME 2026-08-01T10:54:11Z
+C2 resume exit=1 2026-08-01T10:54:11Z
+PHASE C DONE 2026-08-01T10:54:11Z - 117 cells
+C2 RESUME 2026-08-01T10:54:45Z
+C2 resume exit=1 2026-08-01T10:54:45Z
+PHASE C DONE 2026-08-01T10:54:45Z - 117 cells
+PHASE C CLOSED 2026-08-01T10:55:56Z
+  harness killed externally at ~08:30Z during C3 (no OOM, no traceback; process-group teardown)
+  resume refused by the harness checkpoint: a timed-out slot is non-reusable, new output required
+  re-running all of class C on Oxigraph costs ~95 min and yields at most ONE extra byte-identity
+  point (C1), since C2-C and C3-C both time out -- skipped by the recorded failure policy
+  MISSING: oxigraph 10M C3 x {R,N,C}  -> deferred to Phase G
