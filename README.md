@@ -23,10 +23,33 @@ deduplicates shared gates automatically.
 
 ```mermaid
 flowchart LR
-    Q["SPARQL query<br/>+ probabilistic ABox"] -->|"γ rewrite"| C["CONSTRUCT plan<br/>plain SPARQL 1.1"]
-    C -->|"unmodified engine"| G["shared provenance circuit<br/>⊕ ⊗ ⊖ gates, as RDF"]
-    G -->|"knowledge compilation"| B["OBDD / SDD / d-DNNF"]
-    B -->|"weighted model counting"| P["exact answer<br/>probabilities"]
+    Q["SPARQL query<br/>over a probabilistic ABox"]:::io
+
+    subgraph EN["unmodified SPARQL 1.1 engine"]
+        direction TB
+        C["runs a plain CONSTRUCT"]:::step
+        G["shared provenance circuit<br/>⊕ ⊗ ⊖ gates<br/>content-addressed RDF"]:::hero
+        C --> G
+    end
+
+    subgraph CL["client"]
+        direction TB
+        K["knowledge compilation<br/>OBDD · SDD · d-DNNF"]:::step
+        W["weighted model counting"]:::step
+        K --> W
+    end
+
+    P["exact answer probabilities<br/>one per SELECT row"]:::io
+
+    Q -->|"γ rewrite"| C
+    G -->|"an ordinary RDF graph"| K
+    W --> P
+
+    classDef io fill:transparent,stroke:#6366f1,stroke-width:1.5px
+    classDef step fill:transparent,stroke:#94a3b8
+    classDef hero fill:transparent,stroke:#2563eb,stroke-width:3px
+    style CL fill:transparent,stroke:#94a3b8,stroke-dasharray:4 4
+    style EN fill:transparent,stroke:#ca8a04,stroke-width:2px,stroke-dasharray:4 4
 ```
 
 ### What has been measured
