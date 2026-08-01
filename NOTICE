@@ -33,10 +33,19 @@ engine/ (Java, see engine/pom.xml):
 
 reference/ (Python):
   PySDD (optional)       Apache-2.0     — SDD compilation
-  RDFLib (optional)      BSD-3-Clause   — independent SPARQL oracle / native factoring
+  RDFLib                 BSD-3-Clause   — independent SPARQL oracle (required by
+                                          quick_verify.py's composition differential)
   tqdm (optional)        MPL-2.0 / MIT  — progress reporting in extended experiments
-  The core reference, ROBDD/WMC, CLI, and CI smoke path use the standard library only.
+  The core reference, ROBDD/WMC and CLI use the standard library only.
 
-Benchmarks reference, but do not bundle, the WatDiv benchmark data generator
-(http://dsg.uwaterloo.ca/watdiv/) and the GraphDB triplestore
-(https://graphdb.ontotext.com/); both must be obtained separately.
+Benchmarks reference, but do not bundle, any dataset. The repository ships only
+small worked examples (the drug running example, the paper example under both
+reification schemes, the query gallery, and four checked-in circuits). The
+following must be obtained separately, each under its own licence or terms of
+use; README.md "Data Acquisition" states how each is prepared for the engine:
+
+  WatDiv data generator   http://dsg.uwaterloo.ca/watdiv/
+  TPC-H dbgen             https://www.tpc.org/tpch/         (subject to the TPC's terms)
+  Wikidata dumps          https://dumps.wikimedia.org/wikidatawiki/entities/
+  WDBench graph           https://github.com/MillenniumDB/WDBench
+  GraphDB triplestore     https://graphdb.ontotext.com/

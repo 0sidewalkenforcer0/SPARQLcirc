@@ -101,7 +101,7 @@ the operational polish is not.
 | PySDD | SDD compilation baseline | `pip install pysdd` |
 | d4 | d-DNNF compilation baseline (Linux/x86 only) | see [reference/D4_ON_LINUX.md](reference/D4_ON_LINUX.md) |
 | GraphDB 10.x | deployed-engine timings and real-KG runs | https://graphdb.ontotext.com/ (free edition, JDK 11+, port 7200) |
-| WatDiv data | real-KG scaling experiments | http://dsg.uwaterloo.ca/watdiv/ (not bundled, see [NOTICE](NOTICE)) |
+| WatDiv / TPC-H / Wikidata data | the scaling and baseline experiments | **not bundled** — see [Data Acquisition](#data-acquisition) for where each comes from and how to prepare it |
 
 Any SPARQL 1.1 endpoint that accepts `CONSTRUCT` works in place of GraphDB. The circuit
 construction uses no engine-specific features.
@@ -577,10 +577,24 @@ regenerated from `presentation/` (`make_figures.py`, `make_matrix_figures.py`, a
 
 ### Data Acquisition
 
-The WatDiv data (http://dsg.uwaterloo.ca/watdiv/) and GraphDB (https://graphdb.ontotext.com/) are
-obtained separately, as described in [NOTICE](NOTICE). The paper uses a WatDiv subset of **51,863
-triples** (`base.nt`); any WatDiv N-Triples file works with `watdiv_factor.py` and `reify.py` once
-`WATDIV_NT` points at it.
+**No benchmark data is bundled.** What ships with the repository is the worked examples — the drug
+running example, the paper example under both reification schemes, the query gallery, and four
+checked-in circuits — which is enough for `quick_verify.py`, `tests.py` and the gallery to run
+offline. Everything at scale is obtained and prepared by the reader:
+
+| Dataset | Where it comes from | Prepare it with | More |
+|---|---|---|---|
+| **WatDiv** | the [WatDiv generator](http://dsg.uwaterloo.ca/watdiv/) | `python3 reference/watdiv/reify.py base.nt base.reified.nt` — Standard reification; `--star` and `--namedgraph` produce the other two schemes | [reference/watdiv/EXPERIMENTS.md](reference/watdiv/EXPERIMENTS.md) |
+| **TPC-H** | the official [`dbgen`](https://www.tpc.org/tpch/), at SPARQLprov's scale factors `10^(i/4-2)` | `python3 reference/tpch/tbl_to_rdf.py <tbl-dir> tpch.nt` — direct mapping, deliberately left **unreified**: provenance is per *row* through the engine's `naryrel` scheme, matching ProvSQL's per-tuple granularity | [reference/tpch/README.md](reference/tpch/README.md), [provsql/README.md](provsql/README.md) |
+| **Wikidata** | a [truthy dump](https://dumps.wikimedia.org/wikidatawiki/entities/), or the [WDBench](https://github.com/MillenniumDB/WDBench) graph to match NPCS | `python3 reference/wikidata/reify_wikidata.py truthy.nt wd.statements.nt` — native statement form, queried by the engine's `Wikidata` scheme | [reference/wikidata/README.md](reference/wikidata/README.md) |
+
+Load the prepared file into GraphDB (https://graphdb.ontotext.com/, or any SPARQL 1.1 endpoint) using
+the repository configurations in `reference/{watdiv,tpch,wikidata}/repo*.ttl`. Each dataset is subject
+to its own licence or terms of use; see [NOTICE](NOTICE).
+
+The paper uses a WatDiv subset of **51,863 triples** (`base.nt`), but any WatDiv N-Triples file works
+with `watdiv_factor.py` and `reify.py` once `WATDIV_NT` points at it — the correctness results do not
+depend on the exact subset, and the scaling results state the scale they were measured at.
 
 ### Consistency With the Original NPCS (optional)
 
