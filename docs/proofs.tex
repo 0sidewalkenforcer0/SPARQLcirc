@@ -1,0 +1,318 @@
+% PVLDB (Proceedings of the VLDB Endowment) submission.
+% Style: acmart in [sigconf, nonacm] mode, per the official PVLDB template
+% (https://github.com/cwida/pvldbstyle). Converted from the ACM WWW layout.
+\documentclass[sigconf, nonacm]{acmart}
+
+%% ---- PVLDB paper-/issue-specific metadata (fill in for camera-ready) ----
+\newcommand\vldbdoi{XX.XX/XXX.XX}
+\newcommand\vldbpages{XXX-XXX}
+\newcommand\vldbvolume{XX} % TODO: set to the target PVLDB volume
+\newcommand\vldbissue{X}
+\newcommand\vldbyear{20XX}
+\newcommand\vldbauthors{\authors}
+\newcommand\vldbtitle{\shorttitle}
+% leave empty if no artifact-availability URL should be printed
+\newcommand\vldbavailabilityurl{https://github.com/0sidewalkenforcer0/SPARQLcirc}
+% 'plain' shows page numbers (review); switch to 'empty' for camera-ready
+\newcommand\vldbpagestyle{plain}
+\usepackage{babel}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\allowdisplaybreaks
+\let\Bbbk\relax
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{xspace}
+\usepackage{booktabs}
+\usepackage{tikz}
+% xcolor and amsthm-style theorem environments are provided by acmart.
+\definecolor{nodefill}{RGB}{232, 241, 252}
+\definecolor{nodedraw}{RGB}{60, 90, 140}
+\definecolor{edgecol}{RGB}{70, 70, 70}
+\definecolor{lblcol}{RGB}{25, 55, 120}
+\definecolor{cyclecol}{RGB}{170, 55, 55}
+\definecolor{probcol}{RGB}{120, 120, 120}
+% acmart defines its theorem environments at end-of-preamble, so the shared
+% 'theorem' counter only exists from 
+\begin{document}
+\title[Supplementary proofs]{Supplementary proofs for SPARQLcirc:
+Native-SPARQL Provenance Circuits for Exact Probabilistic Query Evaluation}
+\author{Jingcheng Wu}
+\affiliation{\institution{Institute for Artificial Intelligence}\city{Stuttgart}\country{Germany}}
+\author{Ratan Bahadur Thapa}
+\affiliation{\institution{Institute for Artificial Intelligence}\city{Stuttgart}\country{Germany}}
+\author{Daniel Hern\'andez}
+\affiliation{\institution{Institute for Artificial Intelligence}\city{Stuttgart}\country{Germany}}
+\author{Steffen Staab}
+\affiliation{\institution{Institute for Artificial Intelligence}\city{Stuttgart}\country{Germany}}
+\renewcommand{\shortauthors}{Wu et al.}
+\maketitle
+\pagestyle{plain}
+
+\noindent
+This document contains the full proofs of the results stated in
+\emph{SPARQLcirc: Native-SPARQL Provenance Circuits for Exact Probabilistic
+Query Evaluation}. Definition, lemma, theorem and equation numbers refer to the
+numbering of that paper; equation numbers introduced only here are local.
+
+\appendix
+\section{Proofs}\label{app:proofs}
+
+\begin{proof}[Proof of Lemma~4.5]
+Let $g$ and $g'$ be congruent. We prove $\dec g=\dec{g'}$ by cases on their common kind.
+For leaves, congruence gives $\lambda(g)=\lambda(g')=x$, and Definition~4.3 gives
+\[
+ \dec g=x=\dec{g'}.
+\]
+For $\circ\in\{\oplus,\otimes\}$, let $\star_\circ$ denote $\lor$ for $\circ=\oplus$ and $\land$ for $\circ=\otimes$. Congruence gives $\mathit{ch}(g)=\mathit{ch}(g')$, hence
+\[
+ \dec g=\mathop{\star_\circ}_{c\in\mathit{ch}(g)}\dec c
+ =\mathop{\star_\circ}_{c\in\mathit{ch}(g')}\dec c
+ =\dec{g'}.
+\]
+For difference gates, congruence gives $\mathit{pos}(g)=\mathit{pos}(g')$ and $\mathit{neg}(g)=\mathit{neg}(g')$. Therefore,
+\begin{align*}
+ \dec g
+ &=\left(\bigvee_{c\in\mathit{pos}(g)}\dec c\right)
+   \land\neg\dec{\mathit{neg}(g)}\\
+ &=\left(\bigvee_{c\in\mathit{pos}(g')}\dec c\right)
+   \land\neg\dec{\mathit{neg}(g')}\\
+ &=\dec{g'}.
+\end{align*}
+Replacing an incoming reference to $g'$ by $g$ preserves the parent formula. Induction over a topological order from the replaced gate to every answer root preserves all root formulas.
+\end{proof}
+
+\begin{proof}[Proof of Proposition~4.9]
+Let $V_Q$ be the variables of the basic pattern, let $H=V_Q\setminus W$, and let $\pi=(z_1,\ldots,z_k)$ be the elimination order. For each triple pattern $t_j$, let
+\[
+ f_j(\rho)=
+ \begin{cases}
+ x_{\rho(t_j)},&\rho(t_j)\in G,\\
+ \bot,&\rho(t_j)\notin G.
+ \end{cases}
+\]
+For a total binding $\theta:V_Q\to\adom(G)$, let
+\[
+ F(\theta)=\bigwedge_{j=1}^{m}f_j\bigl(\theta|_{\mathrm{scope}(f_j)}\bigr).
+\]
+For an output mapping $\mu$, the flat plan denotes
+\[
+ \Phi_0(\mu)=
+ \bigvee_{\substack{\theta:V_Q\to\adom(G)\\\theta|_W=\mu}}F(\theta).
+ \tag{11}\label{eq:flat-formula}
+\]
+Let $\mathcal F_i$ be the factors after eliminating $z_1,\ldots,z_i$. For a binding $\rho$ of the remaining variables, let
+\[
+ I_i(\rho)=
+ \bigvee_{\sigma:\{z_1,\ldots,z_i\}\to\adom(G)}
+ \bigwedge_{f\in\mathcal F_0}
+ f\bigl((\rho\cup\sigma)|_{\mathrm{scope}(f)}\bigr).
+ \tag{12}\label{eq:elim-invariant}
+\]
+We prove that the conjunction of the factors in $\mathcal F_i$ at $\rho$ equals $I_i(\rho)$.
+For $i=0$, Equation~\eqref{eq:elim-invariant} contains the unique empty assignment and equals the original factor conjunction.
+Assume the claim for $i-1$. Let $\mathcal A_i\subseteq\mathcal F_{i-1}$ contain exactly the factors whose scope contains $z_i$, and let $U_i=(\bigcup_{f\in\mathcal A_i}\mathrm{scope}(f))\setminus\{z_i\}$. For $a\in\adom(G)$, let $\rho_a=\rho\cup\{z_i\mapsto a\}$. Distributivity gives
+\begin{align*}
+ I_i(\rho)
+ &=\bigvee_{a\in\adom(G)}
+ \left[
+ \bigwedge_{f\in\mathcal A_i} f(\rho_a|_{\mathrm{scope}(f)})
+ \land
+ \bigwedge_{f\notin\mathcal A_i} f(\rho|_{\mathrm{scope}(f)})
+ \right]\\
+ &=h_i(\rho|_{U_i})\land
+ \bigwedge_{f\notin\mathcal A_i} f(\rho|_{\mathrm{scope}(f)}),
+\end{align*}
+which is the conjunction after replacing $\mathcal A_i$ by $h_i$. At $i=k$, restriction to $\mu$ yields Equation~\eqref{eq:flat-formula}; both plans therefore produce equivalent roots.
+The induced-width bound gives $|U_i|\le w$. Each replacement factor has at most $|\adom(G)|^w$ rows, while its product gates range over at most $|\adom(G)|^{w+1}$ assignments to $U_i\cup\{z_i\}$. Since $|\adom(G)|\le3|G|$ and there are $O(m)$ base factors and elimination steps, the gate count is $O(m|G|^{w+1})$.
+\end{proof}
+
+\begin{proof}[Proof of Lemma~4.10]
+We use structural induction on $e$; the induction claim ranges over all $u,v\in D_G$ and all $W\subseteq G$.
+
+\emph{IRI.} Let $e=p$. Definition~4.3 gives
+\begin{align*}
+ \val{W}(\dec{b^p_{uv}})=\top
+ &\Longleftrightarrow
+ \bigvee_{t=(u,p,v)\in G}\val{W}(x_t)=\top\\
+ &\Longleftrightarrow (u,p,v)\in W\\
+ &\Longleftrightarrow (u,v)\in\relpath{p}{W}.
+\end{align*}
+The empty child set yields $\bot$ on both sides.
+
+\emph{Inverse.} Let $e=\widehat{e_1}$. By construction and the induction hypothesis,
+\begin{align*}
+ \val{W}(\dec{b^{\widehat{e_1}}_{uv}})=\top
+ &\Longleftrightarrow \val{W}(\dec{b^{e_1}_{vu}})=\top\\
+ &\Longleftrightarrow (v,u)\in\relpath{e_1}{W}\\
+ &\Longleftrightarrow (u,v)\in\relpath{\widehat{e_1}}{W}.
+\end{align*}
+
+\emph{Alternative.} Let $e=e_1\mathbin{|}e_2$. Since $\dec{g_\bot}=\bot$, omitting $g_\bot$ does not change the disjunction. The two induction hypotheses yield
+\begin{align*}
+ \val{W}(\dec{b^{e_1\mid e_2}_{uv}})=\top
+ &\Longleftrightarrow
+ \val{W}(\dec{b^{e_1}_{uv}})=\top
+ \lor \val{W}(\dec{b^{e_2}_{uv}})=\top\\
+ &\Longleftrightarrow
+ (u,v)\in\relpath{e_1}{W}\lor(u,v)\in\relpath{e_2}{W}\\
+ &\Longleftrightarrow (u,v)\in\relpath{e_1\mid e_2}{W}.
+\end{align*}
+
+\emph{Sequence.} Let $e=e_1/e_2$. Equation~(4), Definition~4.3, and the induction hypotheses give
+\begin{align*}
+ \val{W}(\dec{b^{e_1/e_2}_{uv}})=\top
+ &\Longleftrightarrow \exists w\in D_G:\
+ \val{W}(\dec{b^{e_1}_{uw}})=\top\\[-1pt]
+ &\hspace{52pt}\land\val{W}(\dec{b^{e_2}_{wv}})=\top\\
+ &\Longleftrightarrow \exists w\in D_G:\
+ (u,w)\in\relpath{e_1}{W}\\[-1pt]
+ &\hspace{52pt}\land(w,v)\in\relpath{e_2}{W}\\
+ &\Longleftrightarrow (u,v)\in\relpath{e_1/e_2}{W}.
+\end{align*}
+If no midpoint satisfies the first line, the outer disjunction is empty and both sides are false. These cases exhaust the grammar.
+
+Let $d=|D_G|$. Each IRI, inverse, or alternative syntax node creates $O(d^2)$ gates. Each sequence node creates at most one union gate per endpoint pair and one product gate per endpoint triple $(u,w,v)$, hence $O(d^3)$ gates. The syntax tree has $O(|e|)$ nodes, so $C_e$ has $O(|e|d^3)$ gates. Every edge points to a proper subexpression or a leaf; expression depth is a topological order.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~4.11]
+By Lemma~4.10, $\val{W}(\dec{b^e_{uv}})=\top$ exactly when $(u,v)\in\relpath{e}{W}$. For an $e$-walk $\pi=(v_0,\ldots,v_\ell)$ in $E_s$, let
+\[
+ \psi(\pi)=\bigwedge_{j=1}^{\ell}\dec{b^e_{v_{j-1}v_j}}.
+\]
+We prove by induction on $i\ge1$ that
+\[
+ \dec{r_i(v)}=
+ \bigvee_{\substack{\pi:s\leadsto v\\1\le|\pi|\le i}}\psi(\pi).
+ \tag{13}\label{eq:path-level-invariant}
+\]
+For $i=1$, Equation~(5) is the disjunction over all one-edge $e$-walks from $s$ to $v$. Assume Equation~\eqref{eq:path-level-invariant} for $i$. Equation~(6) gives
+\begin{align*}
+ \dec{r_{i+1}(v)}
+ &=\dec{r_i(v)}\lor
+ \bigvee_{(u,v)\in E_s}
+ \bigl(\dec{r_i(u)}\land\dec{b^e_{uv}}\bigr)\\
+ &=\bigvee_{\substack{\pi:s\leadsto v\\1\le|\pi|\le i}}\psi(\pi)
+ \lor
+ \bigvee_{(u,v)\in E_s}
+ \bigvee_{\substack{\rho:s\leadsto u\\1\le|\rho|\le i}}
+ \bigl(\psi(\rho)\land\dec{b^e_{uv}}\bigr)\\
+ &=\bigvee_{\substack{\pi:s\leadsto v\\1\le|\pi|\le i+1}}\psi(\pi).
+\end{align*}
+The second disjunction appends $(u,v)$ to every represented walk ending at $u$, while the retained first disjunction contains all shorter walks.
+
+Let $n=|V_s|$. If $v\ne s$, a shortest positive $e$-walk from $s$ to $v$ contains no repeated vertex and has length at most $n-1$: removing the segment between equal vertices would otherwise yield a shorter walk. If $v=s$, the same deletion argument makes a shortest positive closed walk a simple cycle of length at most $n$. Equation~\eqref{eq:path-level-invariant} at $i=n$ therefore contains a satisfied witness for every reachable endpoint. Conversely, every satisfied term denotes an $e$-walk in $W$. This proves Equation~(7). For $e^*$, $g_\top$ supplies the zero-length case and $r_n(v)$ supplies every positive-length case.
+
+Each of the $n$ levels has at most $|V_s|$ union gates and $|E_s|$ product gates, giving $O(n(n+|E_s|))$ gates. Level $i+1$ references only $C_e$ and level-$i$ gates, so the level order is topological. Lemma~4.10 gives the global total $O(|e|\,|D_G|^3+n(n+|E_s|))$. For $e=p$, the evaluated source-restricted base circuit contains one leaf and at most one union gate for each edge in $E_s$, so it has $O(|E_s|)$ gates and the total remains $O(n(n+|E_s|))$.
+\end{proof}
+
+\begin{proof}[Proof of Lemma~4.12]
+Let $C=(\alpha,e^\diamond,?y)$, let $s=\operatorname{src}_{\rho}(\alpha)$, and let $\mu=\rho\cup\{?y\mapsto v\}$. If $\diamond=+$, Item~2 of Definition~4.7 assigns $g_C(\rho,v)=r_n(v)$. For every $W\subseteq G$, Theorem~4.11 and Equation~(2) give
+\begin{align*}
+ \val{W}(\dec{g_C(\rho,v)})=\top
+ &\Longleftrightarrow (s,v)\in\relpath{e^+}{W}\\
+ &\Longleftrightarrow \val{W}(\BProv{C}{\mu})=\top.
+\end{align*}
+If $\diamond=*$ and $v\ne s$, the same derivation applies with $e^*$. If $\diamond=*$ and $v=s$, the construction uses $g_\top$, so
+\[
+ \val{W}(\dec{g_C(\rho,v)})=\val{W}(\top)=\top
+ =\val{W}(\BProv{C}{\mu})
+\]
+for every $W$, because the zero-length path exists in every world. Thus, the two Boolean functions agree under every valuation and are equal in $\BoolX$.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~4.13]
+For a pattern $P$ and mapping $\mu$, let
+\[
+ \Phi_P(\mu)=\bigvee_{g\in\cand{P}{\mu}}\dec g,
+ \qquad \bigvee\varnothing=\bot.
+ \tag{14}\label{eq:candidate-formula}
+\]
+We prove $\Phi_P(\mu)=\BProv{P}{\mu}$ by structural induction on $P$.
+
+\emph{Triple pattern.} For a matching triple $t$, $\cand{P}{\mu}=\{x_t\}$ and
+$\Phi_P(\mu)=x_t=\BProv{P}{\mu}$. For a nonmatch, both sides are $\bot$.
+
+\emph{Closure atom.} Let $P=C=(\alpha,e^\diamond,?y)$ and write $\mu=\rho\cup\{?y\mapsto v\}$ for its input mapping $\rho\in\mathcal I_C$ and returned endpoint $v$. Item~2 of Definition~4.7 produces the corresponding root gate, and Lemma~4.12 gives
+\[
+ \Phi_C(\mu)=\dec{g_C(\rho,v)}=\BProv{C}{\mu}.
+\]
+If no endpoint row is returned, Equation~(2) is false under every valuation and both sides are $\bot$.
+
+\emph{Filter.} Let $P=\opfilter_\varphi(P')$. If $\mu\models\varphi$, then $\cand{P}{\mu}=\cand{P'}{\mu}$ and the induction hypothesis gives $\Phi_P(\mu)=\BProv{P'}{\mu}=\BProv{P}{\mu}$. If $\mu\not\models\varphi$, the retained filter yields $\cand{P}{\mu}=\varnothing$ and annotated evaluation multiplies by $0$; both sides are $\bot$.
+
+\emph{Join.} Let $P=\opjoin(P_1,\ldots,P_k)$. The candidate product gates range over compatible decompositions $\mu=\mu_1\cup\cdots\cup\mu_k$ and choices $g_i\in\cand{P_i}{\mu_i}$. Therefore,
+\begin{align*}
+ \Phi_P(\mu)
+ &=\bigvee_{\mu=\cup_i\mu_i}
+   \bigvee_{g_i\in\cand{P_i}{\mu_i}}
+   \bigwedge_{i=1}^{k}\dec{g_i}\\
+ &=\bigvee_{\mu=\cup_i\mu_i}
+   \bigwedge_{i=1}^{k}
+   \left(\bigvee_{g_i\in\cand{P_i}{\mu_i}}\dec{g_i}\right)\\
+ &=\bigvee_{\mu=\cup_i\mu_i}
+   \bigwedge_{i=1}^{k}\BProv{P_i}{\mu_i}
+ =\BProv{P}{\mu},
+\end{align*}
+where the first and last disjunctions range over compatible decompositions, the second equality uses distributivity, and the third uses the induction hypotheses.
+
+\emph{Union.} Let $P=\opunion(P_1,\ldots,P_k)$. All rows for $\mu$ bind the same gate $g_P$, with child set $\bigcup_i\cand{P_i}{\mu}$. Thus,
+\[
+ \Phi_P(\mu)=\dec{g_P}
+ =\bigvee_i\Phi_{P_i}(\mu)
+ =\bigvee_i\BProv{P_i}{\mu}
+ =\BProv{P}{\mu}.
+\]
+If every child collection is empty, no root row exists and both sides are $\bot$.
+
+\emph{Projection.} Let $P=\opproj_W(P')$. For an output mapping $\mu$, the child set of $g_P$ is $\bigcup_{\mu':\mu'|_W=\mu}\cand{P'}{\mu'}$. Hence,
+\[
+ \Phi_P(\mu)
+ =\bigvee_{\mu':\mu'|_W=\mu}\Phi_{P'}(\mu')
+ =\bigvee_{\mu':\mu'|_W=\mu}\BProv{P'}{\mu'}
+ =\BProv{P}{\mu}.
+\]
+
+\emph{Difference.} Let $P=\opdiff(P_1,P_2)$ and let $g_P,s_P$ be the gates of Definition~4.7. For every candidate $\mu$ of $P_1$,
+\begin{align*}
+ \mathit{pos}(g_P)&=\cand{P_1}{\mu},\\
+ \mathit{ch}(s_P)&=\bigcup_{\nu\sim\mu}\cand{P_2}{\nu},\\
+ \mathit{neg}(g_P)&=s_P.
+\end{align*}
+Therefore,
+\begin{align*}
+ \Phi_P(\mu)
+ &=\left(\bigvee_{g\in\cand{P_1}{\mu}}\dec g\right)
+ \land\neg\left(\bigvee_{\nu\sim\mu}\bigvee_{h\in\cand{P_2}{\nu}}\dec h\right)\\
+ &=\BProv{P_1}{\mu}\land
+ \neg\bigvee_{\nu\sim\mu}\BProv{P_2}{\nu}
+ =\BProv{P}{\mu}.
+\end{align*}
+Unfiltered $\opopt$ follows from its union-of-join-and-difference expansion.
+
+We prove Equation~(10) by induction on the same grammar. Equation~(1) proves the triple-pattern case, and Lemma~4.12 with Equation~(2) proves the closure-atom case. For a filter, both sides retain $\mu$ exactly when $\mu\models\varphi$. For a join, $\val{W}$ satisfies the circuit formula exactly when one compatible decomposition satisfies every operand formula, which is the support condition for the SPARQL join. Union and projection use disjunction over branches and projected preimages, respectively. Difference satisfies the circuit formula exactly when the left mapping occurs and no compatible right mapping occurs. These cases exhaust the supported grammar.
+
+The induction proves Equation~(9) for the outer projection root. If no candidate row exists, Equation~\eqref{eq:candidate-formula} gives $\bot$. Proper-subpattern dependencies and the path-level order yield a topological order. Proposition~4.9 proves the statement for factored basic-pattern subplans.
+\end{proof}
+
+\begin{proof}[Proof of Corollary~4.14]
+Let $g=\mathrm{root}(\mu)$. Equation~(10) gives
+\[
+ \val{W}(\dec g)=\top
+ \Longleftrightarrow
+ \mu\in\supp(\sem{Q}{W})
+\]
+for every possible world $W$. Therefore,
+\[
+ \Pr(\mu)=
+ \sum_{W\subseteq G}
+ \mathbf 1[\val{W}(\dec g)=\top]
+ \prod_{t\in W}\Pr(x_t)
+ \prod_{t\notin W}(1-\Pr(x_t)).
+ \tag{15}\label{eq:wmc}
+\]
+The right-hand side is the weighted model count of $\dec g$. d-DNNF compilation preserves the Boolean function, and WMC returns Equation~\eqref{eq:wmc} in time linear in the compiled size~\cite{darwiche2002kcmap}.
+\end{proof}
+
+
+\end{document}
