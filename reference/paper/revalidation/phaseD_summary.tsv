@@ -1,0 +1,8 @@
+step	claims	exit	seconds	log
+e4_sweep	T1,T2,T5	0	336	D_e4_sweep.log
+e11_shared	E5	0	15	D_e11_shared.log
+e11_real	E5	0	13	D_e11_real.log
+e9_tpch	E1,E2	0	2	D_e9_tpch.log
+e7_provsql	V2	2	0	D_e7_provsql.log
+wd_breadth	R1,R2	0	1033	D_wd_breadth.log
+g3_pqe	E3,E4	0	7	D_g3_pqe.log
