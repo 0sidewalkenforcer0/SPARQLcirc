@@ -246,7 +246,14 @@ def answers_rdflib(op, T):
 
 # complex shapes (and every FILTER shape): oracle via rdflib's own W3C evaluation of the .sparql
 RDFLIB_OPS = {"opt_left", "opt_right", "minus_chain", "distinct", "opt_disjoint",
-              "filter", "filter_optional", "filter_minus"}
+              "filter", "filter_optional", "filter_minus",
+              # Both were residuals the rewriter used to reject rather than mis-compile: a
+              # right-nested MINUS needed a reduction that introduces a join, and a
+              # cross-product OPTIONAL under MINUS needed one that is only sound when the
+              # operands share a variable. Materializing a composite operand as a relation
+              # removes the first, and carrying the guarded/unguarded kind on the difference
+              # node removes the second, so both are now built and checked positively.
+              "minus_rnested", "opt_xprod"}
 
 def answers(op, T):   # T = set of (s,p,o) triples that hold in this world
     if op in RDFLIB_OPS:
@@ -312,9 +319,7 @@ def check_guard():
     r = {"FILTER (NpcsRewriter, no filter rule)": npcs("filter_unsupported.sparql"),
          "FILTER EXISTS (NpcsRewriter)":  npcs("filter_exists_unsupported.sparql"),
          "FILTER EXISTS (CircuitRewriter)": circ("filter_exists_unsupported.sparql"),
-         "LIMIT (CircuitRewriter)":      circ("limit.sparql"),
-         "right-nested MINUS (Circuit)": circ("minus_rnested.sparql"),
-         "x-product OPT-in-MINUS (Circ)": circ("opt_xprod.sparql")}
+         "LIMIT (CircuitRewriter)":      circ("limit.sparql")}
     for name, ok in r.items():
         print(f"[reject  ] {name}: {'OK' if ok else 'FAIL'}")
     return all(r.values())
@@ -323,7 +328,7 @@ if __name__ == "__main__":
     allok = check_nested_evaluator()
     for op in ["atom", "join", "union", "minus", "minus_disjoint", "minus_union", "minus_p2union",
                "minus_chain", "opt_left", "opt_right", "distinct", "optional", "opt_disjoint",
-               "filter", "filter_optional", "filter_minus"]:
+               "filter", "filter_optional", "filter_minus", "minus_rnested", "opt_xprod"]:
         cw, tw = circuit_wmc(op), pwe(op)
         keys = sorted(set(cw) | set(tw))
         ok = all(abs(cw.get(k, 0.0) - tw.get(k, 0.0)) < 1e-9 for k in keys)
