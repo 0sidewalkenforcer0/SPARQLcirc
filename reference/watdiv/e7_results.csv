@@ -1,4 +1,4 @@
 instance,n_triples,answers,provsql_ms,sparqlcirc_ms,circ_gates,compiled_size,max_prob_diff,match,provsql_needs_engine_mod,ours_needs_engine_mod
-drug-3hop,8,2,3.4,0.3,13,9,1.1102230246251565e-16,True,True,False
-star-u6-d3,24,6,6.1,0.7,50,29,1.1102230246251565e-16,True,True,False
-layer-n4-f2,14,2,2.6,1.1,34,101,1.6653345369377348e-16,True,True,False
+drug-3hop,8,2,21.1,0.5,13,9,1.1102230246251565e-16,True,True,False
+star-u6-d3,24,6,54.3,0.8,50,28,5.551115123125783e-17,True,True,False
+layer-n4-f2,14,2,24.2,1.1,34,118,2.220446049250313e-16,True,True,False

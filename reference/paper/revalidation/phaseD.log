@@ -1,0 +1,24 @@
+PHASE D START 2026-08-01T10:57:18Z
+=== [10:57:18] e4_sweep (T1,T2,T5) ===
+    exit=0  336s
+=== [11:02:54] e11_shared (E5) ===
+    exit=0  15s
+=== [11:03:09] e11_real (E5) ===
+    exit=0  13s
+=== [11:03:22] e9_tpch (E1,E2) ===
+    exit=0  2s
+=== [11:03:24] e7_provsql (V2) ===
+    exit=2  0s
+=== [11:03:24] wd_breadth (R1,R2) ===
+    exit=0  1033s
+=== [11:20:37] g3_pqe (E3,E4) ===
+    exit=0  7s
+PHASE D DONE 2026-08-01T11:20:44Z
+PHASE D2 START 2026-08-01T12:11:31Z
+=== [12:11:31] e9_tpch repaired (E1,E2) ===
+=== [12:13:50] e4_sweep with d4v1 (T1,T2,T5) ===
+    exit=0
+=== [12:14:45] e7_provsql repaired (V2) ===
+    exit=1
+PHASE D2 DONE 2026-08-01T12:14:45Z
+    exit=0  2026-08-01T12:19:29Z
