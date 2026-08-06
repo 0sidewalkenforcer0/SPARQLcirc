@@ -80,7 +80,14 @@ public class CircuitRewriter {
      * projection) so those branches still converge on ONE shared answer ⊕.
      */
     private String answerTag = "A";
-    /** Distinguishes the gate variables of several materialized operands in one CONSTRUCT. */
+    /**
+     * Distinguishes the gate variables of several materialized operands in one CONSTRUCT. Reset per
+     * query by {@link #constructionPlan}: it is a within-plan counter, and letting it carry over made
+     * the emitted plan TEXT depend on how many queries the instance had already rewritten, so
+     * {@code plan(q)} twice on one rewriter returned two different strings. Gate IRIs are
+     * content-addressed and were never affected, but the plan is logged, parsed by the paper harnesses
+     * and documented as idempotent, so it has to be a function of the query alone.
+     */
     private int operandSerial = 0;
 
     public CircuitRewriter(Reification scheme) {
@@ -124,6 +131,7 @@ public class CircuitRewriter {
         QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
         initializeGeneratedVariables(te);
+        operandSerial = 0;                           // per-query counter; see the field's comment
         rejectSequenceModifiers(te);                 // LIMIT/OFFSET/ORDER BY don't apply to a circuit
         Projection projection = outerProjection(te);
         List<String> W = new ArrayList<>();
@@ -136,14 +144,7 @@ public class CircuitRewriter {
         // IRI (expanding OPTIONAL into Union(Join,Diff) otherwise would have).
         answerTag = answerTag(projection.getArg(), W);
         TupleExpr body = normalize(projection.getArg());
-        int branches = unionBranchCount(body);
-        if (branches > MAX_UNION_BRANCHES) {
-            throw new UnsupportedOperationException(
-                "Query too large after normalization: distributing JOIN and MINUS over UNION produced "
-              + branches + " branches (limit " + MAX_UNION_BRANCHES + "). Each branch is a separate "
-              + "CONSTRUCT, so the plan would be impractical. Reduce the number of UNIONs combined by "
-              + "joins, or split the query.");
-        }
+        rejectBranchBlowup(unionBranchCount(body));
         TupleExpr bgpCandidate = unwrapSetWrappers(body, W);
         // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
         // operand's group, and the factored plan has no single group for it (its passes exchange
@@ -326,6 +327,13 @@ public class CircuitRewriter {
             Join j = (Join) node;
             TupleExpr l = normalize(j.getLeftArg().clone());
             TupleExpr r = normalize(j.getRightArg().clone());
+            // Refuse the blowup BEFORE allocating it. The post-normalization check below cannot: the
+            // distributed tree has to exist for it to be counted, and n joined UNIONs build 2^n
+            // branches on the way there — measured, 14 joined UNIONs took 3s and 18 exhausted a 512M
+            // heap after 56s, so the diagnostic was never reached. This does not change WHICH queries
+            // are accepted: distribution only ever adds branches, so a Join already over the limit
+            // guarantees the final body is too, and a query that stays under it never trips this.
+            rejectBranchBlowup((long) unionBranchCount(l) * (long) unionBranchCount(r));
             if (l instanceof Union) {
                 Union u = (Union) l;
                 return normalize(new Union(new Join(u.getLeftArg().clone(), r.clone()),
@@ -347,6 +355,16 @@ public class CircuitRewriter {
      * never what the user meant; say so instead of emitting it.
      */
     private static final int MAX_UNION_BRANCHES = 256;
+
+    /** The one diagnostic for an over-wide normalization, raised from the early and the final check. */
+    private static void rejectBranchBlowup(long branches) {
+        if (branches <= MAX_UNION_BRANCHES) return;
+        throw new UnsupportedOperationException(
+            "Query too large after normalization: distributing JOIN and MINUS over UNION produced "
+          + branches + " branches (limit " + MAX_UNION_BRANCHES + "). Each branch is a separate "
+          + "CONSTRUCT, so the plan would be impractical. Reduce the number of UNIONs combined by "
+          + "joins, or split the query.");
+    }
 
     private static int unionBranchCount(TupleExpr node) {
         if (node instanceof Union) {
