@@ -675,7 +675,7 @@ public class CircuitRewriter {
     private Operand planOperand(TupleExpr node, List<TupleExpr> siblings,
                                 List<CircuitConstructionPlan.Step> plan) {
         if (node instanceof ArbitraryLengthPath) {
-            PathQuery atom = pathPlan((ArbitraryLengthPath) node, new ArrayList<>());
+            PathQuery atom = pathPlan((ArbitraryLengthPath) node, new ArrayList<>(), false);
             bindSource((ArbitraryLengthPath) node, siblings, atom);
             List<String> columns = canonicalVars(scopeOf(node));
             if (columns.isEmpty()) {
@@ -1622,14 +1622,22 @@ public class CircuitRewriter {
         if (!alp.getSubjectVar().hasValue() && !unboundPathsAllowed()) {
             throw unboundSource(alp.getSubjectVar().getName());   // nothing precedes a whole-pattern atom
         }
-        return pathPlan(alp, projectedNames(outerProjection(te)));
+        return pathPlan(alp, projectedNames(outerProjection(te)), true);
     }
 
     /**
      * Build the level-indexed plan for one closure atom. Called both for a whole-pattern path query
      * and, through {@link #planOperand}, for an atom composed with other operators.
+     *
+     * @param wholePattern true when the atom IS the query's whole pattern, so this plan also owns the
+     *     query's answer gates and supplies their pattern tag θ. False for a composed atom, whose
+     *     answer gates belong to the enclosing operator plan: the atom then publishes rows rather than
+     *     answers ({@link PathQuery#materializeRows}) and must NOT touch {@link #answerTag}. Clobbering
+     *     it there made θ a function of the closure atom alone, so any two queries sharing one atom —
+     *     {@code {<a> :p+ ?y . ?y :q ?z}} and {@code {<a> :p+ ?y . ?y :r ?z}} — minted byte-identical
+     *     answer roots, which is the aliasing θ exists to prevent.
      */
-    private PathQuery pathPlan(ArbitraryLengthPath alp, List<String> W) {
+    private PathQuery pathPlan(ArbitraryLengthPath alp, List<String> W, boolean wholePattern) {
         if (scheme != Reification.STANDARD)
             throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
         Var s = alp.getSubjectVar(), o = alp.getObjectVar();
@@ -1680,10 +1688,13 @@ public class CircuitRewriter {
             baseC.add(q.toString());
         }
         // The reach/base gates were already isolated per path by `fp`; the ANSWER gate was not, so two
-        // different path queries collapsed onto one root. Reuse `fp` as this projection's pattern tag.
-        answerTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
+        // different path queries collapsed onto one root. Reuse `fp` as this projection's pattern tag —
+        // but only when this atom really is the projection (see @param wholePattern). A composed atom
+        // keeps the θ constructionPlan() derived from the WHOLE query.
+        String pathTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
+        if (wholePattern) answerTag = pathTag;
         return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
-                star, W, fp, generatedPrefix, answerTag);
+                star, W, fp, generatedPrefix, pathTag);
     }
 
     private static List<String> projectedNames(Projection projection) {
