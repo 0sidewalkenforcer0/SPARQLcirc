@@ -82,6 +82,13 @@ jobs:
         run: python -m pip install "rdflib>=6.3,<8"
       - name: Build the shaded engine JAR
         run: mvn -q -f engine/pom.xml package
+      # The two opt-in sweeps. Both are off by default because they used to be slow; the semantic one
+      # takes ~25 s and is the only check that compares a composed circuit against RDF4J's own W3C
+      # evaluator over every possible world, so it is worth a CI slot rather than a manual run.
+      - name: Deep composition sweeps (plan coverage and possible-world denotation)
+        run: >
+          mvn -q -f engine/pom.xml test
+          -Dsparqlcirc.deepSweep=true -Dsparqlcirc.deepSemantics=true
       - name: Generate, parse, compile, and WMC a fresh circuit
         run: python reference/quick_verify.py
       - name: Factored/flat pure-BGP differential gate
