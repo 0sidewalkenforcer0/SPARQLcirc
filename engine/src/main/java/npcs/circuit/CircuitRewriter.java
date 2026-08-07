@@ -615,9 +615,18 @@ public class CircuitRewriter {
         abstract void emit(StringBuilder where, String prefix, List<String> children);
         /** The variables this operand binds. */
         abstract LinkedHashSet<String> scope();
-        /** The ⊕ gate keyed by (groupTag, scope) that an enclosing ⊖ reads as minuend or subtrahend. */
+        /**
+         * The ⊕ gate keyed by (groupTag, scope) that an enclosing ⊖ reads as minuend or subtrahend.
+         *
+         * @param restriction when non-null, the sibling operand this marginal is semi-joined to, so only
+         *     bindings that can actually meet it are built. See {@link #restrictSubtrahend}: a
+         *     subtrahend binding compatible with NO minuend binding gets a ⊕ that {@code subFeeds}
+         *     never wires to anything, so the whole operand used to be materialized to produce gates no
+         *     answer can reach. Null for the minuend, which must keep every binding — each one IS an
+         *     answer, whether or not the subtrahend removes it.
+         */
         abstract List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
-                                                             String groupTag);
+                                                             String groupTag, Operand restriction);
     }
 
     private final class BgpOperand extends Operand {
@@ -628,8 +637,9 @@ public class CircuitRewriter {
         }
         @Override LinkedHashSet<String> scope() { return vars(block.patterns); }
         @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
-                                                              String groupTag) {
-            return marginalPlus(block, tokPrefix, plusPrefix, groupTag, vars(block.patterns));
+                                                              String groupTag, Operand restriction) {
+            return marginalPlus(block, tokPrefix, plusPrefix, groupTag, vars(block.patterns),
+                    restriction);
         }
     }
 
@@ -648,9 +658,12 @@ public class CircuitRewriter {
          * connects unchanged.
          */
         @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
-                                                              String groupTag) {
+                                                              String groupTag, Operand restriction) {
             StringBuilder where = new StringBuilder();
             emit(where, tokPrefix + "m", new ArrayList<>());
+            if (restriction != null) {                         // semi-join; its gate is not a ⊗ child
+                restriction.emit(where, tokPrefix + "mr", new ArrayList<>());
+            }
             String plus = qv("pg");
             StringBuilder q = new StringBuilder(PRE)
                     .append("CONSTRUCT {\n  ").append(plus).append(" a c:Plus .\n  ?").append(gateVar)
@@ -777,6 +790,29 @@ public class CircuitRewriter {
                 sourceVar);
     }
 
+    /**
+     * Semi-join the subtrahend marginal to the minuend (on by default).
+     *
+     * <p>{@code ⊕_{P2}} is keyed by the subtrahend's own binding, and {@code subFeeds} wires it into
+     * {@code ⊕_{sub}(μ1)} only for pairs that are actually compatible. A subtrahend binding compatible
+     * with NO minuend binding therefore gets a ⊕ (and, in the flat plan, a ⊗ per derivation feeding it)
+     * that no answer root can reach. Building them meant materializing the ENTIRE right operand: for
+     * {@code ?u :likes ?p MINUS {?u :buys ?p}} the subtrahend marginal covered every purchase in the
+     * graph, not the purchases by users who like something. That is what made a flat operator plan on
+     * the 10M reified WatDiv store run past 900 s per query.
+     *
+     * <p>What changes: strictly fewer emitted triples, all of them unreachable from every answer gate.
+     * The reachable circuit — and so every answer's Boolean function, its WMC and its probability — is
+     * identical, which is asserted rather than argued. What it is NOT is byte-identical, because those
+     * dead gates were part of the emitted output and of the reported circuit SIZE. Set
+     * {@code CIRCUIT_RESTRICT_SUBTRAHEND=0} (or {@code -Dsparqlcirc.unrestrictedSubtrahendMarginal=true})
+     * to rebuild a published circuit or size number that predates this.
+     */
+    private static boolean restrictSubtrahend() {
+        return !"0".equals(System.getenv("CIRCUIT_RESTRICT_SUBTRAHEND"))
+                && !Boolean.getBoolean("sparqlcirc.unrestrictedSubtrahendMarginal");
+    }
+
     /** The ⊖'s minuend operand and the gate tags naming its three gates, once its inputs are planned. */
     private static final class DiffCore {
         final Operand left; final LinkedHashSet<String> scope; final String p1Tag; final String opFp;
@@ -809,11 +845,21 @@ public class CircuitRewriter {
         Operand L = planOperand(d.getLeftArg(), plan);
         String p1Tag = "P1@" + operandFingerprint(d.getLeftArg());
         String opFp = diffFingerprint(d.getLeftArg(), removing);
-        plan.addAll(L.marginal("a", "urn:g:p1:", p1Tag));
+        // The MINUEND is never restricted: every one of its bindings is an answer, whether or not the
+        // subtrahend removes it. The SUBTRAHEND is, because a binding compatible with no minuend binding
+        // contributes a ⊕ that nothing reads.
+        plan.addAll(L.marginal("a", "urn:g:p1:", p1Tag, null));
         for (TupleExpr rb : removing) {
             Operand R = planOperand(rb, plan);
             String p2Tag = "P2@" + operandFingerprint(rb);
-            plan.addAll(R.marginal("b", "urn:g:p2:", p2Tag));
+            // Only when the operands SHARE a variable. With disjoint domains the semi-join is a cross
+            // product: it cannot drop a single subtrahend binding (any of them is compatible with any
+            // minuend binding), while making the marginal enumerate |P1|x|P2| solutions to emit the same
+            // triples. That is the unguarded difference an OPTIONAL splits out, where disjoint operands
+            // are legal — a guarded MINUS never reaches here without an overlap.
+            boolean shared = !intersect(V1, R.scope()).isEmpty();
+            plan.addAll(R.marginal("b", "urn:g:p2:", p2Tag,
+                    shared && restrictSubtrahend() ? L : null));
             plan.add(flatStep(subFeeds(L, R, V1, R.scope(), p2Tag, opFp), "sub"));
         }
         return new DiffCore(L, V1, p1Tag, opFp);
@@ -938,11 +984,21 @@ public class CircuitRewriter {
         return out;
     }
 
-    /** ⊗ per derivation feeding a ⊕ gate keyed by {@code groupVars}. */
-    private String productPlus(Block block, String tokPrefix,
-                               String plusPrefix, String groupTag, LinkedHashSet<String> groupVars) {
+    /**
+     * ⊗ per derivation feeding a ⊕ gate keyed by {@code groupVars}.
+     *
+     * @param restriction the sibling operand to semi-join against, or null to build every binding. Its
+     *     tokens are collected into a throwaway list, so they are NOT ⊗ children and the product key is
+     *     byte-identical to the unrestricted one — the restriction removes derivations, it never
+     *     re-keys the ones that remain.
+     */
+    private String productPlus(Block block, String tokPrefix, String plusPrefix, String groupTag,
+                               LinkedHashSet<String> groupVars, Operand restriction) {
         List<String> toks = new ArrayList<>();
         StringBuilder where = reify(block, tokPrefix, toks);
+        if (restriction != null) {
+            restriction.emit(where, tokPrefix + "r", new ArrayList<>());   // join on the shared vars
+        }
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
         String times = qv("t"), plus = qv("pg");
         StringBuilder q = new StringBuilder(PRE);
@@ -1009,14 +1065,19 @@ public class CircuitRewriter {
      * preserved, only the minuend/subtrahend polynomial is factored. FLAT mode: one-⊗-per-derivation.
      */
     private List<CircuitConstructionPlan.Step> marginalPlus(Block block, String tokPrefix,
-            String plusPrefix, String groupTag, LinkedHashSet<String> groupVars) {
+            String plusPrefix, String groupTag, LinkedHashSet<String> groupVars, Operand restriction) {
         if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
+            // The restriction is not threaded into the factored elimination: its base relations are
+            // keyed by their own patterns, and a sibling that is a materialized row relation has no
+            // pattern to push down. Factored operands are already far smaller than flat ones, so this is
+            // the flat plan's problem; see restrictSubtrahend.
             return new ArrayList<>(FactoredBgpRewriter.buildMarginal(
                     scheme, generatedPrefix, workspaceId, block.patterns, canonicalVars(groupVars),
                     plusPrefix, groupTag).steps());
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
-        plan.add(flatStep(productPlus(block, tokPrefix, plusPrefix, groupTag, groupVars), "marg-flat"));
+        plan.add(flatStep(productPlus(block, tokPrefix, plusPrefix, groupTag, groupVars, restriction),
+                "marg-flat"));
         return plan;
     }
 

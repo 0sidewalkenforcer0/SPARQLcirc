@@ -701,6 +701,124 @@ public class CircuitSemanticsTest {
         return out;
     }
 
+    // ------------------------------------------------------------------ restricted subtrahend marginal
+    /**
+     * The subtrahend marginal is semi-joined to the minuend, so it stops materializing the whole right
+     * operand. The claim that makes this safe is precise: the triples it no longer emits are exactly the
+     * ones NO answer gate can reach.
+     *
+     * <p>So this asserts two things against a build with the restriction switched off
+     * ({@code -Dsparqlcirc.unrestrictedSubtrahendMarginal=true}): the sub-circuit reachable from the
+     * answer roots is identical triple for triple, and the total is strictly smaller. The first is the
+     * correctness argument; the second proves the optimization actually fires, so the first cannot pass
+     * by the two builds being the same thing.
+     */
+    @Test
+    public void restrictingTheSubtrahendDropsOnlyUnreachableGates() {
+        // (u1,p1) and (u2,p2) are minuend bindings; of the three subtrahend bindings only (u1,p1) is
+        // compatible with one, so (u9,p9) and (u3,p3) contribute ⊕ gates nothing reads.
+        String[][] facts = {
+            {"urn:r:l1", "urn:u1", "urn:likes", "urn:p1"},
+            {"urn:r:l2", "urn:u2", "urn:likes", "urn:p2"},
+            {"urn:r:b1", "urn:u1", "urn:buys",  "urn:p1"},
+            {"urn:r:b2", "urn:u9", "urn:buys",  "urn:p9"},
+            {"urn:r:b3", "urn:u3", "urn:buys",  "urn:p3"},
+        };
+        String[] queries = {
+            "SELECT ?u ?p WHERE { ?u <urn:likes> ?p MINUS { ?u <urn:buys> ?p } }",
+            "SELECT ?u ?p ?q WHERE { ?u <urn:likes> ?p OPTIONAL { ?u <urn:buys> ?q } }",
+        };
+        for (String query : queries) {
+            Model restricted, unrestricted;
+            System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+            restricted = buildOn(facts, query, ConstructionMode.FLAT);
+            System.setProperty("sparqlcirc.unrestrictedSubtrahendMarginal", "true");
+            try {
+                unrestricted = buildOn(facts, query, ConstructionMode.FLAT);
+            } finally {
+                System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+            }
+            assertEquals("the sub-circuit reachable from the answers must not change: " + query,
+                    canonical(reachableSubcircuit(unrestricted)),
+                    canonical(reachableSubcircuit(restricted)));
+            assertTrue("the restriction must actually drop something for " + query + ", but both builds "
+                    + "emitted " + restricted.size() + " triples",
+                    restricted.size() < unrestricted.size());
+        }
+    }
+
+    /**
+     * The restriction must NOT be applied to domain-disjoint operands. There it is a cross product: it
+     * cannot drop a single subtrahend binding, because any of them is compatible with any minuend
+     * binding, while making the marginal enumerate |P1|x|P2| solutions to emit the same triples. Timing
+     * cannot show this cleanly — a disjoint unguarded difference is already expensive, since
+     * {@code subFeeds} cross-products the operands by design — so assert the plan instead: for disjoint
+     * operands the emitted plan must be exactly the one the restriction-free build produces.
+     */
+    @Test
+    public void theRestrictionIsSkippedForDisjointOperands() {
+        String disjoint = "SELECT ?x ?w WHERE { ?x <urn:p0> ?a OPTIONAL { ?u <urn:p1> ?w } }";
+        String sharing  = "SELECT ?x ?a WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?a } }";
+        assertEquals("disjoint operands must plan identically with and without the restriction",
+                planWithRestriction(disjoint, false), planWithRestriction(disjoint, true));
+        assertNotEquals("but operands that share a variable must actually be restricted",
+                planWithRestriction(sharing, false), planWithRestriction(sharing, true));
+    }
+
+    private static List<String> planWithRestriction(String query, boolean restrict) {
+        if (restrict) System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+        else System.setProperty("sparqlcirc.unrestrictedSubtrahendMarginal", "true");
+        try {
+            return new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-guard")
+                    .plan(query);
+        } finally {
+            System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+        }
+    }
+
+    /**
+     * Every triple of the circuit reachable from an answer gate, by the same edges {@link #evaluate}
+     * follows: a ⊗ reaches its {@code c:in} children, a ⊕ reaches the gates that {@code c:feeds} it, a ⊖
+     * reaches its minuend and subtrahend, and an answer reaches its binding nodes.
+     */
+    private static Model reachableSubcircuit(Model circuit) {
+        Set<Resource> reached = new LinkedHashSet<>();
+        java.util.Deque<Resource> todo = new java.util.ArrayDeque<>(answerRoots(circuit));
+        reached.addAll(todo);
+        while (!todo.isEmpty()) {
+            Resource node = todo.poll();
+            List<Value> next = new ArrayList<>();
+            next.addAll(circuit.filter(node, VF.createIRI(C, "in"), null).objects());
+            next.addAll(circuit.filter(node, VF.createIRI(C, "minuend"), null).objects());
+            next.addAll(circuit.filter(node, VF.createIRI(C, "subtrahend"), null).objects());
+            next.addAll(circuit.filter(node, VF.createIRI(C, "binding"), null).objects());
+            next.addAll(circuit.filter(null, VF.createIRI(C, "feeds"), node).subjects());
+            for (Value candidate : next) {
+                if (candidate instanceof Resource && reached.add((Resource) candidate)) {
+                    todo.add((Resource) candidate);
+                }
+            }
+        }
+        Model out = new LinkedHashModel();
+        for (org.eclipse.rdf4j.model.Statement statement : circuit) {
+            if (reached.contains(statement.getSubject())) out.add(statement);
+        }
+        return out;
+    }
+
+    private static Model buildOn(String[][] facts, String query, ConstructionMode mode) {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            for (String[] fact : facts) reify(con, fact[0], fact[1], fact[2], fact[3]);
+            Model circuit = new LinkedHashModel();
+            CircuitRun.executeConstructionPlan(con, new CircuitRewriter(Reification.STANDARD, mode,
+                    "junit-restrict").constructionPlan(query), circuit, false);
+            return circuit;
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     // ------------------------------------------------------------------ concurrent step execution
     /**
      * Running a plan's independent steps concurrently must produce the SAME circuit, triple for triple.
