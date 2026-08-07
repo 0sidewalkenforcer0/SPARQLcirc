@@ -701,6 +701,209 @@ public class CircuitSemanticsTest {
         return out;
     }
 
+    // ------------------------------------------------------------------ the emitted plan log
+    /**
+     * The {@code # --- step N ---} headers are a machine boundary: the paper harnesses split the emitted
+     * stderr on them and expect each chunk to start at {@code PREFIX}. So every step must be logged
+     * exactly once, in PLAN order, whatever the parallelism.
+     *
+     * <p>Both halves of that were at risk. Level order is not plan order, so scheduling by DAG would have
+     * reordered the log — which is why the default path skips the scheduler entirely — and a concurrent
+     * level cannot log from inside its tasks, so the chunks are emitted up front instead.
+     */
+    @Test
+    public void theStepLogStaysCompleteAndInPlanOrderAtAnyParallelism() {
+        String query = "SELECT ?x ?b ?c WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } "
+                     + "OPTIONAL { ?x <urn:p2> ?c } }";
+        for (ConstructionMode mode : ConstructionMode.values()) {
+            for (int parallelism : new int[]{1, 4}) {
+                Repository repo = new SailRepository(new MemoryStore());
+                java.io.PrintStream saved = System.err;
+                java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+                int stepCount;
+                try (RepositoryConnection con = repo.getConnection()) {
+                    for (String[] fact : FACTS) reify(con, fact[0], fact[1], fact[2], fact[3]);
+                    CircuitConstructionPlan plan = new CircuitRewriter(Reification.STANDARD, mode,
+                            "junit-log").constructionPlan(query);
+                    stepCount = plan.steps().size();
+                    System.setErr(new java.io.PrintStream(captured, true, "UTF-8"));
+                    try {
+                        CircuitRun.executeConstructionPlan(con, repo, plan, new LinkedHashModel(),
+                                true, parallelism);
+                    } finally {
+                        System.setErr(saved);
+                    }
+                } catch (java.io.UnsupportedEncodingException impossible) {
+                    throw new AssertionError(impossible);
+                } finally {
+                    repo.shutDown();
+                }
+                List<Integer> headers = new ArrayList<>();
+                List<String> firstLines = new ArrayList<>();
+                String[] lines = captured.toString().split("\n", -1);
+                for (int i = 0; i < lines.length; i++) {
+                    if (!lines[i].startsWith("# --- step ")) continue;
+                    headers.add(Integer.parseInt(lines[i].replaceAll("\\D+", "")));
+                    if (i + 1 < lines.length) firstLines.add(lines[i + 1]);
+                }
+                String what = mode + " at parallelism " + parallelism;
+                List<Integer> expected = new ArrayList<>();
+                for (int n = 1; n <= stepCount; n++) expected.add(n);
+                assertEquals(what + ": every step must be logged exactly once, in plan order",
+                        expected, headers);
+                for (String first : firstLines) {
+                    assertTrue(what + ": each chunk must start at PREFIX, got: " + first,
+                            first.startsWith("PREFIX"));
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ the four options together
+    /**
+     * The closing check: every combination of the construction options must denote the same thing.
+     *
+     * <p>Four switches landed independently, each verified on its own — one-pass base materialization,
+     * the restricted subtrahend marginal, step parallelism, and the construction mode. They interact:
+     * turning off one-pass base puts k concurrent base WRITERS in level 0 of the DAG, and the restriction
+     * changes which relations exist for the scheduler to order. So sweep all 2x2x2x2 of them.
+     *
+     * <p>Three invariants, at three different strengths, because the switches differ in what they
+     * preserve:
+     * <ul>
+     *   <li><b>one-pass base and parallelism are byte-preserving.</b> Combinations differing only in
+     *       those must agree triple for triple.</li>
+     *   <li><b>the subtrahend restriction preserves the reachable circuit.</b> It drops gates no answer
+     *       can reach, so across it only the sub-circuit reachable from the answer roots must agree —
+     *       exactly its safety claim.</li>
+     *   <li><b>the construction MODE preserves only the answers.</b> Factored deliberately replaces
+     *       one-⊗-per-derivation with base/marginal ⊕ gates, so its internal structure differs and the
+     *       reachable circuits are NOT comparable. What must hold is that both modes mint the same
+     *       answer gates — θ is plan-independent — and the Boolean function of each is checked against
+     *       the oracle elsewhere.</li>
+     * </ul>
+     */
+    @Test
+    public void everyCombinationOfTheConstructionOptionsAgrees() {
+        String[] queries = {
+            "SELECT ?x ?a WHERE { ?x <urn:p0> ?a MINUS { ?x <urn:p1> ?b } }",
+            "SELECT ?x ?b WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } }",
+            "SELECT ?x ?b ?c WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } "
+          + "OPTIONAL { ?x <urn:p2> ?c } }",
+            "SELECT ?x WHERE { { ?x <urn:p0> ?a MINUS { ?x <urn:p1> ?b } } ?x <urn:p2> ?c }",
+            // selective BGP: the one-pass base path
+            "SELECT ?y WHERE { <urn:s> <urn:p0> ?y . ?y <urn:p1> ?z }",
+            // unbound BGP: per-pattern base scans, so a wide level of concurrent writers
+            "SELECT ?x ?a ?b WHERE { ?x <urn:p0> ?a . ?x <urn:p1> ?b . ?x <urn:p2> ?c }",
+        };
+        String[][] facts = {
+            {"urn:r:q0", "urn:s",  "urn:p0", "urn:m"},
+            {"urn:r:q1", "urn:m",  "urn:p1", "urn:z"},
+            {"urn:r:q2", "urn:s",  "urn:p0", "urn:a"},
+            {"urn:r:q3", "urn:s",  "urn:p1", "urn:b"},
+            {"urn:r:q4", "urn:s",  "urn:p2", "urn:c"},
+            {"urn:r:q5", "urn:s2", "urn:p0", "urn:d"},
+        };
+        for (String query : queries) {
+            // key = "<mode>|<restricted>" -> canonical circuit; every byte-preserving switch must land
+            // on the same value, and the two restriction groups must agree on the reachable part.
+            Map<String, Set<String>> whole = new LinkedHashMap<>();
+            Map<String, Set<String>> reachable = new LinkedHashMap<>();
+            Map<ConstructionMode, Set<Resource>> answers = new LinkedHashMap<>();
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                for (boolean onePass : new boolean[]{true, false}) {
+                    for (boolean restrict : new boolean[]{true, false}) {
+                        for (int parallelism : new int[]{1, 4}) {
+                            Model circuit = buildWithOptions(facts, query, mode, onePass, restrict,
+                                    parallelism);
+                            String what = query + " [" + mode + ", onePass=" + onePass + ", restrict="
+                                    + restrict + ", p=" + parallelism + "]";
+                            assertFalse("no circuit for " + what, circuit.isEmpty());
+                            assertNoDuplicateStatements(circuit, what);
+
+                            String key = mode + "|" + restrict;
+                            Set<String> canonical = canonical(circuit);
+                            Set<String> seen = whole.get(key);
+                            if (seen == null) whole.put(key, canonical);
+                            else assertEquals("one-pass base and parallelism must be byte-preserving: "
+                                    + what, seen, canonical);
+
+                            // Within one mode, the reachable circuit is invariant under all three
+                            // switches -- including the restriction, which is its safety claim.
+                            Set<String> reach = canonical(reachableSubcircuit(circuit));
+                            Set<String> seenReach = reachable.get(mode.toString());
+                            if (seenReach == null) reachable.put(mode.toString(), reach);
+                            else assertEquals("the reachable circuit must not depend on the plan or on "
+                                    + "the subtrahend restriction: " + what, seenReach, reach);
+
+                            Set<Resource> roots = answerRoots(circuit);
+                            Set<Resource> seenRoots = answers.get(mode);
+                            if (seenRoots == null) answers.put(mode, roots);
+                            else assertEquals("the answer gates must not depend on any switch: " + what,
+                                    seenRoots, roots);
+                        }
+                    }
+                }
+            }
+            assertEquals("both modes must have been built", 2, answers.size());
+            assertEquals("flat and factored are two plans for ONE query, so they must mint the same "
+                    + "answer gates for " + query,
+                    answers.get(ConstructionMode.FLAT), answers.get(ConstructionMode.FACTORED));
+        }
+    }
+
+    private static Model buildWithOptions(String[][] facts, String query, ConstructionMode mode,
+                                          boolean onePassBase, boolean restrictSubtrahend,
+                                          int parallelism) {
+        if (onePassBase) System.clearProperty("sparqlcirc.perPatternBase");
+        else System.setProperty("sparqlcirc.perPatternBase", "true");
+        if (restrictSubtrahend) System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+        else System.setProperty("sparqlcirc.unrestrictedSubtrahendMarginal", "true");
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            for (String[] fact : facts) reify(con, fact[0], fact[1], fact[2], fact[3]);
+            Model circuit = new LinkedHashModel();
+            CircuitRun.executeConstructionPlan(con, repo, new CircuitRewriter(Reification.STANDARD,
+                    mode, "junit-combo").constructionPlan(query), circuit, false, parallelism);
+            return circuit;
+        } finally {
+            repo.shutDown();
+            System.clearProperty("sparqlcirc.perPatternBase");
+            System.clearProperty("sparqlcirc.unrestrictedSubtrahendMarginal");
+        }
+    }
+
+    /**
+     * For a step that declares its dependencies, {@code feedback()} and a non-empty {@code writes()} must
+     * say the same thing. They are two descriptions of "this step publishes rows", and the scheduler
+     * trusts the second while {@link CircuitRun} and {@code requiresFeedback()} trust the first. A step
+     * claiming feedback but declaring no write would be ordered as if it wrote nothing, so a later reader
+     * of that relation would not wait for it.
+     */
+    @Test
+    public void feedbackAndDeclaredWritesAgree() {
+        List<Shape> shapes = new ArrayList<>();
+        for (int n = 1; n <= 2; n++) shapes.addAll(sweep(n, false));
+        shapes.add(new Shape("selective", "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y }",
+                Arrays.asList("y")));
+        shapes.add(new Shape("path", "SELECT ?y ?z WHERE { <urn:a> <urn:p>+ ?y . ?y <urn:q> ?z }",
+                Arrays.asList("y", "z")));
+        int checked = 0;
+        for (Shape shape : shapes) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD, mode,
+                        "junit-flags").constructionPlan(shape.query).steps()) {
+                    if (!step.dependenciesDeclared()) continue;
+                    checked++;
+                    assertEquals("step '" + step.label() + "' of " + shape.query + " (" + mode
+                            + "): feedback=" + step.feedback() + " but writes=" + step.writes(),
+                            step.feedback(), !step.writes().isEmpty());
+                }
+            }
+        }
+        assertTrue("the sweep must contain declared steps", checked > 100);
+    }
+
     // ------------------------------------------------------------------ declared step dependencies
     /**
      * Every step's declared {@code reads}/{@code writes} must match what its SPARQL actually touches.

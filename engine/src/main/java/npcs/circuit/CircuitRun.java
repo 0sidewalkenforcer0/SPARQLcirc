@@ -332,14 +332,31 @@ public final class CircuitRun {
                 System.err.println("# ---- circuit construction plan: " + steps.size()
                         + " CONSTRUCT(s) ----");
             }
+            if (parallelism <= 1 || repo == null) {
+                // The default. Plan order, one connection, no scheduling at all -- byte-for-byte the
+                // behaviour this had before any of it existed. Running the level schedule here instead
+                // would be correct but would REORDER the steps (level order is not plan order), and the
+                // "# --- step N ---" headers are a machine boundary the paper harnesses parse.
+                for (int j = 0; j < steps.size(); j++) {
+                    runStep(con, steps.get(j), j, circuit, workspace, logQueries);
+                }
+                return;
+            }
             int[] level = scheduleLevels(steps);
             int levels = 0;
             for (int value : level) levels = Math.max(levels, value + 1);
+            if (logQueries) {
+                // Concurrently, a level's steps overlap and levels do not follow plan order, so the
+                // per-step chunks are emitted here, ONCE, in plan order. The execution loop below then
+                // announces level boundaries only.
+                for (int j = 0; j < steps.size(); j++) logStep(steps.get(j), j);
+            }
             for (int current = 0; current < levels; current++) {
                 List<Integer> group = new ArrayList<>();
                 for (int j = 0; j < steps.size(); j++) if (level[j] == current) group.add(j);
-                if (group.size() == 1 || parallelism <= 1 || repo == null) {
-                    for (int j : group) runStep(con, steps.get(j), j, circuit, workspace, logQueries);
+                if (group.isEmpty()) continue;
+                if (group.size() == 1) {
+                    runStep(con, steps.get(group.get(0)), group.get(0), circuit, workspace, false);
                 } else {
                     if (pool == null) {
                         // Sized from the WIDEST level in the whole plan, not from this one: sizing it
@@ -563,7 +580,6 @@ public final class CircuitRun {
             for (int j : group) which.append(which.length() == 0 ? "" : ", ").append(j + 1);
             System.err.println("# ---- steps " + which + " are independent; running up to "
                     + Math.min(parallelism, group.size()) + " concurrently ----");
-            for (int j : group) logStep(steps.get(j), j);
         }
         List<Future<Model>> pending = new ArrayList<>(group.size());
         for (int j : group) {
