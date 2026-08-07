@@ -175,6 +175,44 @@ regime is untouched. L-path 10M dropped to **143 gates / 513 ms** (49 base token
 Full regime map + numbers: `reference/FACTORED_REGIMES.md`, `reference/watdiv/rdfstar_factored_vs_flat.csv`,
 `reference/watdiv/unbound_factored_vs_flat.csv`.
 
+**Update (2026-08-07) — four construction-cost changes, and which published numbers they move.**
+Every one of them is off-by-default-reversible, because three of the four change measured quantities.
+Correctness is checked by the possible-world oracle in `engine/.../CircuitSemanticsTest.java` (see
+`docs/…` and the class comment) plus `verify_composition.py` / `verify_gallery.py` for probabilities.
+
+| # | change | effect on the circuit | switch to restore the old behaviour |
+|---|--------|----------------------|-------------------------------------|
+| 1 | **one-pass base relations.** The semi-join restriction each base relation of a *selective* BGP needs IS the whole BGP, so the k base queries had the same WHERE and were k evaluations of one join. One CONSTRUCT now publishes all k. | **byte-identical** | `CIRCUIT_ONE_PASS_BASE=0` / `-Dsparqlcirc.perPatternBase=true` |
+| 2 | **step parallelism.** A plan's independent steps run concurrently, scheduled by the real dependency DAG (`Step.reads()/writes()`); an undeclared step is a barrier both ways. | **byte-identical** | default is `--parallelism=1` (sequential) |
+| 3 | **restricted subtrahend marginal.** `⊕_{P2}` bindings compatible with no minuend binding got gates no answer can reach, so the whole right operand was materialized. Now semi-joined to the minuend (skipped for domain-disjoint operands, where it would be a cross product). The **minuend is never restricted** — each of its bindings is an answer. | **fewer triples**, all of them unreachable from every answer gate; reachable circuit and every probability unchanged | `CIRCUIT_RESTRICT_SUBTRAHEND=0` / `-Dsparqlcirc.unrestrictedSubtrahendMarginal=true` |
+
+Measured (1 on GraphDB 10.7.6 / WatDiv 10M Standard-reified; 2 and 3 in-process, since a flat operator
+plan on that store runs past 900 s per query):
+
+```
+1  selective BGP, construction_ms       L1 481→327  S2 12002→4897  F1 816→536  S1 1102→687
+2  flat operator plan, p=4              MINUS 1.34x  OPTIONAL 1.68x  OPT+MINUS 1.77x  UNION3 1.73x
+   factored operator plan, p=4/8        MINUS 1.96x  two OPTIONALs 2.06x/2.47x  unbound star-4 1.15x
+3  selective minuend, 40k right operand OPTIONAL 2220→38 ms (162 900→3 300 triples)
+                                        MINUS    2030→27 ms (161 500→1 900 triples)
+```
+
+**Three interactions worth knowing.**
+- Change 1 turned a *selective* single BGP into a pure **chain** (measured DAG widths for S1/L1/F1 and a
+  bound 4-chain: 1 at every level), so change 2 buys nothing there. Its wins are on unbound BGPs and on
+  factored *operator* queries, where each operand's marginal is an independent sub-DAG.
+- Change 3's win is proportional to how much of the right operand the minuend cannot reach, so it is ~0 on
+  the opposite shape. WatDiv M1 is `likes MINUS (purchase join)` — a millions-of-triples minuend against a
+  small subtrahend — and stays intractable in flat mode. That is a property of flat construction.
+- Parallelism affects flat and factored **asymmetrically** (a pure-BGP flat plan is one CONSTRUCT and gains
+  nothing; operator queries gain more in flat), so a parallel configuration must be reported separately or
+  flat-vs-factored stops being comparable.
+
+**Numbers that need re-running before being quoted:** construction time for the bound (S/L/F) classes was
+measured with k base passes and is now pessimistic by the factors above; circuit **size** for the M and O
+classes was counting gates no answer can reach (98 % of the emitted triples in the fixture above), so it
+gets smaller. Neither affects circuit-identity artifacts, which are byte-identical.
+
 ---
 
 ## 7. How the algorithm handles the hard cases
