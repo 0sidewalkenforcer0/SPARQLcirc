@@ -2,7 +2,9 @@ package npcs.circuit;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Executable sequence of standard-SPARQL CONSTRUCT queries.
@@ -18,16 +20,40 @@ public final class CircuitConstructionPlan {
         private final boolean feedback;
         private final String label;
         private final CircuitRewriter.PathQuery path;
+        private final Set<String> reads;
+        private final Set<String> writes;
+        private final boolean dependenciesDeclared;
 
+        /**
+         * A step whose dependencies are NOT declared. {@link #dependenciesDeclared()} is false, and a
+         * scheduler must then treat it as a barrier — it may read or write any relation.
+         */
         public Step(String query, boolean feedback, String label) {
-            this(query, feedback, label, null);
+            this(query, feedback, label, null, Collections.emptySet(), Collections.emptySet(), false);
         }
 
-        private Step(String query, boolean feedback, String label, CircuitRewriter.PathQuery path) {
+        /**
+         * A step that declares exactly which private message relations it consumes and produces.
+         *
+         * @param reads every {@code urn:sc:msg:} relation the step's WHERE matches. Must be complete: a
+         *     missing entry lets the scheduler start the step before the pass that fills that relation,
+         *     which silently builds the circuit from an empty or half-written one.
+         * @param writes every such relation the step's CONSTRUCT template publishes.
+         */
+        public Step(String query, boolean feedback, String label,
+                    Set<String> reads, Set<String> writes) {
+            this(query, feedback, label, null, reads, writes, true);
+        }
+
+        private Step(String query, boolean feedback, String label, CircuitRewriter.PathQuery path,
+                     Set<String> reads, Set<String> writes, boolean dependenciesDeclared) {
             this.query = query;
             this.feedback = feedback;
             this.label = label;
             this.path = path;
+            this.reads = Collections.unmodifiableSet(new LinkedHashSet<>(reads));
+            this.writes = Collections.unmodifiableSet(new LinkedHashSet<>(writes));
+            this.dependenciesDeclared = dependenciesDeclared;
         }
 
         /**
@@ -38,7 +64,12 @@ public final class CircuitConstructionPlan {
          * other materialized operand.
          */
         public static Step path(CircuitRewriter.PathQuery path, String label) {
-            return new Step(null, true, label, path);
+            // Deliberately undeclared, hence a barrier: the fixpoint is not one CONSTRUCT, it feeds each
+            // round's reach gates back for the next one to match, and it drives that loop on the caller's
+            // connection. Scheduling it alongside anything else would need the loop itself to be
+            // concurrency-safe, which it is not.
+            return new Step(null, true, label, path, Collections.emptySet(), Collections.emptySet(),
+                    false);
         }
 
         public String query() { return query; }
@@ -46,6 +77,12 @@ public final class CircuitConstructionPlan {
         public String label() { return label; }
         /** Non-null when this step is a closure atom's iterative subplan. */
         public CircuitRewriter.PathQuery path() { return path; }
+        /** Whether {@link #reads()}/{@link #writes()} are complete enough to schedule on. */
+        public boolean dependenciesDeclared() { return dependenciesDeclared; }
+        /** The private message relations this step's WHERE matches. */
+        public Set<String> reads() { return reads; }
+        /** The private message relations this step's CONSTRUCT publishes. */
+        public Set<String> writes() { return writes; }
     }
 
     private final List<Step> steps;

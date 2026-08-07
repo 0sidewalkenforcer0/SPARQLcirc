@@ -91,7 +91,8 @@ final class FactoredBgpRewriter {
                                          String answerTag) {
         Relation result = eliminate(patterns, new HashSet<>(outputVariables));
         steps.add(new CircuitConstructionPlan.Step(
-                answerQuery(result, outputVariables, answerTag), false, "answers"));
+                answerQuery(result, outputVariables, answerTag), false, "answers",
+                relationsOf(result), NO_RELATIONS));
         return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
                 ConstructionMode.FACTORED, null);
     }
@@ -131,7 +132,8 @@ final class FactoredBgpRewriter {
                                                  String plusPrefix, String gateTag) {
         Relation result = eliminate(patterns, new HashSet<>(keepVariables));
         steps.add(new CircuitConstructionPlan.Step(
-                marginalSink(result, keepVariables, plusPrefix, gateTag), false, "marginal-sink"));
+                marginalSink(result, keepVariables, plusPrefix, gateTag), false, "marginal-sink",
+                relationsOf(result), NO_RELATIONS));
         return new CircuitConstructionPlan(steps, ConstructionMode.FACTORED,
                 ConstructionMode.FACTORED, null);
     }
@@ -178,14 +180,16 @@ final class FactoredBgpRewriter {
             // they kept and which columns they published. That is k evaluations of one join. Emit the
             // join once and publish all k relations from it. Identical output triples, one pass.
             steps.add(new CircuitConstructionPlan.Step(baseQueryOnePass(patterns, relations), true,
-                    "base[0.." + (patterns.size() - 1) + "] one pass"));
+                    "base[0.." + (patterns.size() - 1) + "] one pass",
+                    NO_RELATIONS, relationsOf(relations.toArray(new Relation[0]))));
         } else {
             for (int i = 0; i < patterns.size(); i++) {
                 steps.add(new CircuitConstructionPlan.Step(
                         baseQuery(patterns.get(i).pattern, relations.get(i),
                                   "BASE@" + queryFingerprint + "@" + i,
                                   selective ? patterns : null, i),
-                        true, "base[" + i + "]"));
+                        true, "base[" + i + "]",
+                        NO_RELATIONS, relationsOf(relations.get(i))));
             }
         }
 
@@ -282,6 +286,15 @@ final class FactoredBgpRewriter {
         return PRE + "CONSTRUCT {\n" + template + "}\nWHERE {\n" + where + binds + "}\n";
     }
 
+    private static final Set<String> NO_RELATIONS = Collections.emptySet();
+
+    /** The message IRIs of the given relations, as a dependency set for a plan step. */
+    private static Set<String> relationsOf(Relation... relations) {
+        Set<String> out = new LinkedHashSet<>();
+        for (Relation relation : relations) out.add(relation.messageIri);
+        return out;
+    }
+
     private Relation relation(String hint, List<String> variables) {
         String semanticId = queryFingerprint + "-" + hint + "-" + stepNumber++;
         String messageIri = META_NS + "msg:" + workspaceHash + ":" + semanticId;
@@ -347,7 +360,8 @@ final class FactoredBgpRewriter {
              .append(bindIri(row, META_NS + "row:", bindingKey(output.messageIri, output.variables)))
              .append("}\n");
         steps.add(new CircuitConstructionPlan.Step(query.toString(), true,
-                "join(" + left.variables.size() + "," + right.variables.size() + ")"));
+                "join(" + left.variables.size() + "," + right.variables.size() + ")",
+                relationsOf(left, right), relationsOf(output)));
         return output;
     }
 
@@ -372,7 +386,7 @@ final class FactoredBgpRewriter {
              .append(bindIri(row, META_NS + "row:", bindingKey(output.messageIri, keep)))
              .append("}\n");
         steps.add(new CircuitConstructionPlan.Step(query.toString(), true,
-                "marginalize(?" + eliminate + ")"));
+                "marginalize(?" + eliminate + ")", relationsOf(input), relationsOf(output)));
         return output;
     }
 
