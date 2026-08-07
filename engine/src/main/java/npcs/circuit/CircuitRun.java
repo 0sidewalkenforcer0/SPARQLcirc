@@ -5,9 +5,20 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -42,6 +53,11 @@ public final class CircuitRun {
 
     public static void main(String[] args) throws Exception {
         ConstructionMode constructionMode = ConstructionMode.FACTORED;
+        // Default 1 = sequential, so an existing invocation behaves exactly as before. Parallelism does
+        // not change the circuit (it is a set union of the steps' triples) but it does change how much
+        // load the plan puts on the engine at once, and it changes construction_ms -- so it is opt-in
+        // rather than something that silently makes the published timings incomparable.
+        int parallelism = envParallelism();
         List<String> positional = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             if (args[i].startsWith("--construction=")) {
@@ -52,12 +68,19 @@ public final class CircuitRun {
                     throw new IllegalArgumentException("--construction requires factored or flat");
                 }
                 constructionMode = ConstructionMode.fromCli(args[i]);
+            } else if (args[i].startsWith("--parallelism=")) {
+                parallelism = parseParallelism(args[i].substring("--parallelism=".length()));
+            } else if ("--parallelism".equals(args[i])) {
+                if (++i >= args.length) {
+                    throw new IllegalArgumentException("--parallelism requires a positive integer");
+                }
+                parallelism = parseParallelism(args[i]);
             } else {
                 positional.add(args[i]);
             }
         }
         if (positional.size() != 3 && positional.size() != 4) {
-            System.err.println("Usage: CircuitRun [--construction=factored|flat] "
+            System.err.println("Usage: CircuitRun [--construction=factored|flat] [--parallelism=N] "
                     + "<Standard|SPARQL_Star> <dataFile> <queryFile> [sparqlEndpointURL]");
             System.err.println("  Default construction: factored (pure BGP variable elimination).");
             System.err.println("  flat is the one-product-per-derivation ablation and read-only-endpoint route.");
@@ -69,6 +92,12 @@ public final class CircuitRun {
             System.err.println("                                    Fuseki/Oxigraph = <base>/update, Virtuoso = /sparql)");
             System.err.println("    CIRCUIT_SKIP_LOAD=1            (data already bulk-loaded on the engine)");
             System.err.println("    CIRCUIT_READONLY=1            (engine has no SPARQL UPDATE: QLever/MillenniumDB)");
+            System.err.println("    CIRCUIT_PARALLELISM=N          (same as --parallelism=N; default 1 = sequential)");
+            System.err.println("  --parallelism=N runs a plan's INDEPENDENT steps concurrently, N at a time. The");
+            System.err.println("  circuit is byte-identical either way (it is the set union of the steps' triples);");
+            System.err.println("  only construction_ms changes, so published timings stay comparable at the default.");
+            System.err.println("  It pays on flat operator plans (UNION/MINUS/OPTIONAL, whose CONSTRUCTs are all");
+            System.err.println("  independent readers) and barely at all on factored plans, which are mostly writes.");
             System.err.println("  See reference/engines/ for a profile per engine.");
             System.exit(2);
             return;
@@ -183,7 +212,11 @@ public final class CircuitRun {
                 if (constructionPlan.fallbackReason() != null) {
                     System.err.println("# ---- explicit fallback: " + constructionPlan.fallbackReason() + " ----");
                 }
-                executeConstructionPlan(con, constructionPlan, circuit, true);
+                if (parallelism > 1) {
+                    System.err.println("# ---- step parallelism: up to " + parallelism
+                            + " independent CONSTRUCTs concurrently ----");
+                }
+                executeConstructionPlan(con, repo, constructionPlan, circuit, true, parallelism);
             }
             // Uniform construction-time basis for flat vs factored: wall time of the on-engine plan
             // execution only (JVM startup and any data load happen outside this window). Parsed by the
@@ -221,6 +254,22 @@ public final class CircuitRun {
         repo.shutDown();
     }
 
+    private static int envParallelism() {
+        String value = System.getenv("CIRCUIT_PARALLELISM");
+        return value == null || value.isEmpty() ? 1 : parseParallelism(value);
+    }
+
+    private static int parseParallelism(String value) {
+        int n;
+        try {
+            n = Integer.parseInt(value.trim());
+        } catch (NumberFormatException notANumber) {
+            throw new IllegalArgumentException("--parallelism expects a positive integer, got: " + value);
+        }
+        if (n < 1) throw new IllegalArgumentException("--parallelism must be at least 1, got: " + n);
+        return n;
+    }
+
     /** Deterministic hex SHA-256, used to name the per-run circuit graph {@code urn:circuit:run:<hash>}. */
     private static String sha256hex(String s) {
         try {
@@ -235,56 +284,81 @@ public final class CircuitRun {
     }
 
     /**
-     * Execute a non-path plan. Only private, session-scoped {@code urn:sc:*}
+     * Execute a non-path plan sequentially. Only private, session-scoped {@code urn:sc:*}
      * message triples are fed back; circuit triples are accumulated in memory.
      * The private workspace is removed in a finally block on success or failure.
      */
     static void executeConstructionPlan(RepositoryConnection con, CircuitConstructionPlan plan,
                                         Model circuit, boolean logQueries) {
+        executeConstructionPlan(con, null, plan, circuit, logQueries, 1);
+    }
+
+    /**
+     * Execute a non-path plan, optionally running independent steps concurrently.
+     *
+     * <p><b>What makes a step independent.</b> A step whose {@link CircuitConstructionPlan.Step#feedback()}
+     * is false writes NOTHING to the store — every triple it emits is a circuit triple — so with respect
+     * to the engine it is a pure reader. And it needs nothing from its siblings: the ⊕/⊖ gates it
+     * references are computed from the binding by {@code BIND(IRI(CONCAT(..., SHA256(...))))} rather than
+     * looked up, so two steps that meet at a gate only ever <em>agree on its name</em>. That is what
+     * content addressing buys, and it is why a MINUS plan's four CONSTRUCTs can all be in flight at once
+     * even though one of them builds the ⊖ over gates the others produce.
+     *
+     * <p><b>The schedule.</b> Writers (factored passes, materialized operand rows, closure atoms) are
+     * barriers: each runs alone on {@code con}, in plan order. Every maximal run of consecutive readers
+     * between two barriers runs concurrently. That needs no dependency analysis to be sound — a reader
+     * cannot affect any other step, and all earlier writers have completed — and it is what actually
+     * pays: a flat operator plan is all readers (measured step-count bounds 3x for a UNION of three, 4x
+     * for a MINUS, 10x for OPTIONAL-then-MINUS), while a factored plan is nearly all writers and barely
+     * moves. Scheduling a factored plan needs the real dependency DAG, which {@code feedback()} does not
+     * carry; that is deliberately not attempted here.
+     *
+     * <p><b>Why the circuit is unchanged.</b> The result is the set union of the steps' triples, so it
+     * does not depend on the order they arrive in. Byte identity is preserved and tested.
+     *
+     * @param repo source of a fresh connection per concurrent task ({@code con} is not thread-safe, and a
+     *     connection opened after a barrier is guaranteed to see what that barrier committed). Null runs
+     *     everything on {@code con}.
+     * @param parallelism maximum concurrent readers; 1 keeps the sequential path exactly as it was.
+     */
+    static void executeConstructionPlan(RepositoryConnection con, Repository repo,
+                                        CircuitConstructionPlan plan, Model circuit,
+                                        boolean logQueries, int parallelism) {
         Model workspace = new LinkedHashModel();
+        ExecutorService pool = null;
         try {
+            List<CircuitConstructionPlan.Step> steps = plan.steps();
             if (logQueries) {
-                System.err.println("# ---- circuit construction plan: " + plan.steps().size()
+                System.err.println("# ---- circuit construction plan: " + steps.size()
                         + " CONSTRUCT(s) ----");
             }
-            for (int i = 0; i < plan.steps().size(); i++) {
-                CircuitConstructionPlan.Step step = plan.steps().get(i);
-                if (logQueries) {
-                    // Keep this exact header stable: paper harnesses parse it as a machine boundary.
-                    System.err.println("# --- step " + (i + 1) + " ---");
-                    System.err.println(step.query());
-                    // Trailing SPARQL comment keeps each regex-delimited chunk starting at PREFIX.
-                    System.err.println("# step label: " + step.label());
-                }
-                if (step.path() != null) {
-                    // A closure atom: not one CONSTRUCT but a data-dependent fixpoint. Its gates go to
-                    // the circuit; its urn:sc: rows are workspace, fed back so the enclosing operators
-                    // can read them and removed with the rest of the workspace afterwards.
-                    buildPathCircuit(con, step.path(), circuit, workspace);
+            int i = 0;
+            while (i < steps.size()) {
+                if (steps.get(i).feedback()) {                  // a writer: barrier, alone, on con
+                    runStep(con, steps.get(i), i, circuit, workspace, logQueries);
+                    i++;
                     continue;
                 }
-                Model emitted;
-                try (GraphQueryResult result = con.prepareGraphQuery(step.query()).evaluate()) {
-                    emitted = QueryResults.asModel(result);
-                }
-                Model messages = new LinkedHashModel();
-                for (Statement statement : emitted) {
-                    if (statement.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
-                        messages.add(statement);
-                    } else {
-                        circuit.add(statement);
+                int end = i;                                    // maximal run of pure readers
+                while (end < steps.size() && !steps.get(end).feedback()) end++;
+                if (end - i == 1 || parallelism <= 1 || repo == null) {
+                    for (int j = i; j < end; j++) {
+                        runStep(con, steps.get(j), j, circuit, workspace, logQueries);
                     }
+                } else {
+                    if (pool == null) {
+                        // Sized from the WIDEST reader run in the whole plan, not from this one. Sizing
+                        // it here would pin the pool to the first group encountered and starve a later,
+                        // wider one -- three nested OPTIONALs produce runs of 4, 4, 6, 8 and 18.
+                        pool = Executors.newFixedThreadPool(
+                                Math.min(parallelism, widestReaderRun(steps)));
+                    }
+                    runReadersConcurrently(repo, steps, i, end, circuit, logQueries, pool, parallelism);
                 }
-                if (step.feedback() && !messages.isEmpty()) {
-                    // Register the intended cleanup set *before* the remote
-                    // write.  A server may commit an ADD and then drop the
-                    // response; recording afterwards would leak that session's
-                    // rows when con.add() reports the transport failure.
-                    workspace.addAll(messages);
-                    addBatched(con, messages);   // batch the UPDATE: a single huge INSERT broken-pipes on GraphDB
-                }
+                i = end;
             }
         } finally {
+            if (pool != null) pool.shutdownNow();
             if (!workspace.isEmpty()) {
                 try {
                     removeBatched(con, workspace);
@@ -294,6 +368,196 @@ public final class CircuitRun {
                 }
             }
         }
+    }
+
+    /** The longest run of consecutive pure readers: the most steps the schedule can ever overlap. */
+    private static int widestReaderRun(List<CircuitConstructionPlan.Step> steps) {
+        int widest = 1, run = 0;
+        for (CircuitConstructionPlan.Step step : steps) {
+            run = step.feedback() ? 0 : run + 1;
+            widest = Math.max(widest, run);
+        }
+        return widest;
+    }
+
+    /** One step, on the given connection: log it, run it, split its output, feed back its rows. */
+    private static void runStep(RepositoryConnection con, CircuitConstructionPlan.Step step, int index,
+                                Model circuit, Model workspace, boolean logQueries) {
+        if (logQueries) logStep(step, index);
+        if (step.path() != null) {
+            // A closure atom: not one CONSTRUCT but a data-dependent fixpoint. Its gates go to the
+            // circuit; its urn:sc: rows are workspace, fed back so the enclosing operators can read
+            // them and removed with the rest of the workspace afterwards.
+            buildPathCircuit(con, step.path(), circuit, workspace);
+            return;
+        }
+        Model messages = new LinkedHashModel();
+        circuit.addAll(evaluate(con, step, messages));
+        if (!messages.isEmpty()) {
+            // Register the intended cleanup set *before* the remote write.  A server may commit an ADD
+            // and then drop the response; recording afterwards would leak that session's rows when
+            // con.add() reports the transport failure.
+            workspace.addAll(messages);
+            addBatched(con, messages);   // batch the UPDATE: a single huge INSERT broken-pipes on GraphDB
+        }
+    }
+
+    /**
+     * Run one CONSTRUCT and split its output: circuit triples are returned, {@code urn:sc:} rows are
+     * collected into {@code messages}.
+     *
+     * <p>A step that declares no feedback but emits rows anyway is an error, not something to drop
+     * quietly. The concurrent schedule's soundness rests on "no feedback implies no write", so the
+     * assumption is enforced here rather than trusted; the sequential path used to discard such rows
+     * silently, which would have been a wrong circuit with no diagnostic.
+     */
+    private static Model evaluate(RepositoryConnection con, CircuitConstructionPlan.Step step,
+                                  Model messages) {
+        Model emitted;
+        try (GraphQueryResult result = con.prepareGraphQuery(step.query()).evaluate()) {
+            emitted = QueryResults.asModel(result);
+        }
+        Model gates = new LinkedHashModel();
+        Map<Value, Value> cache = new HashMap<>();
+        for (Statement statement : emitted) {
+            if (statement.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
+                messages.add(statement);
+            } else {
+                addCanonical(gates, statement, cache);
+            }
+        }
+        if (!messages.isEmpty() && !step.feedback()) {
+            throw new IllegalStateException("step '" + step.label() + "' emitted " + messages.size()
+                + " private " + FactoredBgpRewriter.META_NS + " rows but declares no feedback, so they "
+                + "would be dropped and any step reading that relation would see an incomplete one");
+        }
+        return gates;
+    }
+
+    /**
+     * Add one circuit statement with every term rebuilt by a single value factory.
+     *
+     * <p>A CONSTRUCT result mixes terms OWNED BY THE STORE ({@code MemIRI}, {@code MemLiteral}) with
+     * terms the query MINTS ({@code SimpleIRI}, {@code SimpleLiteral}), and which of the two a given
+     * term comes back as depends on timing. {@code LinkedHashModel}'s indexed {@code contains} then
+     * misses a statement that is equal as RDF, stores the same gate triple twice, and the emitted
+     * N-Triples carries a duplicate line — on a circuit whose byte-identity across engines is a
+     * published claim.
+     *
+     * <p>Sequentially this was a rare flake (measured at roughly 1 in 10 by
+     * {@code CircuitRewriterTest.canonicalStatements}, which is why that helper compares triple TEXT and
+     * not models). Running steps concurrently made it reproducible: a right-nested MINUS emitted 64
+     * lines instead of 62 on about half of its runs, the two extra being an exact duplicate of a ⊗ gate
+     * two marginals both derive. Rebuilding every term through one factory makes the deduplication
+     * exact, so the accumulated circuit is a true set again in both schedules.
+     */
+    private static void addCanonical(Model circuit, Statement statement, Map<Value, Value> cache) {
+        Resource subject = (Resource) canonicalTerm(statement.getSubject(), cache);
+        IRI predicate = (IRI) canonicalTerm(statement.getPredicate(), cache);
+        Value object = canonicalTerm(statement.getObject(), cache);
+        Resource context = statement.getContext() == null
+                ? null : (Resource) canonicalTerm(statement.getContext(), cache);
+        if (context == null) {
+            circuit.add(subject, predicate, object);
+        } else {
+            circuit.add(subject, predicate, object, context);
+        }
+    }
+
+    /**
+     * @param cache memo for one step's output. A step repeats the same terms constantly — {@code c:in},
+     *     {@code rdf:type}, {@code c:Times}, and every gate IRI it fans out from — so rebuilding each one
+     *     once per occurrence measurably slowed construction. Keyed by the ORIGINAL term, which is what
+     *     makes it work across implementations: {@code MemIRI.equals(SimpleIRI)} is true by string value,
+     *     so a store-owned term hits the entry a minted one created. Per call, hence confined to one
+     *     thread and bounded by that step's distinct terms.
+     */
+    private static Value canonicalTerm(Value term, Map<Value, Value> cache) {
+        Value hit = cache.get(term);
+        if (hit != null) return hit;
+        ValueFactory vf = SimpleValueFactory.getInstance();
+        Value canonical;
+        if (term instanceof IRI) {
+            canonical = vf.createIRI(term.stringValue());
+        } else if (term instanceof BNode) {
+            canonical = vf.createBNode(((BNode) term).getID());
+        } else if (term instanceof Literal) {
+            Literal literal = (Literal) term;
+            canonical = literal.getLanguage().isPresent()
+                    ? vf.createLiteral(literal.getLabel(), literal.getLanguage().get())
+                    : vf.createLiteral(literal.getLabel(), literal.getDatatype());
+        } else if (term instanceof Triple) {                // RDF-star quoted triple
+            Triple triple = (Triple) term;
+            canonical = vf.createTriple((Resource) canonicalTerm(triple.getSubject(), cache),
+                    (IRI) canonicalTerm(triple.getPredicate(), cache),
+                    canonicalTerm(triple.getObject(), cache));
+        } else {
+            canonical = term;
+        }
+        cache.put(term, canonical);
+        return canonical;
+    }
+
+    private static void logStep(CircuitConstructionPlan.Step step, int index) {
+        // Keep this exact header stable: paper harnesses parse it as a machine boundary.
+        System.err.println("# --- step " + (index + 1) + " ---");
+        System.err.println(step.query());
+        // Trailing SPARQL comment keeps each regex-delimited chunk starting at PREFIX.
+        System.err.println("# step label: " + step.label());
+    }
+
+    /**
+     * Run {@code steps[from,to)} — all pure readers — concurrently, each on its own connection, and
+     * merge their triples in plan order once they have all finished.
+     *
+     * <p>The step text is logged up front, sequentially, so the {@code # --- step N ---} boundaries stay
+     * in plan order for the harnesses that parse them even though the queries then overlap.
+     */
+    private static void runReadersConcurrently(Repository repo,
+                                               List<CircuitConstructionPlan.Step> steps, int from,
+                                               int to, Model circuit, boolean logQueries,
+                                               ExecutorService pool, int parallelism) {
+        if (logQueries) {
+            System.err.println("# ---- steps " + (from + 1) + ".." + to + " are independent readers; "
+                    + "running up to " + Math.min(parallelism, to - from) + " concurrently ----");
+            for (int j = from; j < to; j++) logStep(steps.get(j), j);
+        }
+        List<Future<Model>> pending = new ArrayList<>(to - from);
+        for (int j = from; j < to; j++) {
+            CircuitConstructionPlan.Step step = steps.get(j);
+            pending.add(pool.submit(() -> {
+                // A connection per task: RepositoryConnection is not thread-safe, and opening it here
+                // means it sees everything the preceding barrier committed.
+                try (RepositoryConnection own = repo.getConnection()) {
+                    Model messages = new LinkedHashModel();
+                    Model gates = evaluate(own, step, messages);
+                    return gates;                       // a reader writes nothing; evaluate() enforces it
+                }
+            }));
+        }
+        RuntimeException failure = null;
+        List<Model> results = new ArrayList<>(pending.size());
+        for (Future<Model> future : pending) {
+            try {
+                results.add(future.get());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                results.add(null);
+                if (failure == null) failure = new IllegalStateException("interrupted while building the "
+                        + "circuit concurrently", interrupted);
+            } catch (ExecutionException executionFailure) {
+                results.add(null);
+                Throwable cause = executionFailure.getCause();
+                // Every task is awaited before rethrowing: a half-finished group must not race with the
+                // workspace cleanup the caller runs next.
+                if (failure == null) {
+                    failure = cause instanceof RuntimeException ? (RuntimeException) cause
+                            : new IllegalStateException("concurrent construction step failed", cause);
+                }
+            }
+        }
+        if (failure != null) throw failure;
+        for (Model result : results) circuit.addAll(result);
     }
 
     /** Batch size for feedback INSERT/DELETE: a single SPARQL UPDATE carrying the whole factored message
@@ -414,12 +678,13 @@ public final class CircuitRun {
         try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
             m.addAll(QueryResults.asModel(res));
         }
+        Map<Value, Value> cache = new HashMap<>();
         for (Statement st : m) {
             if (workspace != null
                     && st.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
                 workspace.add(st);                         // private row, not part of the circuit
             } else {
-                circuit.add(st);
+                addCanonical(circuit, st, cache);          // one term implementation, so it dedups
             }
         }
         con.add(m);

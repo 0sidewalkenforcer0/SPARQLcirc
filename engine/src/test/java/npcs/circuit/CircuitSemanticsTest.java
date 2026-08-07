@@ -701,6 +701,178 @@ public class CircuitSemanticsTest {
         return out;
     }
 
+    // ------------------------------------------------------------------ concurrent step execution
+    /**
+     * Running a plan's independent steps concurrently must produce the SAME circuit, triple for triple.
+     *
+     * <p>The whole argument is that a step with no feedback writes nothing to the store and needs
+     * nothing from its siblings — the ⊕/⊖ gates it references are computed from the binding by BIND, not
+     * looked up, so steps that meet at a gate only agree on its name. If that were wrong, a concurrent
+     * run would drop or duplicate exactly the cross-step gates, which a triple-level comparison catches
+     * and an answer-count check would not.
+     *
+     * <p>Run with parallelism 1 and 4 over the shapes where the flat plan is all readers (a MINUS is
+     * four independent CONSTRUCTs, OPTIONAL five, OPTIONAL-then-MINUS ten), plus shapes with real
+     * barriers (a materialized operand, a closure atom) so the barrier handling is exercised too.
+     */
+    @Test
+    public void concurrentStepExecutionIsByteIdenticalToSequential() {
+        String[] queries = {
+            "SELECT ?x WHERE { { ?x <urn:p0> ?a } UNION { ?x <urn:p1> ?b } UNION { ?x <urn:p2> ?c } }",
+            "SELECT ?x WHERE { ?x <urn:p0> ?a MINUS { ?x <urn:p1> ?b } }",
+            "SELECT ?x WHERE { ?x <urn:p0> ?a MINUS { { ?x <urn:p1> ?b } UNION { ?x <urn:p2> ?c } } }",
+            "SELECT ?x ?b WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } }",
+            "SELECT ?x ?b WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } MINUS { ?x <urn:p2> ?c } }",
+            "SELECT ?x ?b ?c WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } OPTIONAL { ?x <urn:p2> ?c } }",
+            // barriers: a materialized MINUS operand, and a factored plan (nearly all writers)
+            "SELECT ?x WHERE { { ?x <urn:p0> ?a MINUS { ?x <urn:p1> ?b } } ?x <urn:p2> ?c }",
+            "SELECT ?a WHERE { ?x <urn:p0> ?a . ?x <urn:p1> ?b . ?x <urn:p2> ?c }",
+            // A MINUS (P MINUS Q): two marginals derive the SAME ⊗ gate, which is what exposed the
+            // Model deduplication defect below.
+            "SELECT ?x WHERE { ?x <urn:p0> ?a MINUS { ?y <urn:p0> ?a MINUS { ?a <urn:p1> ?c } } }",
+        };
+        int concurrentlyScheduled = 0;
+        for (String query : queries) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Model sequentialModel = buildConcurrently(query, mode, 1);
+                Set<String> sequential = canonical(sequentialModel);
+                assertFalse(mode + ": the fixture must produce a circuit for " + query,
+                        sequential.isEmpty());
+                assertNoDuplicateStatements(sequentialModel, query + " (" + mode + ", sequential)");
+                for (int parallelism : new int[]{2, 4, 8}) {
+                    Model parallelModel = buildConcurrently(query, mode, parallelism);
+                    assertEquals(mode + " at parallelism " + parallelism + " changed the circuit for "
+                            + query, sequential, canonical(parallelModel));
+                    assertNoDuplicateStatements(parallelModel,
+                            query + " (" + mode + ", parallelism " + parallelism + ")");
+                }
+                if (widestReaderGroup(query, mode) > 1) concurrentlyScheduled++;
+            }
+        }
+        // Comparing two SEQUENTIAL runs would pass trivially, so require that the concurrent branch was
+        // actually taken for most of the matrix: a plan whose reader runs are all width 1 never enters it.
+        assertTrue("only " + concurrentlyScheduled + " of " + (queries.length * 2) + " plans had a reader "
+                + "group wide enough to schedule concurrently, so this is mostly comparing sequential "
+                + "runs with each other", concurrentlyScheduled >= queries.length);
+    }
+
+    /** The widest maximal run of consecutive non-feedback steps: what the scheduler can overlap. */
+    private static int widestReaderGroup(String query, ConstructionMode mode) {
+        int widest = 0, run = 0;
+        for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD, mode,
+                "junit-width").constructionPlan(query).steps()) {
+            run = step.feedback() ? 0 : run + 1;
+            widest = Math.max(widest, run);
+        }
+        return widest;
+    }
+
+    /**
+     * A closure atom's iterative fixpoint is a barrier, and its private rows have to be fed back and
+     * cleaned up exactly as in the sequential run. Kept separate because it needs the path machinery.
+     */
+    @Test
+    public void aConcurrentRunStillDrivesAndCleansUpAClosureAtom() {
+        String query = "SELECT ?y ?z WHERE { <urn:n0> <urn:p>+ ?y . ?y <urn:q> ?z }";
+        Set<String> sequential = null;
+        for (int parallelism : new int[]{1, 4}) {
+            Repository repo = new SailRepository(new MemoryStore());
+            try (RepositoryConnection con = repo.getConnection()) {
+                reify(con, "urn:r:e0", "urn:n0", "urn:p", "urn:n1");
+                reify(con, "urn:r:e1", "urn:n1", "urn:p", "urn:n2");
+                reify(con, "urn:r:q0", "urn:n2", "urn:q", "urn:z");
+                Model circuit = new LinkedHashModel();
+                CircuitRun.executeConstructionPlan(con, repo,
+                        new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-par-path")
+                                .constructionPlan(query), circuit, false, parallelism);
+                Set<String> canonical = canonical(circuit);
+                if (sequential == null) {
+                    sequential = canonical;
+                    assertFalse("the path fixpoint must produce a circuit", sequential.isEmpty());
+                } else {
+                    assertEquals("a concurrent run changed the path circuit", sequential, canonical);
+                }
+                for (org.eclipse.rdf4j.model.Statement st : con.getStatements(null, null, null)
+                        .stream().collect(java.util.stream.Collectors.toList())) {
+                    assertFalse("the atom's private rows must be cleaned up at parallelism " + parallelism,
+                            st.getPredicate().stringValue().startsWith("urn:sc:"));
+                }
+            } finally {
+                repo.shutDown();
+            }
+        }
+    }
+
+    /**
+     * The concurrent schedule is sound because "declares no feedback" implies "writes nothing". That is
+     * now enforced rather than assumed: a step that emits private rows without declaring feedback used to
+     * have them dropped silently, which would be a wrong circuit with no diagnostic.
+     */
+    @Test
+    public void aStepThatWritesRowsWithoutDeclaringFeedbackIsRefused() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:t0", "urn:s", "urn:p0", "urn:a");
+            // A hand-built step that emits a urn:sc: row but claims feedback=false.
+            CircuitConstructionPlan.Step liar = new CircuitConstructionPlan.Step(
+                    "CONSTRUCT { <urn:row> <urn:sc:message> <urn:sc:msg:fake> } "
+                  + "WHERE { ?t <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?s }",
+                    false, "mislabelled");
+            CircuitConstructionPlan plan = new CircuitConstructionPlan(
+                    java.util.Collections.singletonList(liar), ConstructionMode.FLAT,
+                    ConstructionMode.FLAT, null);
+            try {
+                CircuitRun.executeConstructionPlan(con, plan, new LinkedHashModel(), false);
+                fail("a step emitting private rows without declaring feedback must be refused");
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("declares no feedback"));
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /**
+     * The accumulated circuit must be a true SET of triples.
+     *
+     * <p>It was not, and comparing canonical triple TEXT cannot see it: a {@code TreeSet<String>} dedups
+     * exactly the duplicates that are the defect. A CONSTRUCT result mixes store-owned terms
+     * ({@code MemIRI}) with query-minted ones ({@code SimpleIRI}); {@code LinkedHashModel}'s indexed
+     * {@code contains} then misses an RDF-equal statement and stores it twice, so {@code Rio.write}
+     * emits a duplicate line. Sequentially that was a rare, timing-dependent flake; running steps
+     * concurrently made it about one run in two on {@code A MINUS (P MINUS Q)}, where two marginals
+     * derive the same ⊗ gate. Compare the model's own size against its canonical line count.
+     */
+    private static void assertNoDuplicateStatements(Model circuit, String what) {
+        assertEquals("the accumulated circuit carries RDF-duplicate statements, so the emitted "
+                + "N-Triples has duplicate lines: " + what, canonical(circuit).size(), circuit.size());
+        // The invariant above is the thing that matters but it only fires when the race is lost, which
+        // is rare in a small fixture. This is the deterministic half: no term in the circuit may be one
+        // of the STORE's own objects. That is exactly what makes the model dedup by value, so a circuit
+        // holding a MemIRI is one bad interleaving away from emitting a duplicate line.
+        for (org.eclipse.rdf4j.model.Statement statement : circuit) {
+            for (Value term : new Value[]{statement.getSubject(), statement.getPredicate(),
+                                          statement.getObject()}) {
+                assertFalse("the circuit must hold terms detached from the store, but " + term
+                        + " is a " + term.getClass().getName() + " in " + what,
+                        term.getClass().getName().startsWith("org.eclipse.rdf4j.sail."));
+            }
+        }
+    }
+
+    private static Model buildConcurrently(String query, ConstructionMode mode, int parallelism) {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            for (String[] fact : FACTS) reify(con, fact[0], fact[1], fact[2], fact[3]);
+            Model circuit = new LinkedHashModel();
+            CircuitRun.executeConstructionPlan(con, repo, new CircuitRewriter(Reification.STANDARD,
+                    mode, "junit-par").constructionPlan(query), circuit, false, parallelism);
+            return circuit;
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     // ------------------------------------------------------------------ closure atoms
     /**
      * A closure atom composed with every operator, checked against the oracle. RDF4J evaluates
