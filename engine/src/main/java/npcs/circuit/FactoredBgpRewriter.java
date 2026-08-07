@@ -155,24 +155,38 @@ final class FactoredBgpRewriter {
 
     private Relation eliminate(List<PatternEntry> patterns, Set<String> outputs) {
         // Source-restriction pushdown: if any pattern carries a constant subject/object the query is
-        // SELECTIVE, so each base relation is semi-joined to the rest of the BGP (only full-match rows
-        // materialise). Without it an interior pattern with no constant (e.g. a chain edge) would build its
-        // ENTIRE unrestricted relation and factored over-builds on bound queries. Unbound BGPs (all
-        // endpoints variable) keep plain base scans -- factored's design regime is unchanged.
+        // SELECTIVE, so each base relation is restricted to rows that participate in a full match (only
+        // then does an interior pattern with no constant -- a chain edge, say -- stop building its ENTIRE
+        // unrestricted relation). Unbound BGPs (all endpoints variable) keep plain base scans; factored's
+        // design regime is unchanged.
         boolean selective = false;
         for (PatternEntry entry : patterns) {
             if (entry.pattern.getSubjectVar().getValue() != null
                     || entry.pattern.getObjectVar().getValue() != null) { selective = true; break; }
         }
+        // The relations are created BEFORE any step is emitted, and in pattern order, because
+        // relation() advances stepNumber and marginalize() derives its gate tag from the resulting
+        // semanticId. Emitting one base step instead of k must not disturb that sequence or every
+        // MARG gate IRI would move.
         List<Relation> relations = new ArrayList<>();
         for (int i = 0; i < patterns.size(); i++) {
-            PatternEntry entry = patterns.get(i);
-            Relation relation = relation("base-" + i, patternVariables(entry.pattern));
-            steps.add(new CircuitConstructionPlan.Step(
-                    baseQuery(entry.pattern, relation, "BASE@" + queryFingerprint + "@" + i,
-                              selective ? patterns : null, i),
-                    true, "base[" + i + "]"));
-            relations.add(relation);
+            relations.add(relation("base-" + i, patternVariables(patterns.get(i).pattern)));
+        }
+        if (selective && patterns.size() > 1 && onePassBaseEnabled()) {
+            // The restriction each base relation needs IS the full BGP, so the k restricted base
+            // queries all had the SAME WHERE (the whole BGP reified) and differed only in which token
+            // they kept and which columns they published. That is k evaluations of one join. Emit the
+            // join once and publish all k relations from it. Identical output triples, one pass.
+            steps.add(new CircuitConstructionPlan.Step(baseQueryOnePass(patterns, relations), true,
+                    "base[0.." + (patterns.size() - 1) + "] one pass"));
+        } else {
+            for (int i = 0; i < patterns.size(); i++) {
+                steps.add(new CircuitConstructionPlan.Step(
+                        baseQuery(patterns.get(i).pattern, relations.get(i),
+                                  "BASE@" + queryFingerprint + "@" + i,
+                                  selective ? patterns : null, i),
+                        true, "base[" + i + "]"));
+            }
         }
 
         while (true) {
@@ -216,6 +230,56 @@ final class FactoredBgpRewriter {
         Relation result = relations.get(0);
         for (int i = 1; i < relations.size(); i++) result = join(result, relations.get(i));
         return result;
+    }
+
+    /**
+     * Escape hatch for the one-pass base materialization. It is on by default: the emitted triples are
+     * identical either way, so the only observable difference is construction time. The switch exists
+     * because the published construction-time tables for the bound (selective) query classes were
+     * measured with k separate base passes, and reproducing those numbers should not require checking
+     * out an old commit.
+     */
+    private static boolean onePassBaseEnabled() {
+        return !"0".equals(System.getenv("CIRCUIT_ONE_PASS_BASE"))
+                && !Boolean.getBoolean("sparqlcirc.perPatternBase");
+    }
+
+    /**
+     * All k base relations of a SELECTIVE BGP from ONE evaluation of the join.
+     *
+     * <p>Each restricted base relation is the projection of the full match onto one pattern's variables,
+     * paired with that pattern's token — so k of them are k projections of a single relation, and the
+     * per-pattern queries were re-running the same join k times to get them. Here the BGP is reified
+     * once with one token variable per pattern, and the template publishes every relation's gate, its
+     * {@code c:feeds} edge and its row.
+     *
+     * <p>Byte-for-byte identical to the k restricted queries: a base gate is
+     * {@code urn:g:s:}+SHA256(bindingKey("BASE@fp@i", vars(p_i))) and a row is keyed by the relation's
+     * message IRI and the same variables, neither of which depends on how many CONSTRUCTs carried them;
+     * the WHERE denotes the same match set in both shapes (the per-pattern form named the other tokens
+     * {@code f_ctx*} and dropped them, which is what makes them interchangeable).
+     *
+     * <p>Every reified pattern is emitted before any BIND. The keys are term-type-aware and guard on
+     * {@code BOUND}, so a BIND evaluated before the pattern that binds its variables would silently
+     * hash "unbound" instead of failing.
+     */
+    private String baseQueryOnePass(List<PatternEntry> patterns, List<Relation> outputs) {
+        StringBuilder template = new StringBuilder();
+        StringBuilder where = new StringBuilder();
+        StringBuilder binds = new StringBuilder();
+        for (int i = 0; i < patterns.size(); i++) {
+            Relation output = outputs.get(i);
+            String token = qv("f_token" + i), gate = qv("f_gate" + i), row = qv("f_row" + i);
+            template.append("  ").append(gate).append(" a c:Plus .\n")
+                    .append("  ").append(token).append(" c:feeds ").append(gate).append(" .\n")
+                    .append(rowTemplate(row, output, gate));
+            where.append(scheme.reify(patterns.get(i).pattern, token.substring(1)));
+            binds.append(bindIri(gate, "urn:g:s:",
+                            bindingKey("BASE@" + queryFingerprint + "@" + i, output.variables)))
+                 .append(bindIri(row, META_NS + "row:",
+                            bindingKey(output.messageIri, output.variables)));
+        }
+        return PRE + "CONSTRUCT {\n" + template + "}\nWHERE {\n" + where + binds + "}\n";
     }
 
     private Relation relation(String hint, List<String> variables) {
