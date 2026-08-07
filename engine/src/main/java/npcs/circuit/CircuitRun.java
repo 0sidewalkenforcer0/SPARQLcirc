@@ -332,33 +332,28 @@ public final class CircuitRun {
                 System.err.println("# ---- circuit construction plan: " + steps.size()
                         + " CONSTRUCT(s) ----");
             }
-            int i = 0;
-            while (i < steps.size()) {
-                if (steps.get(i).feedback()) {                  // a writer: barrier, alone, on con
-                    runStep(con, steps.get(i), i, circuit, workspace, logQueries);
-                    i++;
-                    continue;
-                }
-                int end = i;                                    // maximal run of pure readers
-                while (end < steps.size() && !steps.get(end).feedback()) end++;
-                if (end - i == 1 || parallelism <= 1 || repo == null) {
-                    for (int j = i; j < end; j++) {
-                        runStep(con, steps.get(j), j, circuit, workspace, logQueries);
-                    }
+            int[] level = scheduleLevels(steps);
+            int levels = 0;
+            for (int value : level) levels = Math.max(levels, value + 1);
+            for (int current = 0; current < levels; current++) {
+                List<Integer> group = new ArrayList<>();
+                for (int j = 0; j < steps.size(); j++) if (level[j] == current) group.add(j);
+                if (group.size() == 1 || parallelism <= 1 || repo == null) {
+                    for (int j : group) runStep(con, steps.get(j), j, circuit, workspace, logQueries);
                 } else {
                     if (pool == null) {
-                        // Sized from the WIDEST reader run in the whole plan, not from this one. Sizing
-                        // it here would pin the pool to the first group encountered and starve a later,
-                        // wider one -- three nested OPTIONALs produce runs of 4, 4, 6, 8 and 18.
-                        pool = Executors.newFixedThreadPool(
-                                Math.min(parallelism, widestReaderRun(steps)));
+                        // Sized from the WIDEST level in the whole plan, not from this one: sizing it
+                        // here would pin the pool to the first wide level and starve a later, wider one.
+                        pool = Executors.newFixedThreadPool(Math.min(parallelism, widestLevel(level)));
                     }
-                    runReadersConcurrently(repo, steps, i, end, circuit, logQueries, pool, parallelism);
+                    runLevelConcurrently(repo, steps, group, circuit, workspace, logQueries, pool,
+                            parallelism);
                 }
-                i = end;
             }
         } finally {
-            if (pool != null) pool.shutdownNow();
+            // shutdown(), not shutdownNow(): every level awaits its futures, so by here the workers are
+            // idle and interrupting them only produces spurious "interrupted" noise from the store.
+            if (pool != null) pool.shutdown();
             if (!workspace.isEmpty()) {
                 try {
                     removeBatched(con, workspace);
@@ -370,13 +365,48 @@ public final class CircuitRun {
         }
     }
 
-    /** The longest run of consecutive pure readers: the most steps the schedule can ever overlap. */
-    private static int widestReaderRun(List<CircuitConstructionPlan.Step> steps) {
-        int widest = 1, run = 0;
-        for (CircuitConstructionPlan.Step step : steps) {
-            run = step.feedback() ? 0 : run + 1;
-            widest = Math.max(widest, run);
+    /**
+     * Assign each step the earliest level it can run at, given what it reads and writes.
+     *
+     * <p>Step j depends on an earlier step i when j reads a relation i writes (so i must have filled it),
+     * or when both write the same relation (two hash-consed operands can produce the same rows; letting
+     * them race adds nothing and is easier to rule out than to reason about). {@code level[j]} is one past
+     * the deepest such i, so every step in one level is independent of every other and the levels run in
+     * order.
+     *
+     * <p>A step that does NOT declare its dependencies is a full barrier in both directions: it lands
+     * after everything before it, and everything after it lands after it. That is the conservative
+     * reading of "unknown", and it is what keeps a closure atom's fixpoint — which drives its own loop on
+     * the caller's connection — from ever overlapping anything.
+     */
+    private static int[] scheduleLevels(List<CircuitConstructionPlan.Step> steps) {
+        int[] level = new int[steps.size()];
+        int afterLastBarrier = 0;
+        for (int j = 0; j < steps.size(); j++) {
+            CircuitConstructionPlan.Step step = steps.get(j);
+            int earliest = afterLastBarrier;
+            if (step.dependenciesDeclared()) {
+                for (int i = 0; i < j; i++) {
+                    if (!java.util.Collections.disjoint(step.reads(), steps.get(i).writes())
+                            || !java.util.Collections.disjoint(step.writes(), steps.get(i).writes())) {
+                        earliest = Math.max(earliest, level[i] + 1);
+                    }
+                }
+                level[j] = earliest;
+            } else {
+                for (int i = 0; i < j; i++) earliest = Math.max(earliest, level[i] + 1);
+                level[j] = earliest;
+                afterLastBarrier = earliest + 1;      // nothing later may share or precede this level
+            }
         }
+        return level;
+    }
+
+    /** The most steps any one level holds: the most the schedule can ever overlap. */
+    private static int widestLevel(int[] level) {
+        int[] count = new int[level.length + 1];
+        int widest = 1;
+        for (int value : level) widest = Math.max(widest, ++count[value]);
         return widest;
     }
 
@@ -507,31 +537,48 @@ public final class CircuitRun {
     }
 
     /**
-     * Run {@code steps[from,to)} — all pure readers — concurrently, each on its own connection, and
-     * merge their triples in plan order once they have all finished.
+     * Run one DAG level concurrently, each step on its own connection, merging their triples in plan
+     * order once they have all finished.
+     *
+     * <p>Unlike the reader-only case this level may contain WRITERS -- the factored passes, which are most
+     * of a factored plan. Two writers in one level never target the same relation ({@code scheduleLevels}
+     * adds a write-write edge if they would), so they cannot corrupt each other; each writes through its
+     * own connection, and the level barrier is what makes the next level see it.
+     *
+     * <p>A writer registers its rows in the shared workspace BEFORE writing them, under a lock. That
+     * ordering is the same one the sequential path keeps and for the same reason: a server may commit an
+     * ADD and then drop the response, and rows recorded afterwards would leak when the add reports a
+     * transport failure. The lock is needed because {@code Model} is not thread-safe.
      *
      * <p>The step text is logged up front, sequentially, so the {@code # --- step N ---} boundaries stay
      * in plan order for the harnesses that parse them even though the queries then overlap.
      */
-    private static void runReadersConcurrently(Repository repo,
-                                               List<CircuitConstructionPlan.Step> steps, int from,
-                                               int to, Model circuit, boolean logQueries,
-                                               ExecutorService pool, int parallelism) {
+    private static void runLevelConcurrently(Repository repo,
+                                             List<CircuitConstructionPlan.Step> steps,
+                                             List<Integer> group, Model circuit, Model workspace,
+                                             boolean logQueries, ExecutorService pool,
+                                             int parallelism) {
         if (logQueries) {
-            System.err.println("# ---- steps " + (from + 1) + ".." + to + " are independent readers; "
-                    + "running up to " + Math.min(parallelism, to - from) + " concurrently ----");
-            for (int j = from; j < to; j++) logStep(steps.get(j), j);
+            StringBuilder which = new StringBuilder();
+            for (int j : group) which.append(which.length() == 0 ? "" : ", ").append(j + 1);
+            System.err.println("# ---- steps " + which + " are independent; running up to "
+                    + Math.min(parallelism, group.size()) + " concurrently ----");
+            for (int j : group) logStep(steps.get(j), j);
         }
-        List<Future<Model>> pending = new ArrayList<>(to - from);
-        for (int j = from; j < to; j++) {
+        List<Future<Model>> pending = new ArrayList<>(group.size());
+        for (int j : group) {
             CircuitConstructionPlan.Step step = steps.get(j);
             pending.add(pool.submit(() -> {
                 // A connection per task: RepositoryConnection is not thread-safe, and opening it here
-                // means it sees everything the preceding barrier committed.
+                // means it sees everything the preceding level committed.
                 try (RepositoryConnection own = repo.getConnection()) {
                     Model messages = new LinkedHashModel();
                     Model gates = evaluate(own, step, messages);
-                    return gates;                       // a reader writes nothing; evaluate() enforces it
+                    if (!messages.isEmpty()) {
+                        synchronized (workspace) { workspace.addAll(messages); }
+                        addBatched(own, messages);
+                    }
+                    return gates;
                 }
             }));
         }
@@ -548,7 +595,7 @@ public final class CircuitRun {
             } catch (ExecutionException executionFailure) {
                 results.add(null);
                 Throwable cause = executionFailure.getCause();
-                // Every task is awaited before rethrowing: a half-finished group must not race with the
+                // Every task is awaited before rethrowing: a half-finished level must not race with the
                 // workspace cleanup the caller runs next.
                 if (failure == null) {
                     failure = cause instanceof RuntimeException ? (RuntimeException) cause

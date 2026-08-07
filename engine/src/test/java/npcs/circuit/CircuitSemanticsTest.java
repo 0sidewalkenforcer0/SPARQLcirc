@@ -701,6 +701,57 @@ public class CircuitSemanticsTest {
         return out;
     }
 
+    // ------------------------------------------------------------------ declared step dependencies
+    /**
+     * Every step's declared {@code reads}/{@code writes} must match what its SPARQL actually touches.
+     *
+     * <p>This is the safety net for scheduling a factored plan. The declaration is hand-maintained at a
+     * dozen call sites across two rewriters, and if one of them under-reports a read, the scheduler is
+     * free to start that step before the pass that fills the relation — producing a circuit built from an
+     * empty or half-written one, with no error. So the declaration is checked against the query TEXT,
+     * which is what the engine executes: a private relation IRI in the CONSTRUCT template is a write, one
+     * in the WHERE is a read, and both sets must agree exactly.
+     *
+     * <p>Run over the whole generated composition sweep in both modes, so it covers the shapes nobody
+     * wrote down by hand.
+     */
+    @Test
+    public void everyStepDeclaresExactlyTheRelationsItTouches() {
+        java.util.regex.Pattern relation = java.util.regex.Pattern.compile("<(urn:sc:msg:[^>]+)>");
+        List<Shape> shapes = new ArrayList<>();
+        for (int n = 1; n <= 2; n++) shapes.addAll(sweep(n, false));
+        for (int n = 1; n <= 2; n++) shapes.addAll(sweep(n, true));
+        shapes.add(new Shape("path operand", "SELECT ?y ?z WHERE { <urn:a> <urn:p>+ ?y . ?y <urn:q> ?z }",
+                Arrays.asList("y", "z")));
+        shapes.add(new Shape("selective bgp",
+                "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y }", Arrays.asList("y")));
+        int declared = 0, undeclared = 0;
+        for (Shape shape : shapes) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD, mode,
+                        "junit-deps").constructionPlan(shape.query).steps()) {
+                    if (!step.dependenciesDeclared()) { undeclared++; continue; }
+                    declared++;
+                    String text = step.query();
+                    int split = text.indexOf("\nWHERE {");
+                    assertTrue("a declared step must have a template and a WHERE: " + step.label(),
+                            split > 0);
+                    Set<String> inTemplate = new TreeSet<>(), inWhere = new TreeSet<>();
+                    for (java.util.regex.Matcher m = relation.matcher(text.substring(0, split));
+                            m.find(); ) inTemplate.add(m.group(1));
+                    for (java.util.regex.Matcher m = relation.matcher(text.substring(split));
+                            m.find(); ) inWhere.add(m.group(1));
+                    assertEquals("step '" + step.label() + "' of " + shape.query + " (" + mode
+                            + ") declares the wrong WRITES", inTemplate, new TreeSet<>(step.writes()));
+                    assertEquals("step '" + step.label() + "' of " + shape.query + " (" + mode
+                            + ") declares the wrong READS", inWhere, new TreeSet<>(step.reads()));
+                }
+            }
+        }
+        assertTrue("the sweep must actually contain declared steps", declared > 100);
+        assertTrue("and the path fixpoint must stay undeclared, hence a barrier", undeclared > 0);
+    }
+
     // ------------------------------------------------------------------ restricted subtrahend marginal
     /**
      * The subtrahend marginal is semi-joined to the minuend, so it stops materializing the whole right
@@ -848,6 +899,13 @@ public class CircuitSemanticsTest {
             // A MINUS (P MINUS Q): two marginals derive the SAME ⊗ gate, which is what exposed the
             // Model deduplication defect below.
             "SELECT ?x WHERE { ?x <urn:p0> ?a MINUS { ?y <urn:p0> ?a MINUS { ?a <urn:p1> ?c } } }",
+            // Factored plans are nearly all WRITERS, so these are the shapes that exercise concurrent
+            // feedback passes rather than concurrent readers. An UNBOUND BGP keeps one base scan per
+            // pattern (a wide level 0, since the one-pass collapse only applies to selective BGPs), and
+            // two OPTIONALs give the widest level of any shape here.
+            "SELECT ?x ?a ?b ?c WHERE { ?x <urn:p0> ?a . ?x <urn:p1> ?b . ?x <urn:p2> ?c }",
+            "SELECT ?x ?b ?c WHERE { ?x <urn:p0> ?a OPTIONAL { ?x <urn:p1> ?b } "
+          + "OPTIONAL { ?x <urn:p2> ?c } }",
         };
         int concurrentlyScheduled = 0;
         for (String query : queries) {
@@ -864,23 +922,46 @@ public class CircuitSemanticsTest {
                     assertNoDuplicateStatements(parallelModel,
                             query + " (" + mode + ", parallelism " + parallelism + ")");
                 }
-                if (widestReaderGroup(query, mode) > 1) concurrentlyScheduled++;
+                if (widestDagLevel(query, mode) > 1) concurrentlyScheduled++;
             }
         }
         // Comparing two SEQUENTIAL runs would pass trivially, so require that the concurrent branch was
         // actually taken for most of the matrix: a plan whose reader runs are all width 1 never enters it.
-        assertTrue("only " + concurrentlyScheduled + " of " + (queries.length * 2) + " plans had a reader "
-                + "group wide enough to schedule concurrently, so this is mostly comparing sequential "
+        assertTrue("only " + concurrentlyScheduled + " of " + (queries.length * 2) + " plans had a DAG "
+                + "level wide enough to schedule concurrently, so this is mostly comparing sequential "
                 + "runs with each other", concurrentlyScheduled >= queries.length);
     }
 
-    /** The widest maximal run of consecutive non-feedback steps: what the scheduler can overlap. */
-    private static int widestReaderGroup(String query, ConstructionMode mode) {
-        int widest = 0, run = 0;
-        for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD, mode,
-                "junit-width").constructionPlan(query).steps()) {
-            run = step.feedback() ? 0 : run + 1;
-            widest = Math.max(widest, run);
+    /**
+     * The widest level of the plan's dependency DAG: the most steps the scheduler can overlap.
+     *
+     * <p>Derived here from the PUBLIC {@code reads}/{@code writes}/{@code dependenciesDeclared} contract
+     * rather than by calling the scheduler, so this measures what the plan makes available and the
+     * byte-identity assertion measures whether the scheduler used it correctly. An undeclared step is a
+     * barrier in both directions, which is what keeps a closure atom's fixpoint alone in its level.
+     */
+    private static int widestDagLevel(String query, ConstructionMode mode) {
+        List<CircuitConstructionPlan.Step> steps = new CircuitRewriter(Reification.STANDARD, mode,
+                "junit-width").constructionPlan(query).steps();
+        int[] level = new int[steps.size()];
+        int afterLastBarrier = 0;
+        for (int j = 0; j < steps.size(); j++) {
+            CircuitConstructionPlan.Step step = steps.get(j);
+            int earliest = afterLastBarrier;
+            for (int i = 0; i < j; i++) {
+                boolean conflicts = !step.dependenciesDeclared()
+                        || !java.util.Collections.disjoint(step.reads(), steps.get(i).writes())
+                        || !java.util.Collections.disjoint(step.writes(), steps.get(i).writes());
+                if (conflicts) earliest = Math.max(earliest, level[i] + 1);
+            }
+            level[j] = earliest;
+            if (!step.dependenciesDeclared()) afterLastBarrier = earliest + 1;
+        }
+        Map<Integer, Integer> perLevel = new HashMap<>();
+        int widest = 0;
+        for (int value : level) {
+            int n = perLevel.merge(value, 1, Integer::sum);
+            widest = Math.max(widest, n);
         }
         return widest;
     }
@@ -919,6 +1000,60 @@ public class CircuitSemanticsTest {
                 repo.shutDown();
             }
         }
+    }
+
+    /**
+     * A factored plan is scheduled by its real dependency DAG, so a step whose dependencies are NOT
+     * declared has to be a barrier in BOTH directions — otherwise the scheduler would happily overlap a
+     * closure atom's fixpoint, which drives its own loop on the caller's connection, with something else.
+     *
+     * <p>Checked by planting an undeclared step in the middle of a plan that would otherwise have a wide
+     * level, and requiring the DAG to serialize completely around it.
+     */
+    @Test
+    public void anUndeclaredStepIsABarrierInBothDirections() {
+        List<CircuitConstructionPlan.Step> steps = new ArrayList<>();
+        Set<String> relation = java.util.Collections.singleton("urn:sc:msg:r1");
+        steps.add(new CircuitConstructionPlan.Step("A", true, "writer-a",
+                java.util.Collections.emptySet(), relation));
+        steps.add(new CircuitConstructionPlan.Step("B", true, "writer-b",
+                java.util.Collections.emptySet(), java.util.Collections.singleton("urn:sc:msg:r2")));
+        steps.add(new CircuitConstructionPlan.Step("C", true, "undeclared"));   // 3-arg = undeclared
+        steps.add(new CircuitConstructionPlan.Step("D", false, "reader-d",
+                java.util.Collections.emptySet(), java.util.Collections.emptySet()));
+        steps.add(new CircuitConstructionPlan.Step("E", false, "reader-e",
+                relation, java.util.Collections.emptySet()));
+
+        assertFalse("the 3-argument constructor must leave dependencies undeclared",
+                steps.get(2).dependenciesDeclared());
+        assertTrue("and the declaring constructor must mark them declared",
+                steps.get(0).dependenciesDeclared());
+
+        int[] level = levelsOf(steps);
+        assertEquals("the two independent writers share level 0", level[0], level[1]);
+        assertTrue("the undeclared step must come after both", level[2] > level[1]);
+        assertTrue("and everything after it must come after it, even a step that depends on nothing",
+                level[3] > level[2] && level[4] > level[2]);
+        assertEquals("the two steps after the barrier are independent of each other", level[3], level[4]);
+    }
+
+    /** The level assignment, from the public reads/writes/dependenciesDeclared contract. */
+    private static int[] levelsOf(List<CircuitConstructionPlan.Step> steps) {
+        int[] level = new int[steps.size()];
+        int afterLastBarrier = 0;
+        for (int j = 0; j < steps.size(); j++) {
+            CircuitConstructionPlan.Step step = steps.get(j);
+            int earliest = afterLastBarrier;
+            for (int i = 0; i < j; i++) {
+                boolean conflicts = !step.dependenciesDeclared()
+                        || !java.util.Collections.disjoint(step.reads(), steps.get(i).writes())
+                        || !java.util.Collections.disjoint(step.writes(), steps.get(i).writes());
+                if (conflicts) earliest = Math.max(earliest, level[i] + 1);
+            }
+            level[j] = earliest;
+            if (!step.dependenciesDeclared()) afterLastBarrier = earliest + 1;
+        }
+        return level;
     }
 
     /**

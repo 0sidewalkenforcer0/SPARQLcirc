@@ -425,7 +425,7 @@ public class CircuitRewriter {
         List<Operand> operands = new ArrayList<>();
         for (TupleExpr part : parts) operands.add(planOperand(part, parts, plan));
         plan.add(flatStep(productAnswer(operands, joinConditions(conditions, operands), W),
-                "join-operands"));
+                "join-operands", relationsOf(operands)));
         return plan;
     }
 
@@ -508,8 +508,28 @@ public class CircuitRewriter {
         return rendered;
     }
 
+    /**
+     * A step that reads the base data only, and possibly some materialized operand relations, and writes
+     * no relation of its own. Declaring {@code reads} is what lets {@link CircuitRun} schedule it against
+     * the passes that fill those relations instead of behind every earlier write.
+     */
+    private CircuitConstructionPlan.Step flatStep(String query, String label, Set<String> reads) {
+        return new CircuitConstructionPlan.Step(query, false, label, reads, Collections.emptySet());
+    }
+
     private CircuitConstructionPlan.Step flatStep(String query, String label) {
-        return new CircuitConstructionPlan.Step(query, false, label);
+        return flatStep(query, label, Collections.<String>emptySet());
+    }
+
+    /** The union of the private relations these operands read. */
+    private static Set<String> relationsOf(Operand... operands) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (Operand operand : operands) if (operand != null) out.addAll(operand.relations());
+        return out;
+    }
+
+    private static Set<String> relationsOf(List<Operand> operands) {
+        return relationsOf(operands.toArray(new Operand[0]));
     }
 
     /**
@@ -616,6 +636,12 @@ public class CircuitRewriter {
         /** The variables this operand binds. */
         abstract LinkedHashSet<String> scope();
         /**
+         * The private {@code urn:sc:} relations {@link #emit} matches, so a step that inlines this
+         * operand can declare what it depends on. Empty for a BGP, which is reified against the base
+         * data; one relation for a materialized operand.
+         */
+        abstract Set<String> relations();
+        /**
          * The ⊕ gate keyed by (groupTag, scope) that an enclosing ⊖ reads as minuend or subtrahend.
          *
          * @param restriction when non-null, the sibling operand this marginal is semi-joined to, so only
@@ -636,6 +662,7 @@ public class CircuitRewriter {
             where.append(reify(block, prefix, children));
         }
         @Override LinkedHashSet<String> scope() { return vars(block.patterns); }
+        @Override Set<String> relations() { return Collections.emptySet(); }
         @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
                                                               String groupTag, Operand restriction) {
             return marginalPlus(block, tokPrefix, plusPrefix, groupTag, vars(block.patterns),
@@ -651,6 +678,7 @@ public class CircuitRewriter {
             this.relationIri = relationIri; this.scope = scope; this.gateVar = gateVar;
         }
         @Override LinkedHashSet<String> scope() { return new LinkedHashSet<>(scope); }
+        @Override Set<String> relations() { return Collections.singleton(relationIri); }
         /**
          * A materialized operand already carries exactly one gate per binding, so its marginal is a
          * sink ⊕ over that one child — the same shape {@code FactoredBgpRewriter.marginalSink} uses,
@@ -670,7 +698,9 @@ public class CircuitRewriter {
                     .append(" c:feeds ").append(plus).append(" .\n}\nWHERE {\n").append(where)
                     .append(bindIri(plus, plusPrefix, idKey(scope, groupTag))).append("}\n");
             List<CircuitConstructionPlan.Step> out = new ArrayList<>();
-            out.add(flatStep(q.toString(), "operand-marginal"));
+            LinkedHashSet<String> reads = new LinkedHashSet<>(relations());
+            reads.addAll(relationsOf(restriction));
+            out.add(flatStep(q.toString(), "operand-marginal", reads));
             return out;
         }
         @Override void emit(StringBuilder where, String prefix, List<String> children) {
@@ -744,7 +774,8 @@ public class CircuitRewriter {
             plan.add(new CircuitConstructionPlan.Step(
                     productRows(operands, joinConditions(conditions, operands), columns, productFp,
                                 productRelation, productGate),
-                    true, "operand-rows"));
+                    true, "operand-rows", relationsOf(operands),
+                    Collections.singleton(productRelation)));
             return new RelationOperand(productRelation, columns, productGate);
         }
         Difference d = (Difference) node;
@@ -756,7 +787,8 @@ public class CircuitRewriter {
         String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
                            + ":operand:" + core.opFp;
         plan.add(new CircuitConstructionPlan.Step(
-                minusRows(core, relationIri, gateVar), true, "operand-rows"));
+                minusRows(core, relationIri, gateVar), true, "operand-rows",
+                relationsOf(core.left), Collections.singleton(relationIri)));
         return new RelationOperand(relationIri, canonicalVars(core.scope), gateVar);
     }
 
@@ -860,7 +892,7 @@ public class CircuitRewriter {
             boolean shared = !intersect(V1, R.scope()).isEmpty();
             plan.addAll(R.marginal("b", "urn:g:p2:", p2Tag,
                     shared && restrictSubtrahend() ? L : null));
-            plan.add(flatStep(subFeeds(L, R, V1, R.scope(), p2Tag, opFp), "sub"));
+            plan.add(flatStep(subFeeds(L, R, V1, R.scope(), p2Tag, opFp), "sub", relationsOf(L, R)));
         }
         return new DiffCore(L, V1, p1Tag, opFp);
     }
@@ -956,7 +988,7 @@ public class CircuitRewriter {
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         DiffCore core = diffCore(diff, plan);
         if (core == null) return branchPlan(diff.getLeftArg(), W);   // no removal: the answer is P1's
-        plan.add(flatStep(minusRoot(core, W), "minusRoot"));
+        plan.add(flatStep(minusRoot(core, W), "minusRoot", relationsOf(core.left)));
         return plan;
     }
 
@@ -1077,7 +1109,7 @@ public class CircuitRewriter {
         }
         List<CircuitConstructionPlan.Step> plan = new ArrayList<>();
         plan.add(flatStep(productPlus(block, tokPrefix, plusPrefix, groupTag, groupVars, restriction),
-                "marg-flat"));
+                "marg-flat", relationsOf(restriction)));
         return plan;
     }
 
