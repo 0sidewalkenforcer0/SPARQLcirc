@@ -556,6 +556,151 @@ public class CircuitSemanticsTest {
         }
     }
 
+    // ------------------------------------------------------------------ one-pass base relations
+    /**
+     * A selective BGP's k base relations come from ONE evaluation of the join instead of k. The whole
+     * argument for that rests on the output being unchanged, so this compares the circuits triple by
+     * triple — the same canonical N-Triples comparison the cross-engine byte-identity result uses.
+     *
+     * <p>Both shapes are reachable in the same build ({@code -Dsparqlcirc.perPatternBase=true} restores
+     * the per-pattern queries), so this is a real differential and not a re-derivation of one side.
+     */
+    @Test
+    public void onePassBaseRelationsAreByteIdenticalToThePerPatternQueries() {
+        String[] queries = {
+            // bound chain: every interior pattern needs the restriction, which is the case the pushdown
+            // was introduced for
+            "SELECT ?v3 WHERE { <urn:s> <urn:e> ?v1 . ?v1 <urn:e> ?v2 . ?v2 <urn:e> ?v3 }",
+            // bound star, several patterns sharing one subject
+            "SELECT ?a ?b WHERE { ?x <urn:p0> <urn:c0> . ?x <urn:p1> ?a . ?x <urn:p2> ?b }",
+            // constant in OBJECT position only, and a projected variable two joins away
+            "SELECT ?v2 WHERE { ?v1 <urn:p1> <urn:c0> . ?v1 <urn:e> ?v2 . ?v2 <urn:p2> ?w }",
+            // a MINUS whose operands are themselves selective BGPs: the marginals go through the same
+            // elimination, so the one-pass base has to be right there too
+            "SELECT ?x WHERE { ?x <urn:p0> <urn:c0> . ?x <urn:e> ?y MINUS { ?y <urn:p1> <urn:c1> } }",
+        };
+        for (String query : queries) {
+            Set<String> onePass, perPattern;
+            System.clearProperty("sparqlcirc.perPatternBase");
+            onePass = canonical(buildOnFixture(query));
+            System.setProperty("sparqlcirc.perPatternBase", "true");
+            try {
+                perPattern = canonical(buildOnFixture(query));
+            } finally {
+                System.clearProperty("sparqlcirc.perPatternBase");
+            }
+            assertFalse("the fixture must actually produce a circuit for " + query, onePass.isEmpty());
+            assertEquals("one-pass base materialization changed the circuit for " + query,
+                    perPattern, onePass);
+        }
+    }
+
+    /**
+     * The oracle over SELECTIVE BGPs. Every shape the generated sweep produces is unbound (its leaves
+     * are {@code ?x <urn:pK> ?vK}), so the sweep never reaches the source-restriction pushdown at all,
+     * and now never reaches the one-pass base materialization either. These do: each carries a constant,
+     * and the multi-pattern ones are exactly the plans that collapse k base passes into one.
+     */
+    @Test
+    public void selectiveBgpsDenoteTheQueryEventInEveryWorld() {
+        String[][] facts = {
+            {"urn:r:b0", "urn:s",  "urn:e",   "urn:n1"},
+            {"urn:r:b1", "urn:n1", "urn:e",   "urn:n2"},
+            {"urn:r:b2", "urn:n2", "urn:e",   "urn:n3"},
+            {"urn:r:b3", "urn:n1", "urn:tag", "urn:c"},
+            {"urn:r:b4", "urn:n2", "urn:tag", "urn:c"},
+            {"urn:r:b5", "urn:s",  "urn:q",   "urn:n2"},
+        };
+        checkAgainstOracle(Arrays.asList(
+            new Shape("bound 2-chain", "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y }",
+                    Arrays.asList("y")),
+            new Shape("bound 3-chain, both ends constant",
+                    "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y . ?y <urn:tag> <urn:c> }",
+                    Arrays.asList("y")),
+            new Shape("object-position constant only",
+                    "SELECT ?m WHERE { ?m <urn:tag> <urn:c> . ?m <urn:e> ?y }", Arrays.asList("m")),
+            new Shape("bound star plus chain",
+                    "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y . ?m <urn:tag> <urn:c> }",
+                    Arrays.asList("y")),
+            new Shape("selective minuend",
+                    "SELECT ?y WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y MINUS { ?y <urn:tag> <urn:c> } }",
+                    Arrays.asList("y")),
+            new Shape("selective operands of an optional",
+                    "SELECT ?y ?t WHERE { <urn:s> <urn:e> ?m . ?m <urn:e> ?y OPTIONAL { ?y <urn:tag> ?t } }",
+                    Arrays.asList("y", "t")),
+            new Shape("selective union branches",
+                    "SELECT ?y WHERE { { <urn:s> <urn:e> ?y } UNION { <urn:s> <urn:q> ?y } }",
+                    Arrays.asList("y"))),
+            facts, ConstructionMode.values(), Reification.STANDARD);
+    }
+
+    /** And it really is one pass: the plan must lose the k-1 redundant base steps. */
+    @Test
+    public void onePassBaseReplacesTheRedundantBaseSteps() {
+        String selective = "SELECT ?v3 WHERE { <urn:s> <urn:e> ?v1 . ?v1 <urn:e> ?v2 . ?v2 <urn:e> ?v3 }";
+        assertEquals("three patterns, three restricted base passes before", 3,
+                baseSteps(selective, true));
+        assertEquals("one afterwards", 1, baseSteps(selective, false));
+
+        // An UNBOUND BGP must keep its per-pattern scans. There the restriction does not apply, so
+        // combining them would turn k cheap single-pattern scans INTO a full join for nothing.
+        String unbound = "SELECT ?v3 WHERE { ?v0 <urn:e> ?v1 . ?v1 <urn:e> ?v2 . ?v2 <urn:e> ?v3 }";
+        assertEquals("an unbound BGP is not selective and keeps one scan per pattern", 3,
+                baseSteps(unbound, false));
+    }
+
+    private static int baseSteps(String query, boolean perPattern) {
+        if (perPattern) System.setProperty("sparqlcirc.perPatternBase", "true");
+        try {
+            int n = 0;
+            for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD,
+                    ConstructionMode.FACTORED, "junit-onepass").constructionPlan(query).steps()) {
+                if (step.label() != null && step.label().startsWith("base[")) n++;
+            }
+            return n;
+        } finally {
+            System.clearProperty("sparqlcirc.perPatternBase");
+        }
+    }
+
+    /** A fixture the selective queries above actually match, so the comparison is not of two empties. */
+    private static Model buildOnFixture(String query) {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:c1", "urn:s", "urn:e", "urn:n1");
+            reify(con, "urn:r:c2", "urn:n1", "urn:e", "urn:n2");
+            reify(con, "urn:r:c3", "urn:n2", "urn:e", "urn:n3");
+            reify(con, "urn:r:c4", "urn:n1", "urn:e", "urn:n2b");   // a second derivation
+            reify(con, "urn:r:c5", "urn:n2b", "urn:e", "urn:n3");
+            reify(con, "urn:r:s0", "urn:x", "urn:p0", "urn:c0");
+            reify(con, "urn:r:s1", "urn:x", "urn:p1", "urn:av");
+            reify(con, "urn:r:s2", "urn:x", "urn:p2", "urn:bv");
+            reify(con, "urn:r:s3", "urn:x", "urn:e", "urn:n1");
+            reify(con, "urn:r:s4", "urn:n1", "urn:p1", "urn:c1");
+            reify(con, "urn:r:s5", "urn:n1", "urn:p2", "urn:wv");
+            reify(con, "urn:r:s6", "urn:n2", "urn:p2", "urn:wv");
+            reify(con, "urn:r:s7", "urn:n1", "urn:p1", "urn:c0");   // object-position constant match
+            Model circuit = new LinkedHashModel();
+            CircuitRun.executeConstructionPlan(con, new CircuitRewriter(Reification.STANDARD,
+                    ConstructionMode.FACTORED, "junit-onepass").constructionPlan(query),
+                    circuit, false);
+            return circuit;
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** A circuit as its canonical N-Triples line set: the right way to compare two circuits. */
+    private static Set<String> canonical(Model model) {
+        Set<String> out = new TreeSet<>();
+        for (org.eclipse.rdf4j.model.Statement st : model) {
+            out.add(NTriplesUtil.toNTriplesString(st.getSubject()) + " "
+                  + NTriplesUtil.toNTriplesString(st.getPredicate()) + " "
+                  + NTriplesUtil.toNTriplesString(st.getObject()) + " .");
+        }
+        return out;
+    }
+
     // ------------------------------------------------------------------ closure atoms
     /**
      * A closure atom composed with every operator, checked against the oracle. RDF4J evaluates
