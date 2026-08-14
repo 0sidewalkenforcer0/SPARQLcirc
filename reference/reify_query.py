@@ -8,17 +8,41 @@ SHA256, gate IRI, or CONSTRUCT) — the "reification only" alternative in the B/
 the control that isolates the reification cost (R-B) from the provenance cost (N-R or C-R).
 
 Standard reification: `s p o`  ->  `?__tN rdf:subject s . ?__tN rdf:predicate p . ?__tN rdf:object o .`
+RDF-star reification: `s p o`  ->  `<< s p o >> occurrenceOf ?__tN .`
 By construction R returns the SAME answer multiset as the base query B (one statement node per base edge).
 
-  python3 reify_query.py <query.rq>          # print the reified query
-  python3 reify_query.py --selftest          # parse + structure-preservation unit tests
+  python3 reify_query.py <query.rq>                         # Standard (default)
+  python3 reify_query.py --scheme SPARQL_Star <query.rq>    # RDF-star
+  python3 reify_query.py --selftest                         # focused self-tests
 """
+import argparse
 import sys
 from rdflib.plugins.sparql.parser import parseQuery
 from rdflib.plugins.sparql.algebra import translateQuery
 from rdflib.term import Variable, URIRef, Literal, BNode
 
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"          # Standard reification predicates
+OCCURRENCE_OF = "http://example.org/occurrenceOf"
+STANDARD = "Standard"
+SPARQL_STAR = "SPARQL_Star"
+
+
+def normalize_scheme(value):
+    """Return the Java CLI spelling for a supported reification scheme."""
+    aliases = {
+        "standard": STANDARD,
+        "sparql_star": SPARQL_STAR,
+        "sparql-star": SPARQL_STAR,
+        "rdfstar": SPARQL_STAR,
+        "rdf-star": SPARQL_STAR,
+    }
+    normalized = aliases.get(str(value).strip().lower())
+    if normalized is None:
+        raise ValueError(
+            f"unsupported reification scheme {value!r}; "
+            f"expected {STANDARD} or {SPARQL_STAR}"
+        )
+    return normalized
 
 def term(t):
     if isinstance(t, Variable): return "?" + str(t)
@@ -32,17 +56,23 @@ def term(t):
     raise ValueError(f"unhandled term {type(t).__name__}: {t!r}")
 
 class Reifier:
-    def __init__(self, scheme="standard"):
-        if scheme != "standard":
-            raise NotImplementedError("only Standard reification implemented (matches our loaded repos)")
+    def __init__(self, scheme=STANDARD):
+        self.scheme = normalize_scheme(scheme)
         self.n = 0
+
     def bgp(self, triples, ind):
         out = []
         for s, p, o in triples:
             self.n += 1; t = f"?__t{self.n}"
-            out.append(f"{ind}{t} <{RS}subject> {term(s)} .")
-            out.append(f"{ind}{t} <{RS}predicate> {term(p)} .")
-            out.append(f"{ind}{t} <{RS}object> {term(o)} .")
+            if self.scheme == SPARQL_STAR:
+                out.append(
+                    f"{ind}<< {term(s)} {term(p)} {term(o)} >> "
+                    f"<{OCCURRENCE_OF}> {t} ."
+                )
+            else:
+                out.append(f"{ind}{t} <{RS}subject> {term(s)} .")
+                out.append(f"{ind}{t} <{RS}predicate> {term(p)} .")
+                out.append(f"{ind}{t} <{RS}object> {term(o)} .")
         return "\n".join(out)
     def walk(self, n, ind):
         nm = getattr(n, "name", None)
@@ -71,7 +101,7 @@ class Reifier:
             return self.walk(n["p"], ind)
         raise NotImplementedError(f"algebra node not handled: {nm}")
 
-def reify(query_text, scheme="standard"):
+def reify(query_text, scheme=STANDARD):
     alg = translateQuery(parseQuery(query_text)).algebra          # SelectQuery -> Project -> ...
     if alg.name != "SelectQuery":
         raise NotImplementedError("only SELECT supported")
@@ -109,7 +139,7 @@ def _selftest():
     }
     ok = True
     for name, q in cases.items():
-        rq = reify(q)
+        rq = reify(q, STANDARD)
         # (1) reified query must itself parse; (2) structure operator must be preserved; (3) no provenance tokens
         try:
             parseQuery(rq)
@@ -125,12 +155,51 @@ def _selftest():
         bad = [k for k, v in checks.items() if not v]
         print(f"  [{name:9}] {'OK' if not bad else 'FAIL ' + ','.join(bad)}")
         ok &= not bad
+        star = reify(q, SPARQL_STAR)
+        star_checks = {
+            "quoted": "<< " in star and f"<{OCCURRENCE_OF}>" in star,
+            "not-standard": f"<{RS}subject>" not in star,
+            "optional": ("OPTIONAL" in star) == ("optional" == name),
+            "union": ("UNION" in star) == ("union" == name),
+            "minus": ("MINUS" in star) == ("minus" == name),
+            "no-prov": not any(
+                key in star for key in ("GROUP_CONCAT", "SHA256", "urn:g:", "CONSTRUCT")
+            ),
+        }
+        star_bad = [key for key, value in star_checks.items() if not value]
+        print(
+            f"  [{name + '-star':9}] "
+            f"{'OK' if not star_bad else 'FAIL ' + ','.join(star_bad)}"
+        )
+        ok &= not star_bad
     print("SELFTEST", "OK" if ok else "FAILED"); return ok
 
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--scheme",
+        default=STANDARD,
+        help=f"reification scheme: {STANDARD} (default) or {SPARQL_STAR}",
+    )
+    parser.add_argument("--selftest", action="store_true", help="run focused self-tests")
+    parser.add_argument("query", nargs="?", help="SPARQL SELECT query file")
+    args = parser.parse_args(argv)
+
+    if args.selftest:
+        if args.query:
+            parser.error("query is not accepted with --selftest")
+        return 0 if _selftest() else 1
+    if not args.query:
+        parser.error("a query file is required")
+    try:
+        with open(args.query, encoding="utf-8") as handle:
+            rewritten = reify(handle.read(), args.scheme)
+    except ValueError as ex:
+        parser.error(str(ex))
+    print(rewritten, end="")
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
-        sys.exit(0 if _selftest() else 1)
-    if len(sys.argv) == 2:
-        print(reify(open(sys.argv[1]).read()))
-    else:
-        print(__doc__); sys.exit(2)
+    sys.exit(main())
