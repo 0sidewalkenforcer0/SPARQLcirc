@@ -1366,7 +1366,9 @@ public class CircuitSemanticsTest {
             new Shape("bound variable source",
                                         "SELECT ?x ?y WHERE { ?x <urn:q> ?z . ?x <urn:p>+ ?y }",
                                         Arrays.asList("x", "y")));
-        checkAgainstOracle(shapes, facts, ConstructionMode.values());
+        for (Reification scheme : new Reification[]{Reification.STANDARD, Reification.SPARQL_STAR}) {
+            checkAgainstOracle(shapes, facts, ConstructionMode.values(), scheme);
+        }
     }
 
     /**

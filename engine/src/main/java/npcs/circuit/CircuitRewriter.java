@@ -556,8 +556,9 @@ public class CircuitRewriter {
      * — the terms-in-graph reading. Both endpoints bind to {@code u}; a constant endpoint filters it.
      */
     private String zeroLengthPlan(ZeroLengthPath zlp, List<String> W) {
-        if (scheme != Reification.STANDARD)
-            throw new UnsupportedOperationException("Zero-length paths (:p?) currently support Standard reification only.");
+        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+            throw new UnsupportedOperationException(
+                    "Zero-length paths (:p?) support Standard and SPARQL_Star reification only.");
         Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
         String u = qv("u"), tok = qv("tok"), times = qv("t");
         String ans = qv("ans"), anskey = qv("anskey");
@@ -584,9 +585,19 @@ public class CircuitRewriter {
             q.append("  ").append(ans).append(" c:binding ").append(b).append(" . ").append(b)
              .append(" c:var \"").append(w).append("\" ; c:val ").append(u).append(" .\n");
         }
-        q.append("}\nWHERE {\n")
-         .append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
-         .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u).append(" . }\n");
+        q.append("}\nWHERE {\n");
+        if (scheme == Reification.STANDARD) {
+            q.append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
+             .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u)
+             .append(" . }\n");
+        } else {
+            q.append("  { ").append(qv("zts")).append(" <").append(RDFSTAR_OCCURRENCE_OF)
+             .append("> ").append(tok).append(" . BIND(<").append(RDF_S).append(">(")
+             .append(qv("zts")).append(") AS ").append(u).append(") } UNION { ")
+             .append(qv("zto")).append(" <").append(RDFSTAR_OCCURRENCE_OF).append("> ")
+             .append(tok).append(" . BIND(<").append(RDF_O).append(">(").append(qv("zto"))
+             .append(") AS ").append(u).append(") }\n");
+        }
         if (s.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(s)).append(")\n");
         if (o.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(o)).append(")\n");
         q.append("  BIND(").append(rk).append(" AS ").append(anskey).append(")\n")
@@ -1708,6 +1719,7 @@ public class CircuitRewriter {
     private static final String RDF_S = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
     private static final String RDF_P = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
     private static final String RDF_O = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
+    private static final String RDFSTAR_OCCURRENCE_OF = "http://example.org/occurrenceOf";
 
     /** Parse an arbitrary-length path query; {@code null} if the query has no such path. */
     public PathQuery pathQuery(String query) {
@@ -1722,8 +1734,9 @@ public class CircuitRewriter {
         if (found[0] == null) return null;                       // not a path query (let plan() handle it)
         rejectSequenceModifiers(te);                             // same fail-fast as plan(): LIMIT/OFFSET/ORDER BY
                                                                  // (a Slice can wrap the Projection above the path)
-        if (scheme != Reification.STANDARD)
-            throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
+        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+            throw new UnsupportedOperationException(
+                    "Property paths support Standard and SPARQL_Star reification only.");
         if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath)) {
             // The path is composed with other operators. constructionPlan() handles that route,
             // planning the atom as a materialized operand (Def. 4.7 clause 2), so hand it over.
@@ -1749,8 +1762,9 @@ public class CircuitRewriter {
      *     answer roots, which is the aliasing θ exists to prevent.
      */
     private PathQuery pathPlan(ArbitraryLengthPath alp, List<String> W, boolean wholePattern) {
-        if (scheme != Reification.STANDARD)
-            throw new UnsupportedOperationException("Property paths currently support Standard reification only.");
+        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+            throw new UnsupportedOperationException(
+                    "Property paths support Standard and SPARQL_Star reification only.");
         Var s = alp.getSubjectVar(), o = alp.getObjectVar();
         String subjName = s.getName(), objName = o.getName();
         if (subjName.equals(objName))
@@ -1805,7 +1819,7 @@ public class CircuitRewriter {
         String pathTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
         if (wholePattern) answerTag = pathTag;
         return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
-                star, W, fp, generatedPrefix, pathTag);
+                star, W, fp, generatedPrefix, pathTag, scheme);
     }
 
     private static List<String> projectedNames(Projection projection) {
@@ -1857,6 +1871,7 @@ public class CircuitRewriter {
         private final String fp;                                 // per-path fingerprint (isolates reach/base gates)
         private final String gp;                                 // capture-avoiding generated-variable prefix
         private final String answerTag;                          // Def. 4.6 θ for the answer ⊕ (isolates roots)
+        private final Reification scheme;
         private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
         private String operandRelation, operandGate;             // set when the atom is an OPERAND
         private List<String> operandColumns;
@@ -1866,10 +1881,11 @@ public class CircuitRewriter {
         // path plan γ_path(s, e⋄)". Each run is then single-source and confined to its own V_s.
         private String sourceValues, sourceValuesBinding, pinnedSource;
         PathQuery(List<String> baseConstructs, List<String> branchWheres, End subj, End obj,
-                  boolean star, List<String> W, String fp, String generatedPrefix, String answerTag) {
+                  boolean star, List<String> W, String fp, String generatedPrefix, String answerTag,
+                  Reification scheme) {
             this.baseConstructs = baseConstructs; this.branchWheres = branchWheres;
             this.subj = subj; this.obj = obj; this.star = star; this.W = W; this.fp = fp;
-            this.gp = generatedPrefix; this.answerTag = answerTag;
+            this.gp = generatedPrefix; this.answerTag = answerTag; this.scheme = scheme;
         }
         private static String pv(String gp, String hint) { return "?" + gp + hint; }
         private String v(String hint) { return pv(gp, hint); }
@@ -1937,7 +1953,7 @@ public class CircuitRewriter {
             String u = v("u"), vv = v("v"), z = v("z"), tg = v("tg"), rg = v("rg");
             return PRE + "CONSTRUCT {\n  " + reachHead("0", fp, gp) + " .\n  " + tg
                  + " a c:Times ; c:in " + z + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
-                 + "  { " + z + " <" + RDF_S + "> " + u + " . } UNION { " + z + " <" + RDF_O + "> " + u + " . }\n"
+                 + activeNodePattern(z, u, "z")
                  + "  BIND(" + u + " AS " + vv + ")\n" + sourceFilter() + reachIri(u, u, "0", fp, gp)
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(" + z + ")))))) AS " + tg + ")\n}\n";
         }
@@ -1945,7 +1961,18 @@ public class CircuitRewriter {
         public String nodeCountQuery() {
             String n = v("n"), t = v("t");
             return PRE + "SELECT (COUNT(DISTINCT " + n + ") AS " + v("c") + ") WHERE {\n"
-                 + "  { " + t + " <" + RDF_S + "> " + n + " . } UNION { " + t + " <" + RDF_O + "> " + n + " . }\n}\n";
+                 + activeNodePattern(t, n, "n") + "}\n";
+        }
+        private String activeNodePattern(String token, String node, String suffix) {
+            if (scheme == Reification.STANDARD) {
+                return "  { " + token + " <" + RDF_S + "> " + node + " . } UNION { "
+                     + token + " <" + RDF_O + "> " + node + " . }\n";
+            }
+            String ts = v(suffix + "ts"), to = v(suffix + "to");
+            return "  { " + ts + " <" + RDFSTAR_OCCURRENCE_OF + "> " + token + " . BIND(<"
+                 + RDF_S + ">(" + ts + ") AS " + node + ") } UNION { " + to + " <"
+                 + RDFSTAR_OCCURRENCE_OF + "> " + token + " . BIND(<" + RDF_O + ">(" + to
+                 + ") AS " + node + ") }\n";
         }
         /** Materialize the base relation, then seed reach^0 from it (restricted to the source),
          *  plus the zero-length pairs for :p*. */
