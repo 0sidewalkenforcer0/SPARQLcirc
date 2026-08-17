@@ -850,9 +850,17 @@ public class CircuitRewriter {
                   + "endpoint free.");
             }
             String gateVar = generated("opg" + (operandSerial++));
+            // Named by the ATOM's fingerprint, not the path's. The path fingerprint deliberately
+            // erases the endpoints (pathPlan substitutes them with ?u/?v so the base relation is
+            // all-pairs and shareable across sources), which is right for reach/base gates and wrong
+            // for a private row relation: two atoms differing only in their source — the
+            // common-ancestor shape { <a> :p+ ?y . <b> :p+ ?y } — would then publish into ONE
+            // relation under ONE row IRI, and each operand would read the other's rows, turning the
+            // join into a union and inventing answers neither endpoint reaches.
+            String atomFp = operandFingerprint(node);
             String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
-                               + ":path:" + atom.fingerprint();
-            atom.asOperand(relationIri, gateVar, columns);
+                               + ":path:" + atomFp;
+            atom.asOperand(relationIri, gateVar, columns, "PATHROW@" + atomFp);
             plan.add(CircuitConstructionPlan.Step.path(atom, "path-operand"));
             return new RelationOperand(relationIri, columns, gateVar);
         }
@@ -1983,6 +1991,7 @@ public class CircuitRewriter {
         private java.util.Set<Value> reachable;                  // G1: if set (bound source), restrict base to ?u ∈ here
         private String operandRelation, operandGate;             // set when the atom is an OPERAND
         private List<String> operandColumns;
+        private String operandRowTag;                            // row identity: keyed by the ATOM, not the path
         // §3's bound-source condition. `sourceValues` is a SELECT over the bind-join predecessor
         // yielding I_C's source column; CircuitRun runs it and replays the whole construction once
         // per value, pinning `pinnedSource` — Def. 4.7 clause 2's "for each ρ ∈ I_C … invoke the
@@ -2135,10 +2144,11 @@ public class CircuitRewriter {
          * contains the corresponding path root". The enclosing join, difference or projection then
          * reads it exactly like a triple pattern's gate.
          */
-        void asOperand(String relationIri, String gateVar, List<String> columns) {
+        void asOperand(String relationIri, String gateVar, List<String> columns, String rowTag) {
             this.operandRelation = relationIri;
             this.operandGate = gateVar;
             this.operandColumns = columns;
+            this.operandRowTag = rowTag;
         }
 
         /** The last round's output: answer gates for a whole-pattern query, rows for an operand. */
@@ -2163,7 +2173,7 @@ public class CircuitRewriter {
              .append(" ; c:rto ").append(toPat).append(" .\n").append(finalLevelFilter())
              .append(pinned ? "  BIND(<" + pinnedSource + "> AS ?" + subj.var + ")\n" : "")
              .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
-                     idKey(operandColumns, "PATHROW@" + fp)))
+                     idKey(operandColumns, operandRowTag)))
              .append("}\n");
             return java.util.Collections.singletonList(q.toString());
         }

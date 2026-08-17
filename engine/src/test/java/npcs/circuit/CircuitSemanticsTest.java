@@ -1448,7 +1448,15 @@ public class CircuitSemanticsTest {
                                         Arrays.asList("y")),
             new Shape("bound variable source",
                                         "SELECT ?x ?y WHERE { ?x <urn:q> ?z . ?x <urn:p>+ ?y }",
-                                        Arrays.asList("x", "y")));
+                                        Arrays.asList("x", "y")),
+            // Two atoms over the SAME sub-path from DIFFERENT sources: the common-ancestor shape. The
+            // per-path fingerprint erases the endpoints on purpose, so naming the private row relation
+            // after it made both atoms publish into one relation under one row IRI, and each operand
+            // read the other's rows -- the join denoted a union and invented answers neither source
+            // reaches. Here the answer is the INTERSECTION of the two reachable sets.
+            new Shape("two sources, one target",
+                                        "SELECT ?y WHERE { <urn:n0> <urn:p>+ ?y . <urn:n1> <urn:p>+ ?y }",
+                                        Arrays.asList("y")));
         for (Reification scheme : new Reification[]{Reification.STANDARD, Reification.SPARQL_STAR}) {
             checkAgainstOracle(shapes, facts, ConstructionMode.values(), scheme);
         }
