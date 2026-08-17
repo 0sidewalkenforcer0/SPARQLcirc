@@ -3,8 +3,10 @@ package npcs.circuit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -132,6 +134,7 @@ public class CircuitRewriter {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
         QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
+        canonicalizeAnonymousVariables(te);          // stable names for parser blank nodes / path nodes
         initializeGeneratedVariables(te);
         operandSerial = 0;                           // per-query counter; see the field's comment
         rejectSequenceModifiers(te);                 // LIMIT/OFFSET/ORDER BY don't apply to a circuit
@@ -1580,6 +1583,59 @@ public class CircuitRewriter {
         return out;
     }
 
+    /**
+     * Give the parser's anonymous variables deterministic names.
+     *
+     * <p>RDF4J names a query blank node — and the intermediate node of a sequence path — {@code
+     * _anon_<random uuid>}, so the SAME query text parses to a DIFFERENT variable name on every run.
+     * That name is not cosmetic: it reaches {@link #varSemanticKey}, hence θ and every answer-gate
+     * IRI, and through {@link #reify} it reaches a compound closure atom's per-path fingerprint,
+     * hence every reach/base gate. Before this, {@code SELECT ?y WHERE { :A :p [ :q ?y ] }} minted
+     * different answer roots on two runs of the same jar, and {@code :A (:p/:q)+ ?y} rebuilt its
+     * whole circuit from scratch — so "same query => same fingerprint => byte-identical, idempotent
+     * re-runs" held only for queries with no anonymous variable in them.
+     *
+     * <p>Renaming by first occurrence in the algebra's own traversal order makes the identity a
+     * function of the query rather than of the parse. Constant variables are left alone: RDF4J
+     * derives their names from the term, so they are already stable, and {@code pathPlan} matches
+     * an atom's endpoints by name.
+     */
+    private static void canonicalizeAnonymousVariables(TupleExpr te) {
+        Set<String> named = new HashSet<>();
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(Var v) {
+                if (v.getName() != null && !isParserAnonymous(v)) named.add(v.getName());
+            }
+        });
+        String prefix = "_anon_";                    // keep RDF4J's own shape; widen only on collision
+        while (true) {
+            boolean collision = false;
+            for (String name : named) {
+                if (name.startsWith(prefix)) { collision = true; break; }
+            }
+            if (!collision) break;
+            prefix = "_" + prefix;
+        }
+        final String base = prefix;
+        final Map<String, String> renamed = new LinkedHashMap<>();
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(Var v) {
+                if (v.getName() == null || !isParserAnonymous(v)) return;
+                String canonical = renamed.get(v.getName());
+                if (canonical == null) {
+                    canonical = base + renamed.size();
+                    renamed.put(v.getName(), canonical);
+                }
+                v.setName(canonical);
+            }
+        });
+    }
+
+    /** An anonymous variable the parser invented for a blank node or a path's intermediate node. */
+    private static boolean isParserAnonymous(Var v) {
+        return v.isAnonymous() && !v.hasValue();
+    }
+
     /** Initialize a deterministic namespace which cannot overlap any parsed query variable. */
     private void initializeGeneratedVariables(TupleExpr te) {
         Set<String> user = new HashSet<>(te.getBindingNames());
@@ -1842,6 +1898,7 @@ public class CircuitRewriter {
         ParsedQuery pq = new SPARQLParser().parseQuery(query, null);
         QueryGuard.rejectDatasetsAndNamedGraphs(pq);
         TupleExpr te = pq.getTupleExpr();
+        canonicalizeAnonymousVariables(te);          // stable names for parser blank nodes / path nodes
         initializeGeneratedVariables(te);
         ArbitraryLengthPath[] found = {null};
         te.visit(new AbstractQueryModelVisitor<RuntimeException>() {

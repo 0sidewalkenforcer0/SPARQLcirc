@@ -1462,6 +1462,46 @@ public class CircuitSemanticsTest {
         }
     }
 
+    /**
+     * The identity a query mints must be a function of the QUERY, not of the parse.
+     *
+     * <p>RDF4J names a query blank node — and the intermediate node of a sequence path — {@code
+     * _anon_<random uuid>}. Those names used to reach {@code varSemanticKey} (hence θ and every
+     * answer-gate IRI) and, through {@code reify}, a compound closure atom's per-path fingerprint
+     * (hence every reach/base gate), so the same query text built a DIFFERENT circuit on every run:
+     * no gate reuse on a shared endpoint, no idempotent re-run, and the cross-engine byte-identity
+     * claim held only for queries with no anonymous variable in them.
+     */
+    @Test
+    public void theSameQueryTextAlwaysMintsTheSameCircuitIdentity() {
+        String[] queries = {
+            "SELECT ?y WHERE { <urn:a> <urn:p> [ <urn:q> ?y ] }",                     // parser blank node
+            "SELECT ?y WHERE { <urn:a> (<urn:p>/<urn:q>)+ ?y }",                      // sequence path
+            "SELECT ?y ?z WHERE { <urn:a> (<urn:p>/<urn:q>)+ ?y . ?y <urn:r> ?z }",   // ... as an operand
+        };
+        for (String query : queries) {
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                assertEquals(mode + ": " + query + " must plan identically on every parse",
+                        planText(query, mode), planText(query, mode));
+            }
+        }
+        String compound = "SELECT ?y WHERE { <urn:a> (<urn:p>/<urn:q>)+ ?y }";
+        assertEquals("a compound closure atom's fingerprint must not depend on the parse",
+                new CircuitRewriter(Reification.STANDARD).pathQuery(compound).fingerprint(),
+                new CircuitRewriter(Reification.STANDARD).pathQuery(compound).fingerprint());
+    }
+
+    /** A plan's full emitted text, with each closure atom represented by its fingerprint. */
+    private static String planText(String query, ConstructionMode mode) {
+        StringBuilder out = new StringBuilder();
+        for (CircuitConstructionPlan.Step step : new CircuitRewriter(Reification.STANDARD, mode,
+                "junit-identity").constructionPlan(query).steps()) {
+            out.append(step.query() == null ? "path:" + step.path().fingerprint() : step.query())
+               .append('\n');
+        }
+        return out.toString();
+    }
+
     /** RDF4J's parser-generated set wrappers around {@code :p?} remain transparent in every operand. */
     @Test
     public void optionalPathAtomsComposeWithEverySupportedOperator() {
