@@ -19,6 +19,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -40,6 +43,7 @@ import org.junit.Test;
 
 import npcs.rewrite.NpcsRewriter;
 import npcs.rewrite.Reification;
+import npcs.Utf8Text;
 
 /** Offline regressions: no endpoint, files, probabilities, or network are required. */
 public class CircuitRewriterTest {
@@ -866,6 +870,99 @@ public class CircuitRewriterTest {
     }
 
     @Test
+    public void npcsGroundQueriesOmitEmptyGroupBy() {
+        NpcsRewriter rw = new NpcsRewriter(Reification.STANDARD);
+        String ground = rw.rewrite("SELECT * WHERE { <urn:s> <urn:p> <urn:o> }");
+        String groundUnion = rw.rewrite("SELECT * WHERE { "
+                + "{ <urn:s1> <urn:p> <urn:o1> } UNION { <urn:s2> <urn:p> <urn:o2> } }");
+
+        assertFalse(ground.contains("GROUP BY"));
+        assertFalse(groundUnion.contains("GROUP BY"));
+        new SPARQLParser().parseQuery(ground, null);
+        new SPARQLParser().parseQuery(groundUnion, null);
+    }
+
+    @Test
+    public void npcsMinusGuardsEachHeterogeneousUnionBranch() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            ValueFactory vf = con.getValueFactory();
+            IRI x1 = vf.createIRI("urn:x1");
+            IRI x2 = vf.createIRI("urn:x2");
+            IRI u1 = vf.createIRI("urn:u1");
+            IRI p = vf.createIRI("urn:p");
+            IRI q = vf.createIRI("urn:q");
+            IRI r = vf.createIRI("urn:r");
+            IRI a = vf.createIRI("urn:a");
+            IRI b = vf.createIRI("urn:b");
+            IRI c = vf.createIRI("urn:c");
+            con.add(x1, p, a);
+            con.add(u1, q, b);
+            con.add(x1, r, c);
+            con.add(x2, r, c);
+            reify(con, "urn:t:p", "urn:x1", "urn:p", "urn:a");
+            reify(con, "urn:t:q", "urn:u1", "urn:q", "urn:b");
+            reify(con, "urn:t:r1", "urn:x1", "urn:r", "urn:c");
+            reify(con, "urn:t:r2", "urn:x2", "urn:r", "urn:c");
+
+            String heterogeneousLeft = "SELECT ?x ?u WHERE { "
+                    + "{ { ?x <urn:p> <urn:a> } UNION { ?u <urn:q> <urn:b> } } "
+                    + "MINUS { ?x <urn:r> <urn:c> } }";
+            NpcsRewriter leftRewriter = new NpcsRewriter(Reification.STANDARD);
+            try (TupleQueryResult result = con.prepareTupleQuery(
+                    leftRewriter.rewrite(heterogeneousLeft)).evaluate()) {
+                int rows = 0;
+                String disjointProvenance = null;
+                while (result.hasNext()) {
+                    BindingSet row = result.next();
+                    rows++;
+                    if (u1.equals(row.getValue("u"))) {
+                        assertFalse(row.hasBinding("x"));
+                        disjointProvenance = row.getValue(
+                                leftRewriter.provenanceOutputVariable()).stringValue();
+                    }
+                }
+                assertEquals(2, rows);
+                assertNotNull(disjointProvenance);
+                assertTrue(disjointProvenance.contains("urn:t:q"));
+                assertFalse(disjointProvenance.contains("⊖"));
+                assertFalse(disjointProvenance.contains("urn:t:r1"));
+            }
+
+            String heterogeneousRight = "SELECT ?x WHERE { ?x <urn:p> <urn:a> MINUS { "
+                    + "{ ?x <urn:r> <urn:missing> } UNION { ?u <urn:q> <urn:b> } } }";
+            NpcsRewriter rightRewriter = new NpcsRewriter(Reification.STANDARD);
+            try (TupleQueryResult result = con.prepareTupleQuery(
+                    rightRewriter.rewrite(heterogeneousRight)).evaluate()) {
+                assertTrue(result.hasNext());
+                BindingSet row = result.next();
+                assertEquals(x1, row.getValue("x"));
+                String provenance = row.getValue(
+                        rightRewriter.provenanceOutputVariable()).stringValue();
+                assertTrue(provenance.contains("urn:t:p"));
+                assertFalse(provenance.contains("urn:t:q"));
+                assertFalse(result.hasNext());
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    @Test
+    public void utf8QueryReaderRemovesOnlyALeadingBom() throws Exception {
+        Path query = Files.createTempFile("sparqlcirc-bom-", ".rq");
+        try {
+            String source = "\uFEFFSELECT * WHERE { <urn:s> <urn:p> \"\uFEFF\" }";
+            Files.write(query, source.getBytes(StandardCharsets.UTF_8));
+            String read = Utf8Text.read(query);
+            assertEquals("SELECT * WHERE { <urn:s> <urn:p> \"\uFEFF\" }", read);
+            new SPARQLParser().parseQuery(read, null);
+        } finally {
+            Files.deleteIfExists(query);
+        }
+    }
+
+    @Test
     public void graphAndDatasetClausesFailFastInBothRewriters() {
         String graph = "SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }";
         String from = "SELECT ?s FROM <urn:g> WHERE { ?s <urn:p> ?o }";
@@ -896,6 +993,13 @@ public class CircuitRewriterTest {
                 "SELECT ?o WHERE { <urn:s> <urn:p> ?o } LIMIT 5"), "Unsupported pattern"); // LIMIT/OFFSET
         assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
                 "SELECT ?o WHERE { { SELECT ?o WHERE { <urn:s> <urn:p> ?o } } }"), "Unsupported pattern"); // subquery
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { VALUES ?s { <urn:s> } ?s <urn:p> ?o }"), "Unsupported pattern");
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?o WHERE { SERVICE <urn:service> { <urn:s> <urn:p> ?o } }"), "Unsupported pattern");
+        assertRejected(() -> new NpcsRewriter(Reification.STANDARD).rewrite(
+                "SELECT ?s ?o WHERE { ?s <urn:p> ?x OPTIONAL { ?s <urn:q> ?o FILTER(?o != ?x) } }"),
+                "OPTIONAL with a FILTER condition");
     }
 
     @Test

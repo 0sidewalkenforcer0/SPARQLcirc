@@ -45,6 +45,29 @@ public class CircuitFilterTest {
     private static final String C = "urn:circuit:";
 
     @Test
+    public void compositeFilterConditionsHaveDistinctAnswerRoots() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reify(con, "urn:r:bob", "urn:s", "urn:p", "urn:bob");
+            reify(con, "urn:r:carol", "urn:s", "urn:q", "urn:carol");
+            String prefix = "SELECT ?x WHERE { { { ?x <urn:p> ?who } UNION "
+                    + "{ ?x <urn:q> ?who } } FILTER(?who = ";
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Set<Resource> bob = answerRoots(executePlan(con,
+                        prefix + "<urn:bob>) }", mode));
+                Set<Resource> carol = answerRoots(executePlan(con,
+                        prefix + "<urn:carol>) }", mode));
+                assertEquals(mode + ": Bob query has one answer", 1, bob.size());
+                assertEquals(mode + ": Carol query has one answer", 1, carol.size());
+                assertTrue(mode + ": different composite FILTER conditions must not alias one root",
+                        Collections.disjoint(bob, carol));
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    @Test
     public void filterInBgpRestrictsAnswersAndPreservesGateIdentity() {
         Repository repo = new SailRepository(new MemoryStore());
         try (RepositoryConnection con = repo.getConnection()) {

@@ -461,7 +461,7 @@ d:p2 rdf:subject d:Warfarin ; rdf:predicate d:iw ; rdf:object d:Metformin .
 ```
 
 `reference/watdiv/reify.py` converts a plain N-Triples file into this form. With
-`--scheme SPARQL_Star` the same information is carried by quoted triples instead.
+`--star` the same information is carried by quoted triples instead.
 
 ### Probability Assignment
 

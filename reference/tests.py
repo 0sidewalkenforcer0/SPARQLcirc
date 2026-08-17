@@ -27,6 +27,7 @@ DS_cyc   = {"e1": ("A", "p", "B"), "e2": ("B", "p", "C"),
             "e3": ("A", "p", "C"), "e4": ("C", "p", "A")}
 DS_pth   = {"a": ("X", "p", "Y"), "b": ("Y", "q", "Z"),
             "c": ("X", "r", "Z"), "d": ("Z", "q", "Y")}
+DS_same  = {"edge": ("A", "p", "B"), "loop": ("C", "p", "C")}
 
 TESTS = [
   ("and",       DS_paper, ["?x"],
@@ -75,12 +76,26 @@ TESTS = [
               ("bgp", [("?y", "p", "A")]))),
 ]
 
+
+def same_endpoint_regression():
+    """Both evaluators must enforce ?x = ?x instead of overwriting the first endpoint."""
+    query = ("path", "?x", ("plus", ("edge", "p")), "?x")
+    expected = {frozenset({("?x", "C")})}
+    circ = gates.Circuit()
+    circuit_keys = set(gamma.eval_q(circ, query, DS_same))
+    oracle_keys = wmc._answers(query, ["?x"], list(DS_same.values()))
+    return circuit_keys == expected, oracle_keys == expected
+
 def assignments(toks, i):
     return {t: round(0.2 + 0.6 * (((j + i) % 5) / 4.0), 3) for j, t in enumerate(toks)}
 
 def main():
-    grand_ok = grand_tot = 0
-    all_passed = True
+    circuit_ok, oracle_ok = same_endpoint_regression()
+    regression_ok = circuit_ok and oracle_ok
+    print(f"  [{'OK ' if regression_ok else 'FAIL'}] path_same_var {int(circuit_ok) + int(oracle_ok)}/2")
+    grand_ok = int(circuit_ok) + int(oracle_ok)
+    grand_tot = 2
+    all_passed = regression_ok
     for name, data, sel, q in TESTS:
         row_ok = row_tot = 0; fails = []
         for i in range(3):

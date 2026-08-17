@@ -82,7 +82,7 @@ def sparql(repo, query, timeout=PROBE_TIMEOUT):
     """Run a SELECT over a GraphDB repo; return list of first-column values (CSV, header dropped).
     curl --max-time exhaustion (rc 28) is surfaced as ProbeTimeout so callers can fall back, not crash."""
     r = subprocess.run(
-        ["curl", "-s", "--max-time", str(timeout), f"{GDB}/{repo}",
+        ["curl", "-sS", "--fail-with-body", "--max-time", str(timeout), f"{GDB}/{repo}",
          "--data-urlencode", "query=" + query, "-H", "Accept: text/csv"],
         capture_output=True, text=True, timeout=timeout + 20)
     if r.returncode == 28:
@@ -98,7 +98,7 @@ def ask(repo, ask_query, timeout=120):
     """Run an ASK; return bool. Uses text/boolean so emptiness is UNAMBIGUOUS (a SELECT's CSV header line
     would otherwise be miscounted as a result row)."""
     r = subprocess.run(
-        ["curl", "-s", "--max-time", str(timeout), f"{GDB}/{repo}",
+        ["curl", "-sS", "--fail-with-body", "--max-time", str(timeout), f"{GDB}/{repo}",
          "--data-urlencode", "query=" + ask_query, "-H", "Accept: text/boolean"],
         capture_output=True, text=True, timeout=timeout + 20)
     if r.returncode == 28:
@@ -190,7 +190,10 @@ def probe_binding(template, sparql_text, ph_iri, repo):
             if full_match(sparql_text, ph_iri, c, repo):
                 return c, ""
         except ProbeTimeout:
-            continue                                           # this candidate's verify was slow; try next
+            v = full_pattern_probe(sparql_text, ph_iri, repo)
+            if v is None:
+                raise RuntimeError(f"{template} @ {repo}: no binding of {ph_iri} yields a full match")
+            return v, f"full-pattern fallback ({c} verification timed out)"
     # none of the first CAND_K min-IRI candidates verified -> exhaustive fallback
     v = full_pattern_probe(sparql_text, ph_iri, repo)
     if v is None:

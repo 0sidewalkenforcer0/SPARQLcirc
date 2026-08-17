@@ -329,6 +329,7 @@ factored contribution motivated on real WatDiv, not just synthetic layered graph
    subgraphs), and head-to-heads with **SPARQLprov decode cost = G5** and **ProvSQL at scale = G2a/G3**.
 2. **d4 scaling figure** on a Linux/x86 box (CNFs + pipeline ready) = **G6**; note d4 WMC is
    compiled-size-only on real path circuits until the 8/16-vs-OBDD/PWE discrepancy is resolved.
-3. **Factored construction into the Java `npcs.circuit` pipeline** — flat γ is Java; the factored
-   (variable-elimination) passes are currently Python/rdflib-driven SPARQL. Until integrated, factored
-   construction is a **reference/prototype optimization**, not a default of the end-to-end Java system.
+3. **Factored construction in the Java `npcs.circuit` pipeline** — integrated. `CircuitRun` defaults to
+   the Java factored planner and executes its dependency-ordered multi-step plan; pass
+   `--construction=flat` explicitly for the flat construction route. The Python implementation remains
+   the independent reference/oracle rather than the only factored implementation.

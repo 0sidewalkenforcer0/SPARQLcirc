@@ -22,7 +22,7 @@ vector PDF + 300-dpi PNG with embedded fonts. Three generators write here:
 - **`paper_fig*` / `paper_table1`** — compact composite layouts, kept as space-efficient
   alternatives for the paper body. Generator: `../../make_figures.py`.
 
-Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_pqe_figure.py && python3 make_multisource_figure.py && python3 make_e2e_figure.py && python3 make_figures.py`
+Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_result_figures.py && python3 make_pqe_figure.py && python3 make_multisource_figure.py && python3 make_e2e_figure.py && python3 make_wikidata_figure.py && python3 make_figures.py`
 
 ## Real construction matrix (GraphDB) — the flagship
 

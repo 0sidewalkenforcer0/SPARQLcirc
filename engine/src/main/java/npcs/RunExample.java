@@ -1,8 +1,6 @@
 package npcs;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.model.Value;
@@ -38,7 +36,7 @@ public final class RunExample {
         }
         Reification scheme = Reification.fromName(args[0]);
         File dataFile = new File(args[1]);
-        String query = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
+        String query = Utf8Text.read(Paths.get(args[2]));
 
         RDFFormat fmt = args[1].endsWith(".ttls") ? RDFFormat.TURTLESTAR : RDFFormat.TURTLE;
         NpcsRewriter rewriter = new NpcsRewriter(scheme);
@@ -49,14 +47,14 @@ public final class RunExample {
         try (RepositoryConnection con = repo.getConnection()) {
             con.add(dataFile, EX, fmt);
 
-            System.out.println("# scheme=" + args[0] + "  data=" + dataFile.getName()
+            Utf8Text.println("# scheme=" + args[0] + "  data=" + dataFile.getName()
                     + "  query=" + new File(args[2]).getName());
-            System.out.println("# --- rewritten query ---");
-            System.out.println(rewritten);
-            System.out.println("# --- results (answer  |  provenance) ---");
+            Utf8Text.println("# --- rewritten query ---");
+            Utf8Text.println(rewritten);
+            Utf8Text.println("# --- results (answer  |  provenance) ---");
             try (TupleQueryResult res = con.prepareTupleQuery(rewritten).evaluate()) {
                 if (!res.hasNext()) {
-                    System.out.println("  (no answers)");
+                    Utf8Text.println("  (no answers)");
                 }
                 while (res.hasNext()) {
                     BindingSet bs = res.next();
@@ -69,7 +67,7 @@ public final class RunExample {
                     }
                     Value prov = bs.getValue(provenanceBinding);
                     row.append("|  ").append(prov == null ? "∅" : shorten(prov));
-                    System.out.println("  " + row);
+                    Utf8Text.println("  " + row);
                 }
             }
         }

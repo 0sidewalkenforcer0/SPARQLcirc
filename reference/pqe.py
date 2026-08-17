@@ -17,12 +17,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
 import circuit_io
 import compiler
+from experiment_timeouts import QUERY_TIMEOUT_S
+
+
+def _positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("timeout must be positive")
+    return seconds
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -36,6 +46,8 @@ def _parser() -> argparse.ArgumentParser:
                    help="JSON object mapping complete token IRIs to probabilities")
     p.add_argument("--scheme", default="Standard", choices=("Standard", "SPARQL_Star"))
     p.add_argument("--endpoint", help="optional remote SPARQL query endpoint")
+    p.add_argument("--timeout", type=_positive_seconds, default=float(QUERY_TIMEOUT_S),
+                   help=f"hard wall-clock limit for --jar construction (default: {QUERY_TIMEOUT_S}s)")
     p.add_argument("--construction", choices=("factored", "flat"),
                    help="construction mode passed to the engine (default: the engine's own "
                         "default, factored); flat is the read-only-endpoint route")
@@ -79,8 +91,41 @@ def _build_circuit(args: argparse.Namespace) -> str:
         cmd.append(args.endpoint)
     # Keep the construction plan/progress visible on stderr; capture only the
     # N-Triples stream that becomes this invocation's WMC input.
-    completed = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
-    return completed.stdout.decode("utf-8")
+    return _run_circuit_process(cmd, args.timeout).decode("utf-8")
+
+
+def _run_circuit_process(cmd: list[str], timeout: float) -> bytes:
+    """Run one JVM under a hard deadline and reap its whole POSIX process group."""
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        start_new_session=(os.name == "posix"),
+    )
+    try:
+        stdout, _stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as expired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            process.terminate()
+        try:
+            stdout, _stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            stdout, _stderr = process.communicate()
+        raise subprocess.TimeoutExpired(cmd, timeout, output=stdout) from expired
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, cmd, output=stdout)
+    return stdout
 
 
 def _term_json(canonical: str) -> dict[str, str]:
@@ -148,7 +193,7 @@ def main(argv=None) -> int:
         result = evaluate(_build_circuit(args), probabilities,
                           compile_mode=args.compile_mode, oracle=args.oracle)
     except (KeyError, OSError, RecursionError, RuntimeError, TypeError,
-            ValueError, subprocess.CalledProcessError) as exc:
+            ValueError, subprocess.SubprocessError) as exc:
         parser.exit(1, f"pqe: error: {exc}\n")
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")

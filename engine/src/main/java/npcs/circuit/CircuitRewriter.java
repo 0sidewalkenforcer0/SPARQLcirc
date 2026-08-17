@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 
 import npcs.rewrite.Reification;
 import npcs.rewrite.QueryGuard;
@@ -215,6 +217,8 @@ public class CircuitRewriter {
      * Diff or a composite in JOIN-operand position, and a guarded Diff under an unguarded one.
      */
     private static TupleExpr normalize(TupleExpr node) {
+        TupleExpr optionalPath = optionalPathExpansion(node);
+        if (optionalPath != null) return normalize(optionalPath.clone());
         if (node instanceof Union) {
             Union u = (Union) node;
             return new Union(normalize(u.getLeftArg().clone()), normalize(u.getRightArg().clone()));
@@ -262,9 +266,9 @@ public class CircuitRewriter {
             // subtrahend would become a UNION with a Diff branch, which no subtrahend plan can read.
             if (d.getRightArg() instanceof LeftJoin && ((LeftJoin) d.getRightArg()).getCondition() == null) {
                 LeftJoin lj = (LeftJoin) d.getRightArg();
-                LinkedHashSet<String> dOnly = varsOf(lj.getRightArg());
-                dOnly.removeAll(varsOf(lj.getLeftArg()));         // vars(D) \ vars(C)
-                LinkedHashSet<String> shareD = varsOf(d.getLeftArg());
+                LinkedHashSet<String> dOnly = scopeOf(lj.getRightArg());
+                dOnly.removeAll(scopeOf(lj.getLeftArg()));        // scope(D) \ scope(C)
+                LinkedHashSet<String> shareD = scopeOf(d.getLeftArg());
                 shareD.retainAll(dOnly);
                 if (shareD.isEmpty()) {
                     return normalize(diff(guarded, d.getLeftArg().clone(), lj.getLeftArg().clone()));
@@ -292,7 +296,7 @@ public class CircuitRewriter {
                 Difference inner = (Difference) nl;
                 boolean innerGuarded = isGuarded(inner);
                 if (guarded && !innerGuarded) {
-                    if (intersect(varsOf(inner.getLeftArg()), varsOf(nr)).isEmpty()) {
+                    if (intersect(scopeOf(inner.getLeftArg()), scopeOf(nr)).isEmpty()) {
                         return inner;                                   // outer MINUS removes nothing
                     }
                     return normalize(new UnguardedDifference(inner.getLeftArg().clone(),
@@ -453,7 +457,31 @@ public class CircuitRewriter {
 
     /** An operand that cannot be reified inline and must be materialized as a relation first. */
     private static boolean isComposite(TupleExpr node) {
-        return node instanceof Difference || node instanceof ArbitraryLengthPath;
+        return node instanceof Difference || node instanceof ArbitraryLengthPath
+                || node instanceof ZeroLengthPath;
+    }
+
+    /**
+     * RDF4J lowers {@code :p?} to {@code Distinct(Projection(Union(ZeroLengthPath,p)))}. These are
+     * parser-introduced set wrappers rather than a user subquery: the projection is an identity over
+     * the union's complete binding domain. Unwrap only that exact shape, so a real scope-changing
+     * subquery remains visible and is still rejected by the normal plan guards.
+     */
+    private static TupleExpr optionalPathExpansion(TupleExpr node) {
+        if (!(node instanceof Distinct)) return null;
+        TupleExpr distinctArg = ((Distinct) node).getArg();
+        if (!(distinctArg instanceof Projection)) return null;
+        Projection projection = (Projection) distinctArg;
+        TupleExpr projectionArg = projection.getArg();
+        if (!(projectionArg instanceof Union)) return null;
+        Union union = (Union) projectionArg;
+        if (!(union.getLeftArg() instanceof ZeroLengthPath)
+                && !(union.getRightArg() instanceof ZeroLengthPath)) return null;
+        for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+            if (!element.getName().equals(element.getSourceName())) return null;
+        }
+        if (!new LinkedHashSet<>(projection.getBindingNames()).equals(scopeOf(projectionArg))) return null;
+        return projectionArg;
     }
 
     /** A join's operands, with the Join spine flattened away (⋈ is associative and commutative). */
@@ -586,20 +614,7 @@ public class CircuitRewriter {
              .append(" c:var \"").append(w).append("\" ; c:val ").append(u).append(" .\n");
         }
         q.append("}\nWHERE {\n");
-        if (scheme == Reification.STANDARD) {
-            q.append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
-             .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u)
-             .append(" . }\n");
-        } else {
-            q.append("  { ").append(qv("zts")).append(" <").append(RDFSTAR_OCCURRENCE_OF)
-             .append("> ").append(tok).append(" . BIND(<").append(RDF_S).append(">(")
-             .append(qv("zts")).append(") AS ").append(u).append(") } UNION { ")
-             .append(qv("zto")).append(" <").append(RDFSTAR_OCCURRENCE_OF).append("> ")
-             .append(tok).append(" . BIND(<").append(RDF_O).append(">(").append(qv("zto"))
-             .append(") AS ").append(u).append(") }\n");
-        }
-        if (s.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(s)).append(")\n");
-        if (o.hasValue()) q.append("  FILTER(").append(u).append(" = ").append(Terms.render(o)).append(")\n");
+        q.append(zeroLengthWhere(zlp, u, tok));
         q.append("  BIND(").append(rk).append(" AS ").append(anskey).append(")\n")
          .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(")
          .append(tok).append(")))))) AS ").append(times).append(")\n")
@@ -610,6 +625,52 @@ public class CircuitRewriter {
              .append("\")) AS ").append(b).append(")\n");
         }
         q.append("}\n");
+        return q.toString();
+    }
+
+    /** Match one token witnessing that the zero-length endpoint occurs in the graph. */
+    private String zeroLengthWhere(ZeroLengthPath zlp, String u, String tok) {
+        StringBuilder where = new StringBuilder();
+        if (scheme == Reification.STANDARD) {
+            where.append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
+                 .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u)
+                 .append(" . }\n");
+        } else {
+            where.append("  { ").append(qv("zts")).append(" <").append(RDFSTAR_OCCURRENCE_OF)
+                 .append("> ").append(tok).append(" . BIND(<").append(RDF_S).append(">(")
+                 .append(qv("zts")).append(") AS ").append(u).append(") } UNION { ")
+                 .append(qv("zto")).append(" <").append(RDFSTAR_OCCURRENCE_OF).append("> ")
+                 .append(tok).append(" . BIND(<").append(RDF_O).append(">(").append(qv("zto"))
+                 .append(") AS ").append(u).append(") }\n");
+        }
+        Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
+        if (s.hasValue()) where.append("  FILTER(").append(u).append(" = ").append(Terms.render(s)).append(")\n");
+        if (o.hasValue()) where.append("  FILTER(").append(u).append(" = ").append(Terms.render(o)).append(")\n");
+        return where.toString();
+    }
+
+    /** Materialize a zero-length path as binding columns plus its occurrence-provenance root. */
+    private String zeroLengthRows(ZeroLengthPath zlp, List<String> columns, String zeroFp,
+                                  String relationIri, String gateVar) {
+        String u = qv("u"), tok = qv("tok"), times = qv("t"), plus = "?" + gateVar;
+        String row = qv("oprow");
+        StringBuilder q = new StringBuilder(PRE);
+        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ; c:in ").append(tok)
+         .append(" ; c:feeds ").append(plus).append(" .\n  ").append(plus).append(" a c:Plus .\n  ")
+         .append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
+         .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ")
+         .append(plus);
+        for (String column : columns) {
+            q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(column)).append("> ").append(u);
+        }
+        q.append(" .\n}\nWHERE {\n").append(zeroLengthWhere(zlp, u, tok))
+         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(")
+         .append(tok).append(")))))) AS ").append(times).append(")\n");
+        for (String column : columns) q.append(bind("?" + column, u));
+        q.append(bindIri(plus, "urn:g:z:", idKey(columns, "ZLP@" + zeroFp)))
+         .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
+                 idKey(columns, "ZLPROW@" + zeroFp)))
+         .append("}\n");
         return q.toString();
     }
 
@@ -746,6 +807,18 @@ public class CircuitRewriter {
      */
     private Operand planOperand(TupleExpr node, List<TupleExpr> siblings,
                                 List<CircuitConstructionPlan.Step> plan) {
+        if (node instanceof ZeroLengthPath) {
+            List<String> columns = canonicalVars(scopeOf(node));
+            String zeroFp = operandFingerprint(node);
+            String gateVar = generated("opg" + (operandSerial++));
+            String relationIri = FactoredBgpRewriter.META_NS + "msg:" + sha256hex(workspaceId)
+                               + ":zerolen:" + zeroFp;
+            plan.add(new CircuitConstructionPlan.Step(
+                    zeroLengthRows((ZeroLengthPath) node, columns, zeroFp, relationIri, gateVar),
+                    true, "zerolen-operand", Collections.<String>emptySet(),
+                    Collections.singleton(relationIri)));
+            return new RelationOperand(relationIri, columns, gateVar);
+        }
         if (node instanceof ArbitraryLengthPath) {
             PathQuery atom = pathPlan((ArbitraryLengthPath) node, new ArrayList<>(), false);
             bindSource((ArbitraryLengthPath) node, siblings, atom);
@@ -1222,8 +1295,11 @@ public class CircuitRewriter {
      *  blank node, and a literal's lexical + datatype + (lower-cased) language tag. Every part is hashed
      *  BEFORE concatenation, so the result carries no re-segmentable delimiter (same discipline
      *  emitSortedProdKey() uses for product children). SPARQL-1.1-only (BOUND/isIRI/isBlank/isLiteral/
-     *  STR/DATATYPE/LANG/LCASE/SHA256) -> deterministic across engines. NOTE: collision-resistant modulo
-     *  SHA256, not mathematically injective; the injective part is the delimiter-free serialization. */
+     *  STR/DATATYPE/LANG/LCASE/SHA256) -> deterministic across engines. SPARQL-star defines STR over a
+     *  quoted triple as its canonical N-Triples-star lexical form, so the final branch also distinguishes
+     *  nested quoted triples instead of collapsing every non-1.1 term to one constant. NOTE:
+     *  collision-resistant modulo SHA256, not mathematically injective; the injective part is the
+     *  delimiter-free serialization. */
     private static String termHash(String label, String term) {
         String enc =
             "IF(!BOUND(" + term + "), \"u\","
@@ -1231,7 +1307,7 @@ public class CircuitRewriter {
           + " IF(isBlank(" + term + "), CONCAT(\"b\", SHA256(STR(" + term + "))),"
           + " IF(isLiteral(" + term + "), CONCAT(\"l\", SHA256(STR(" + term + ")),"
           + " SHA256(STR(DATATYPE(" + term + "))), SHA256(LCASE(LANG(" + term + ")))),"
-          + " \"x\"))))";                                         // "x" = non-1.1 term (e.g. RDF-star quoted triple)
+          + " CONCAT(\"t\", SHA256(STR(" + term + ")))))))";      // RDF-star quoted triple
         return "SHA256(CONCAT(\"" + label + "=\", " + enc + "))";
     }
     /** Deterministic hex SHA-256 of a string, computed HERE at rewrite time (not in SPARQL). Used only
@@ -1278,6 +1354,14 @@ public class CircuitRewriter {
             ArbitraryLengthPath alp = (ArbitraryLengthPath) node;
             LinkedHashSet<String> out = new LinkedHashSet<>();
             for (Var end : new Var[]{alp.getSubjectVar(), alp.getObjectVar()}) {
+                if (end != null && !end.hasValue() && !end.isAnonymous()) out.add(end.getName());
+            }
+            return out;
+        }
+        if (node instanceof ZeroLengthPath) {
+            ZeroLengthPath zlp = (ZeroLengthPath) node;
+            LinkedHashSet<String> out = new LinkedHashSet<>();
+            for (Var end : new Var[]{zlp.getSubjectVar(), zlp.getObjectVar()}) {
                 if (end != null && !end.hasValue() && !end.isAnonymous()) out.add(end.getName());
             }
             return out;
@@ -1375,6 +1459,11 @@ public class CircuitRewriter {
         try {
             return bgpSemanticKey(collectBlock(node));         // BGP (+ its FILTERs)
         } catch (UnsupportedOperationException outsideFragment) {
+            if (node instanceof Filter) {
+                Filter filter = (Filter) node;
+                return "FILTER" + part(querySemanticKey(filter.getArg()))
+                        + part(Filters.render(filter.getCondition()));
+            }
             if (node instanceof Join) {
                 List<String> keys = new ArrayList<>();
                 for (TupleExpr operand : flattenJoin(node)) keys.add(querySemanticKey(operand));
@@ -1712,10 +1801,9 @@ public class CircuitRewriter {
     // even on cyclic data -- while composition Times gates are content-addressed by their sorted
     // child hashes (as elsewhere). First cut: BOUND source, single constant predicate, free
     // object (<A> :p+ ?y / <A> :p* ?y), Standard reification.
-    // BOUNDARY: IRI frontier only. The client BFS reads each reached node via Value.stringValue() and
-    // valuesClause() re-wraps it as <...>, so a blank-node or literal path node is coerced to an IRI and
-    // a path continuing THROUGH such a node can be missed. All benchmark paths are IRI→IRI; general
-    // (blank/literal) frontiers need skolemization or a typed VALUES and are NOT yet supported.
+    // Frontier values retain their RDF type and are rendered as SPARQL terms in VALUES. Input blank
+    // nodes have already been skolemized; literal targets remain legal terminal values and simply
+    // cannot match the subject position of a following edge.
     private static final String RDF_S = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
     private static final String RDF_P = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
     private static final String RDF_O = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
@@ -1872,7 +1960,7 @@ public class CircuitRewriter {
         private final String gp;                                 // capture-avoiding generated-variable prefix
         private final String answerTag;                          // Def. 4.6 θ for the answer ⊕ (isolates roots)
         private final Reification scheme;
-        private java.util.Set<String> reachable;                 // G1: if set (bound source), restrict base to ?u ∈ here
+        private java.util.Set<Value> reachable;                  // G1: if set (bound source), restrict base to ?u ∈ here
         private String operandRelation, operandGate;             // set when the atom is an OPERAND
         private List<String> operandColumns;
         // §3's bound-source condition. `sourceValues` is a SELECT over the bind-join predecessor
@@ -1906,21 +1994,21 @@ public class CircuitRewriter {
         public String sourceValue() {
             return pinnedSource != null ? pinnedSource : subj.iri.replaceAll("^<|>$", "");
         }
-        public void setReachable(java.util.Set<String> r) { this.reachable = r; }
+        public void setReachable(java.util.Set<Value> r) { this.reachable = r; }
         /** Binding names consumed by CircuitRun; generated names must not be hard-coded by the client. */
         public String frontierValueBinding() { return gp + "v"; }
         public String nodeCountBinding() { return gp + "c"; }
         /** G1 BFS step: the sub-path targets ?v reachable in ONE hop from ?u ∈ frontier (read-only). */
-        public String frontierStepQuery(java.util.Collection<String> frontier) {
+        public String frontierStepQuery(java.util.Collection<Value> frontier) {
             StringBuilder q = new StringBuilder(PRE).append("SELECT DISTINCT ").append(v("v"))
                     .append(" WHERE {\n").append(valuesClause(frontier));
             for (int i = 0; i < branchWheres.size(); i++)
                 q.append(i == 0 ? "  { " : "  UNION { ").append(branchWheres.get(i)).append(" }\n");
             return q.append("}\n").toString();
         }
-        private String valuesClause(java.util.Collection<String> nodes) {
+        private String valuesClause(java.util.Collection<Value> nodes) {
             StringBuilder sb = new StringBuilder("  VALUES ").append(v("u")).append(" {");
-            for (String n : nodes) sb.append(" <").append(n).append(">");
+            for (Value n : nodes) sb.append(" ").append(NTriplesUtil.toNTriplesString(n));
             return sb.append(" }\n").toString();
         }
         private static String injectValues(String construct, String vals) {   // insert VALUES right after WHERE {

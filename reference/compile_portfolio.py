@@ -62,6 +62,10 @@ def prob_read_once(circ, root, P):
     """Exact probability of a READ-ONCE circuit by one bottom-up pass (independence holds)."""
     def ev(n):
         op, pl = circ[n]
+        if op == "const":
+            if pl not in (0, 1):
+                raise ValueError(f"invalid Boolean constant: {pl!r}")
+            return float(pl)
         if op == "leaf":  return P[pl]
         if op == "times":
             r = 1.0

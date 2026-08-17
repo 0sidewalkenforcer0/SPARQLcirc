@@ -38,12 +38,14 @@ def main():
     # (a) E11 amortization curve
     ax = axes[0]
     e = sorted(rd("e11_scale.csv"), key=lambda r: int(r["N"]))
+    e11_summary = "E11 data unavailable"
     if e:
         N = [int(r["N"]) for r in e]
         ax.plot(N, [_f(r["shared_ms"]) for r in e], color=SP_NPCS, marker="o", label="shared (compile once)")
         ax.plot(N, [_f(r["perans_ms"]) for r in e], color=SP_CIRCUIT, marker="s", linestyle="--",
                 label="per-answer (NPCS-completed)")
         last = e[-1]
+        e11_summary = f"E11, up to {_f(last['time_win']):.1f}× at {int(last['N'])} answers"
         mid = (_f(last["shared_ms"]) * _f(last["perans_ms"])) ** 0.5  # gap midpoint on log scale
         ax.annotate(f"{_f(last['time_win']):.1f}×", (int(last["N"]), mid),
                     xytext=(-6, 0), textcoords="offset points", ha="right", va="center",
@@ -104,7 +106,7 @@ def main():
     fs.panel_label(ax, 1, x=-0.14)
 
     fs.footer(fig, "Completing NPCS/SPARQLprov into PQE with the same compiler: amortization is dramatic on high-sharing "
-                   "families (E11, up to 8.2× at 1000 answers), modest on selective WatDiv (≈1.3× median); OPTIONAL is "
+                   f"families ({e11_summary}), modest on selective WatDiv (≈1.3× median); OPTIONAL is "
                    "non-monotone (⊖) — NPCS/SPARQLprov cannot represent it at all.")
     fig.subplots_adjust(left=0.08, right=0.995, bottom=0.30, top=0.86, wspace=0.28)
     fs.save(fig, "result_r9_5_pqe_headtohead", OUT, creator=CREATOR)

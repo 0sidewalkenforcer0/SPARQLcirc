@@ -32,10 +32,24 @@ def _vars(pat):
             out.append(x[1:])
     return out
 
+
+def _term_hash(label, term):
+    """Fixed-width, RDF-term-aware identity for one runtime binding."""
+    encoded = (
+        f'IF(!BOUND({term}), "u",'
+        f' IF(isIRI({term}), CONCAT("i", SHA256(STR({term}))),'
+        f' IF(isBlank({term}), CONCAT("b", SHA256(STR({term}))),'
+        f' IF(isLiteral({term}), CONCAT("l", SHA256(STR({term})),'
+        f' SHA256(STR(DATATYPE({term}))), SHA256(LCASE(LANG({term})))),'
+        f' CONCAT("t", SHA256(STR({term})))))))'
+    )
+    return f'SHA256(CONCAT("{label}=", {encoded}))'
+
+
 def _key(tag, vs):
     s = 'CONCAT("' + tag + '"'
     for v in vs:
-        s += f', "|{v}=", STR(?{v})'
+        s += f', {_term_hash(v, "?" + v)}'
     return s + ")"
 
 def _row(rowvar, mid, gvar, vs):

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -14,6 +15,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -101,7 +103,7 @@ public class NpcsRewriter {
         // Def 4.2 rule 6: SELECT W (ProvAggSum(?z) AS ?final) WHERE β(body) GROUP BY W
         String p = String.join(" ", withQ(projVars));
         return "SELECT " + p + " (" + Prov.aggSum(top.provVar) + " AS ?" + outputVar + ") \n"
-             + "WHERE { \n" + top.body + " }\n GROUP BY " + p;
+             + "WHERE { \n" + top.body + " }" + groupBy(p);
     }
 
     /** Actual output binding used for the provenance column (fresh if the query owns the legacy name). */
@@ -164,6 +166,10 @@ public class NpcsRewriter {
     /** P1 OPTIONAL P2 ≡ (P1 AND P2) UNION (P1 DIFF P2)  (paper §4.2 footnote).
      *  The negative branch is DIFF (anti-join, NO shared-var guard) — not user MINUS. */
     private Frag betaOptional(LeftJoin lj) {
+        if (lj.getCondition() != null) {
+            throw new UnsupportedOperationException(
+                    "Unsupported pattern: OPTIONAL with a FILTER condition");
+        }
         Frag joinFrag = beta(new Join(lj.getLeftArg().clone(), lj.getRightArg().clone()));
         Frag diffFrag = diffCore(lj.getLeftArg().clone(), lj.getRightArg().clone());
         return unionFrags(joinFrag, diffFrag);
@@ -171,17 +177,52 @@ public class NpcsRewriter {
 
     /**
      * User-level SPARQL MINUS = DIFF behind a shared-variable guard. W3C MINUS removes
-     * μ iff ∃ compatible μ' AND dom(μ)∩dom(μ')≠∅; for BGP operands dom(μ)∩dom(μ') =
-     * vars(P1)∩vars(P2) statically, so: no shared variable ⇒ guard never holds ⇒ MINUS
-     * is a no-op (= P1); a shared variable ⇒ guard always holds ⇒ MINUS collapses to DIFF.
+     * μ iff ∃ compatible μ' AND dom(μ)∩dom(μ')≠∅. A UNION may export a different domain
+     * from each branch, so the guard is applied to each left/right branch pair rather
+     * than once to the union of all syntactically mentioned variables.
      * (OPTIONAL's negative branch uses {@link #diffCore} directly and is NOT guarded.)
-     * Assumes MINUS operands are BGPs (binding patterns).
      */
     private Frag betaMinus(Difference d) {
-        if (sharedVars(d.getLeftArg(), d.getRightArg()).isEmpty()) {
-            return beta(d.getLeftArg());                 // no shared var ⇒ MINUS is a no-op
+        return guardedMinus(d.getLeftArg(), d.getRightArg());
+    }
+
+    private Frag guardedMinus(TupleExpr leftArg, TupleExpr rightArg) {
+        if (leftArg instanceof Union) {
+            Union union = (Union) leftArg;
+            return unionFrags(
+                    guardedMinus(union.getLeftArg(), rightArg.clone()),
+                    guardedMinus(union.getRightArg(), rightArg.clone()));
         }
-        return diffCore(d.getLeftArg(), d.getRightArg());
+
+        Frag left = beta(leftArg);
+        Frag subtrahend = null;
+        for (TupleExpr branch : unionBranches(rightArg)) {
+            LinkedHashSet<String> shared = new LinkedHashSet<>(left.vars);
+            shared.retainAll(outputVars(branch));
+            if (shared.isEmpty()) continue;
+
+            TupleExpr renamed = branch.clone();
+            renameNonShared(renamed, left.vars);
+            Frag rewritten = beta(renamed);
+            subtrahend = subtrahend == null ? rewritten : unionFrags(subtrahend, rewritten);
+        }
+        return subtrahend == null ? left : diffCore(left, subtrahend);
+    }
+
+    private static List<TupleExpr> unionBranches(TupleExpr node) {
+        List<TupleExpr> out = new ArrayList<>();
+        collectUnionBranches(node, out);
+        return out;
+    }
+
+    private static void collectUnionBranches(TupleExpr node, List<TupleExpr> out) {
+        if (node instanceof Union) {
+            Union union = (Union) node;
+            collectUnionBranches(union.getLeftArg(), out);
+            collectUnionBranches(union.getRightArg(), out);
+        } else {
+            out.add(node);
+        }
     }
 
     /**
@@ -194,7 +235,10 @@ public class NpcsRewriter {
         Frag left = beta(leftArg);
         TupleExpr right = rightArg.clone();
         renameNonShared(right, left.vars);   // ν
-        Frag rght = beta(right);
+        return diffCore(left, beta(right));
+    }
+
+    private Frag diffCore(Frag left, Frag rght) {
 
         String zL = generated("fdl" + diffCounter);
         String zR = generated("fdr" + diffCounter);
@@ -208,20 +252,17 @@ public class NpcsRewriter {
         return new Frag(body, zDiff, left.vars);   // in-scope = P1 variables
     }
 
-    /** vars(a) ∩ vars(b) over the real (named, bound) query variables. */
-    private LinkedHashSet<String> sharedVars(TupleExpr a, TupleExpr b) {
-        LinkedHashSet<String> s = queryVars(a);
-        s.retainAll(queryVars(b));
-        return s;
-    }
-
     // ----------------------------------------------------------------- helpers
 
     /** Wrap a raw fragment into an aggregating sub-select exposing {@code outVar}. */
     private String seal(Frag f, String outVar) {
         String p = String.join(" ", withQ(f.vars));
         return "{ SELECT " + p + " (" + Prov.aggSum(f.provVar) + " AS ?" + outVar + ") \n"
-             + "WHERE { \n" + f.body + " }\n GROUP BY " + p + " }";
+             + "WHERE { \n" + f.body + " }" + groupBy(p) + " }";
+    }
+
+    private static String groupBy(String variables) {
+        return variables.isEmpty() ? "" : "\n GROUP BY " + variables;
     }
 
     private static Projection outerProjection(TupleExpr te) {
@@ -250,6 +291,15 @@ public class NpcsRewriter {
                 }
             }
         });
+        return vars;
+    }
+
+    /** Variables actually exported by an algebra subtree, excluding generated internals. */
+    private LinkedHashSet<String> outputVars(TupleExpr node) {
+        LinkedHashSet<String> vars = new LinkedHashSet<>();
+        for (String name : node.getBindingNames()) {
+            if (name != null && !name.startsWith(generatedPrefix)) vars.add(name);
+        }
         return vars;
     }
 
@@ -316,6 +366,8 @@ public class NpcsRewriter {
             @Override public void meet(ZeroLengthPath n)      { impure[0] = true; }  // p? / zero-length
             @Override public void meet(Slice n)               { impure[0] = true; }  // LIMIT / OFFSET
             @Override public void meet(Projection n)          { impure[0] = true; }  // nested subquery
+            @Override public void meet(BindingSetAssignment n){ impure[0] = true; }  // VALUES
+            @Override public void meet(Service n)             { impure[0] = true; }  // SERVICE
         });
         return !impure[0];
     }

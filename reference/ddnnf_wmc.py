@@ -100,9 +100,16 @@ def _d4(lines, input_weights):
         arcs.setdefault(parent, []).append((child, lits)); edges += 1
     if not kinds:
         raise NNFError("empty d4 NNF")
+    unknown_parents = set(arcs) - set(kinds)
+    if unknown_parents:
+        raise NNFError(f"d4 arcs use undeclared parents: {sorted(unknown_parents)}")
     unknown = {c for xs in arcs.values() for c, _ in xs if c not in kinds}
     if unknown:
         raise NNFError(f"d4 arcs reference undeclared nodes: {sorted(unknown)}")
+    terminal_arcs = sorted(n for n, kind in kinds.items()
+                           if kind in ("t", "f") and arcs.get(n))
+    if terminal_arcs:
+        raise NNFError(f"d4 terminal nodes have outgoing arcs: {terminal_arcs}")
     children = {c for xs in arcs.values() for c, _ in xs}
     roots = [n for n in declared if n not in children]
     if len(roots) != 1:

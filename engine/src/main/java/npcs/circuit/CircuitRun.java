@@ -1,8 +1,8 @@
 package npcs.circuit;
 
 import java.io.File;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,9 +34,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import npcs.rewrite.Reification;
+import npcs.Utf8Text;
 
 /**
  * Engine-native circuit construction: emit the CONSTRUCT (CircuitRewriter), run
@@ -104,7 +106,7 @@ public final class CircuitRun {
         }
         Reification scheme = Reification.fromName(positional.get(0));
         File dataFile = new File(positional.get(1));
-        String query = new String(Files.readAllBytes(Paths.get(positional.get(2))), StandardCharsets.UTF_8);
+        String query = Utf8Text.read(Paths.get(positional.get(2)));
         String endpoint = positional.size() == 4 ? positional.get(3) : null;
         String dataPath = positional.get(1);
         RDFFormat fmt = dataPath.endsWith(".ttls") ? RDFFormat.TURTLESTAR
@@ -162,7 +164,8 @@ public final class CircuitRun {
         } else {
             repo = new SailRepository(new MemoryStore());
         }
-        try (RepositoryConnection con = repo.getConnection()) {
+        try {
+            try (RepositoryConnection con = repo.getConnection()) {
             if (skipLoad) {
                 System.err.println("# CIRCUIT_SKIP_LOAD: assuming the (reified) data is already loaded on the engine");
                 // §4.2 assumes the client skolemized before loading. On this route it did the loading,
@@ -170,7 +173,8 @@ public final class CircuitRun {
                 // depend on a label the store invented -- and on RDF4J, STR(?bnode) is a type error
                 // that leaves the answer gate unbound and drops the answer with no diagnostic at all.
                 if (!"1".equals(System.getenv("CIRCUIT_SKIP_BNODE_CHECK"))
-                        && npcs.rewrite.Skolem.graphHasBlankNodes(con)) {
+                        && npcs.rewrite.Skolem.graphHasBlankNodes(
+                                con, scheme == Reification.SPARQL_STAR)) {
                     System.err.println("# ERROR: the loaded graph still contains blank nodes. Gate keys "
                         + "hash STR(?term), which has no stable value for a blank node, so the circuit "
                         + "would depend on labels this store invented -- and answers binding one are "
@@ -223,7 +227,7 @@ public final class CircuitRun {
             // D2 flat-vs-factored deployment-time harness (reference/rdfstar_factored.py).
             long constructionMs = (System.nanoTime() - constructionStartNanos) / 1_000_000L;
             System.err.println("# construction_ms: " + constructionMs);
-            Rio.write(circuit, System.out, RDFFormat.NTRIPLES);
+            writeCircuit(circuit, System.out);
             System.err.println("# circuit triples: " + circuit.size());
             if (persistGraph && endpoint != null && runGraph != null) {
                 con.add(circuit, runGraph);        // materialize the circuit as its own named graph
@@ -250,8 +254,23 @@ public final class CircuitRun {
                     System.err.println("# CIRCUIT_CLEANUP failed (non-fatal, circuit already emitted): " + e.getMessage());
                 }
             }
+            }
+        } finally {
+            repo.shutDown();
         }
-        repo.shutDown();
+    }
+
+    /** Write a byte-stable N-Triples document independently of endpoint result order. */
+    static void writeCircuit(Model circuit, OutputStream output) {
+        List<Statement> statements = new ArrayList<>(circuit);
+        statements.sort(java.util.Comparator.comparing(CircuitRun::ntriplesLine));
+        Rio.write(statements, output, RDFFormat.NTRIPLES);
+    }
+
+    private static String ntriplesLine(Statement statement) {
+        return NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
+                + NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
+                + NTriplesUtil.toNTriplesString(statement.getObject()) + " .";
     }
 
     private static int envParallelism() {
@@ -623,9 +642,9 @@ public final class CircuitRun {
         for (Model result : results) circuit.addAll(result);
     }
 
-    /** Batch size for feedback INSERT/DELETE: a single SPARQL UPDATE carrying the whole factored message
-     *  relation (which can reach hundreds of thousands of triples on high-fan-out sources) overflows the
-     *  remote's request buffer and broken-pipes. Chunking keeps each UPDATE well within engine limits. */
+    /** Batch size for feedback INSERT/DELETE: a single SPARQL UPDATE carrying a whole factored message
+     *  or path-round relation (which can reach hundreds of thousands of triples on high-fan-out sources)
+     *  overflows the remote's request buffer and broken-pipes. Chunking keeps each UPDATE within engine limits. */
     private static final int FEEDBACK_BATCH = 5000;
 
     private static void addBatched(RepositoryConnection con, Model m) {
@@ -693,15 +712,16 @@ public final class CircuitRun {
             // G1: discover the source's REACHABLE subgraph by a read-only client BFS, then restrict the
             // base relation to edges FROM reachable nodes (in pathq.init) -- never materialize the
             // all-pairs base (the OOM at KG scale); provenance stays exact (all simple paths in V_s).
-            java.util.Set<String> reach = new java.util.LinkedHashSet<>();
-            java.util.Set<String> frontier = new java.util.LinkedHashSet<>();
-            reach.add(pathq.sourceValue()); frontier.add(pathq.sourceValue());
+            java.util.Set<Value> reach = new java.util.LinkedHashSet<>();
+            java.util.Set<Value> frontier = new java.util.LinkedHashSet<>();
+            Value source = SimpleValueFactory.getInstance().createIRI(pathq.sourceValue());
+            reach.add(source); frontier.add(source);
             while (!frontier.isEmpty()) {
-                java.util.Set<String> next = new java.util.LinkedHashSet<>();
+                java.util.Set<Value> next = new java.util.LinkedHashSet<>();
                 try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
                     while (r.hasNext()) {
                         org.eclipse.rdf4j.model.Value v = r.next().getValue(pathq.frontierValueBinding());
-                        if (v != null && reach.add(v.stringValue())) next.add(v.stringValue());
+                        if (v != null && reach.add(v)) next.add(v);
                     }
                 }
                 frontier = next;
@@ -750,7 +770,7 @@ public final class CircuitRun {
                 addCanonical(circuit, st, cache);          // one term implementation, so it dedups
             }
         }
-        con.add(m);
+        addBatched(con, m);
         // reachable-subgraph nodes = endpoints of the reach LEVEL gates (rlvl 0,1,2,...); the base
         // relation (rlvl "base") is all-pairs over the WHOLE graph, so exclude it from the bound.
         java.util.Set<String> baseGates = new java.util.HashSet<>();

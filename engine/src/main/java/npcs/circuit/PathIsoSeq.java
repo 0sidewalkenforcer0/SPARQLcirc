@@ -1,8 +1,6 @@
 package npcs.circuit;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +15,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import npcs.rewrite.Reification;
+import npcs.Utf8Text;
 
 /**
  * Property-path state-isolation harness — the REAL same-endpoint sequential test.
@@ -41,8 +40,8 @@ public final class PathIsoSeq {
             return;
         }
         File data = new File(args[0]);
-        String qFirst  = new String(Files.readAllBytes(Paths.get(args[1])), StandardCharsets.UTF_8);
-        String qSecond = new String(Files.readAllBytes(Paths.get(args[2])), StandardCharsets.UTF_8);
+        String qFirst  = Utf8Text.read(Paths.get(args[1]));
+        String qSecond = Utf8Text.read(Paths.get(args[2]));
         CircuitRewriter rw = new CircuitRewriter(Reification.STANDARD);
 
         List<String> shared   = onSharedStore(rw, data, qFirst, qSecond);   // second AFTER first, one connection

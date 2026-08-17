@@ -20,6 +20,10 @@ US = "\x1f"                                                        # unit separa
 _NT_ESC = {"t": "\t", "b": "\b", "n": "\n", "r": "\r", "f": "\f", '"': '"', "'": "'", "\\": "\\", "/": "/"}
 
 
+class CircuitFormatError(ValueError):
+    """The RDF graph does not satisfy the provenance-circuit interchange contract."""
+
+
 def _nt_unescape(s):
     """Decode N-Triples/Turtle string escapes (\\t \\n \\r \\" \\\\ \\uXXXX \\UXXXXXXXX ...) to the actual
     lexical value, so a literal's canonical key matches rdflib's (which stores the decoded value)."""
@@ -40,6 +44,71 @@ def _nt_unescape(s):
         else:
             out.append(nx); i += 2                                  # unknown escape: keep the escaped char
     return "".join(out)
+
+
+def _iri_unescape(value):
+    """Decode the UCHAR escapes allowed in an N-Triples IRIREF."""
+    if "\\" not in value:
+        return value
+    out = []
+    index = 0
+    while index < len(value):
+        if value[index] != "\\":
+            out.append(value[index])
+            index += 1
+            continue
+        kind = value[index + 1] if index + 1 < len(value) else ""
+        digits = 4 if kind == "u" else 8 if kind == "U" else 0
+        if not digits or index + 2 + digits > len(value):
+            raise CircuitFormatError(f"invalid IRIREF escape in {value!r}")
+        try:
+            codepoint = int(value[index + 2:index + 2 + digits], 16)
+        except ValueError as exc:
+            raise CircuitFormatError(f"invalid IRIREF escape in {value!r}") from exc
+        if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+            raise CircuitFormatError(f"invalid Unicode scalar in IRIREF {value!r}")
+        out.append(chr(codepoint))
+        index += 2 + digits
+    return "".join(out)
+
+
+def _resource(token, label):
+    token = token.strip()
+    if token.startswith("<") and token.endswith(">"):
+        return _iri_unescape(token[1:-1])
+    if token.startswith("_:") and len(token) > 2:
+        return token
+    raise CircuitFormatError(f"{label} must be an IRI or blank node: {token!r}")
+
+
+def _iri(token, label):
+    token = token.strip()
+    if token.startswith("<") and token.endswith(">"):
+        return _iri_unescape(token[1:-1])
+    raise CircuitFormatError(f"{label} must be an IRI: {token!r}")
+
+
+def _plain_literal(token, label):
+    token = token.strip()
+    if not token.startswith('"'):
+        raise CircuitFormatError(f"{label} must be a plain literal: {token!r}")
+    end = token.rfind('"')
+    if end == 0 or token[end + 1:]:
+        raise CircuitFormatError(f"{label} must be a plain literal: {token!r}")
+    return _nt_unescape(token[1:end])
+
+
+def _collect(mapping, key, value):
+    mapping.setdefault(key, set()).add(value)
+
+
+def _single(mapping, key, label, required=False):
+    values = sorted(mapping.get(key, ()))
+    if len(values) > 1:
+        raise CircuitFormatError(f"{label} has conflicting values: {values}")
+    if required and not values:
+        raise CircuitFormatError(f"{label} is missing")
+    return values[0] if values else None
 
 
 def unskolemize(iri):
@@ -64,7 +133,7 @@ def canon_term(tok):
         return "u"
     tok = tok.strip()
     if tok.startswith("<") and tok.endswith(">"):
-        iri = tok[1:-1]
+        iri = _iri_unescape(tok[1:-1])
         label = unskolemize(iri)
         return ("b" + US + label) if label is not None else ("i" + US + iri)
     if tok.startswith("_:"):
@@ -72,7 +141,7 @@ def canon_term(tok):
     if tok.startswith('"'):
         i = tok.rindex('"'); lex, suf = _nt_unescape(tok[1:i]), tok[i + 1:]   # decode escapes -> real lexical value
         if suf.startswith("^^<") and suf.endswith(">"):
-            return "l" + US + lex + US + suf[3:-1] + US
+            return "l" + US + lex + US + _iri_unescape(suf[3:-1]) + US
         if suf.startswith("@"):
             return "l" + US + lex + US + RDF_LANGSTRING + US + suf[1:].lower()
         return "l" + US + lex + US + XSD_STRING + US
@@ -112,38 +181,56 @@ def parse(nt):
         line = line.strip()
         if not line.endswith(" ."):
             continue
-        s, p, o = line[:-2].split(None, 2)
-        s, p, o = s.strip("<>"), p.strip("<>"), o.strip()
-        oi = o.strip("<>")
-        if p == RS + "type": typ[s] = oi
-        elif p == C + "feeds": feeds.setdefault(oi, set()).add(s)          # s feeds o
-        elif p == C + "in": tin.setdefault(s, set()).add(oi)
-        elif p == C + "minuend": minu[s] = oi
-        elif p == C + "subtrahend": subt[s] = oi
+        try:
+            raw_s, raw_p, o = line[:-2].split(None, 2)
+        except ValueError as exc:
+            raise CircuitFormatError(f"malformed N-Triples statement: {line!r}") from exc
+        s = _resource(raw_s, "statement subject")
+        p = _iri(raw_p, "statement predicate")
+        o = o.strip()
+        if p == RS + "type": _collect(typ, s, _iri(o, "rdf:type object"))
+        elif p == C + "feeds": feeds.setdefault(_resource(o, "c:feeds object"), set()).add(s)
+        elif p == C + "in": tin.setdefault(s, set()).add(_resource(o, "c:in object"))
+        elif p == C + "minuend": _collect(minu, s, _resource(o, "c:minuend object"))
+        elif p == C + "subtrahend": _collect(subt, s, _resource(o, "c:subtrahend object"))
         elif p == C + "answer": ans_gates.add(s)
-        elif p == C + "binding": g_bind.setdefault(s, set()).add(oi)
-        elif p == C + "var": b_var[s] = o.strip('"')
-        elif p == C + "val": b_val[s] = o                                 # RAW N-Triples term token
+        elif p == C + "binding": g_bind.setdefault(s, set()).add(_resource(o, "c:binding object"))
+        elif p == C + "var": _collect(b_var, s, _plain_literal(o, "c:var object"))
+        elif p == C + "val": _collect(b_val, s, o)                         # RAW N-Triples term token
     # A gate carrying c:binding IS an answer gate — do NOT rely on the c:answer DEBUG label, which can be
     # dropped when a projected var is unbound in a UNION/OPTIONAL branch (STR(?unbound) -> label unbound).
     ans_gates |= set(g_bind)
+    types = {node: _single(typ, node, f"rdf:type of {node}", required=True)
+             for node in sorted(typ)}
+    minus_nodes = {node for node, gate_type in types.items() if gate_type.endswith("Minus")}
+    stray_minus_fields = (set(minu) | set(subt)) - minus_nodes
+    if stray_minus_fields:
+        raise CircuitFormatError(
+            f"Minus operands occur on non-Minus nodes: {sorted(stray_minus_fields)}"
+        )
     circ = {}
-    for n, t in typ.items():
+    for n, t in types.items():
         if t.endswith("Times"): circ[n] = ("times", tuple(sorted(tin.get(n, ()))))
         elif t.endswith("Plus"): circ[n] = ("plus", tuple(sorted(feeds.get(n, ()))))
-        elif t.endswith("Minus"): circ[n] = ("minus", (minu.get(n), subt.get(n)))
+        elif t.endswith("Minus"):
+            circ[n] = ("minus", (
+                _single(minu, n, f"c:minuend of {n}", required=True),
+                _single(subt, n, f"c:subtrahend of {n}", required=True),
+            ))
     ref = set()
     for op, pl in circ.values():
         ref |= set(pl) if op in ("times", "plus") else {pl[0], pl[1]}
     for r in ref:
         circ.setdefault(r, ("leaf", r))
     bindings = {}
-    for g in ans_gates:
+    for g in sorted(ans_gates):
         d = {}
-        for b in g_bind.get(g, ()):
-            v = b_var.get(b)
-            if v is not None:
-                d[v] = canon_term(b_val.get(b))                          # missing c:val -> 'u' (unbound)
+        for b in sorted(g_bind.get(g, ())):
+            v = _single(b_var, b, f"c:var of binding {b}", required=True)
+            if v in d:
+                raise CircuitFormatError(f"answer gate {g} has multiple bindings for ?{v}")
+            value = _single(b_val, b, f"c:val of binding {b}")
+            d[v] = canon_term(value)                                     # missing c:val -> 'u' (unbound)
         bindings[g] = d
     return circ, ans_gates, bindings
 

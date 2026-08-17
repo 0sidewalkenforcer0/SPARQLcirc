@@ -10,43 +10,39 @@ Env: WATDIV_REPO (the GraphDB repo, e.g. wikidata); E8_QDIR (NPCS Basic/wikidata
 E8_RUNS (default 3); E8_OUT (csv). Run from reference/ with the engine jar + the data loaded.
 Reuses the multi-CONSTRUCT plan/build/count/WMC machinery from e6_minus.
 """
-import os, re, sys, glob, csv, subprocess, tempfile, time
-import e3_run
-from e6_minus import build, parse_circuit, counts, wmc_pwe_check, t_string, JAR, EMPTY, post
+import csv, glob, os, tempfile
+from e6_minus import build, parse_circuit, counts, emit_construct_plan, wmc_pwe_check, t_string
 
 RUNS = int(os.environ.get("E8_RUNS", "3"))
+if RUNS < 1:
+    raise ValueError("E8_RUNS must be a positive integer")
 
 def plan_wikidata(qtext):
     """Emit the CONSTRUCT plan for a query under the Wikidata scheme (in-memory on empty data).
     Returns (constructs, ok). ok=False if the rewriter rejects it (e.g. variable predicate)."""
-    qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(qtext); qf.close()
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat", "Wikidata", EMPTY.name, qf.name],
-                       capture_output=True, text=True)
-    if "Exception" in r.stderr or "Unsupported" in r.stderr:
-        return [], False
-    chunks = re.split(r"# --- step \d+ ---", r.stderr)
-    out = []
-    for ch in chunks[1:]:
-        ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
-        if ch.startswith("PREFIX") or ch.startswith("CONSTRUCT"):
-            out.append(ch)
+    out = emit_construct_plan(qtext, "Wikidata", allow_unsupported=True)
     return out, bool(out)
 
 def run_query(cat, name, qtext, do_wmc):
-    constructs, ok = plan_wikidata(qtext)
+    try:
+        constructs, ok = plan_wikidata(qtext)
+    except Exception as ex:
+        return dict(category=cat, query=name, status=f"err:plan:{type(ex).__name__}")
     if not ok:
         return dict(category=cat, query=name, status="skip:var-predicate")
     try:
-        ms0, triples, capped = build(constructs)          # first post: counts AND is a timing sample
+        _warmup_ms, triples, capped = build(constructs)   # untimed warmup also supplies the circuit
     except Exception as ex:
         return dict(category=cat, query=name, status=f"err:{type(ex).__name__}")
     if capped:
         return dict(category=cat, query=name, status="too-large")
     circ, ans, typ = parse_circuit(triples)
     times, plus, minus, edges, answers = counts(circ, ans, typ)
-    samples = [ms0]                                        # reuse the count post; RUNS extra posts only
-    for k in range(RUNS):
-        ms, _, _ = build(constructs)
+    samples = []
+    for _ in range(RUNS):
+        ms, _, measured_capped = build(constructs)
+        if measured_capped:
+            return dict(category=cat, query=name, status="too-large")
         samples.append(ms)
     build_ms = sum(samples) / len(samples)
     gates = times + plus + minus
@@ -60,27 +56,46 @@ def main():
     repo = os.environ.get("WATDIV_REPO", "wikidata")
     qdir = os.environ.get("E8_QDIR")
     out = os.environ.get("E8_OUT", "watdiv/e8_wikidata.csv")
+    if not qdir or not os.path.isdir(qdir):
+        raise ValueError("E8_QDIR must name an existing NPCS Wikidata query directory")
+    categories = ("single", "multiple", "optional")
+    query_files = {cat: sorted(glob.glob(f"{qdir}/{cat}/*.sparql")) for cat in categories}
+    empty = [cat for cat, files in query_files.items() if not files]
+    if empty:
+        raise ValueError(f"E8_QDIR has no .sparql queries for: {', '.join(empty)}")
     print(f"E8 - NPCS Wikidata queries on repo '{repo}' (Wikidata scheme, {RUNS}-run avg)\n")
     cols = ["category", "query", "status", "plan", "build_ms", "deriv", "gates", "edges", "answers", "share", "wmc_pwe"]
-    fh = open(out, "w", newline=""); w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval="")
-    w.writeheader(); fh.flush()
+    out_dir = os.path.dirname(os.path.abspath(out))
+    fd, temporary = tempfile.mkstemp(prefix=os.path.basename(out) + ".", suffix=".tmp", dir=out_dir)
     rows = []
-    for cat in ("single", "multiple", "optional"):
-        files = sorted(glob.glob(f"{qdir}/{cat}/*.sparql"))
-        okc = 0
-        for i, f in enumerate(files):
-            name = f"{cat}/{os.path.splitext(os.path.basename(f))[0]}"
-            r = run_query(cat, name, open(f).read(), do_wmc=(i < 3))   # WMC-check first 3 per cat
-            rows.append(r); w.writerow(r); fh.flush()                  # incremental: survive a timeout kill
-            if r["status"] == "ok":
-                okc += 1
-                print(f"  [{name:14}] build={r['build_ms']:>6}ms deriv={r['deriv']:>4} gates={r['gates']:>5} "
-                      f"ans={r['answers']:>4} share={r['share']}x "
-                      f"{('WMC==PWE Δ='+r['wmc_pwe']) if r['wmc_pwe'] else ''}")
-            else:
-                print(f"  [{name:14}] {r['status']}")
-        print(f"  --- {cat}: {okc}/{len(files)} ok ---\n")
-    fh.close()
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore", restval="")
+            w.writeheader(); fh.flush()
+            for cat in categories:
+                files = query_files[cat]
+                okc = 0
+                for i, f in enumerate(files):
+                    name = f"{cat}/{os.path.splitext(os.path.basename(f))[0]}"
+                    with open(f, encoding="utf-8") as query_file:
+                        query_text = query_file.read()
+                    r = run_query(cat, name, query_text, do_wmc=(i < 3))
+                    rows.append(r); w.writerow(r); fh.flush()
+                    if r["status"] == "ok":
+                        okc += 1
+                        print(f"  [{name:14}] build={r['build_ms']:>6}ms deriv={r['deriv']:>4} gates={r['gates']:>5} "
+                              f"ans={r['answers']:>4} share={r['share']}x "
+                              f"{('WMC==PWE Δ='+r['wmc_pwe']) if r['wmc_pwe'] else ''}")
+                    else:
+                        print(f"  [{name:14}] {r['status']}")
+                print(f"  --- {cat}: {okc}/{len(files)} ok ---\n")
+        os.replace(temporary, out)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
     ok = sum(1 for r in rows if r["status"] == "ok")
     print(f"wrote {out}  ({ok}/{len(rows)} queries ran)")
 

@@ -27,13 +27,15 @@ def rdf4j_circuit(qf):
     return r.stdout
 
 def plan(qf):
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", EMPTY, qf],
-                       capture_output=True, text=True)
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
+                        "Standard", EMPTY, qf], capture_output=True, text=True, check=True)
     out = []
     for ch in re.split(r"# --- step \d+ ---", r.stderr)[1:]:
         ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
         if ch.startswith("PREFIX") or ch.startswith("CONSTRUCT"):
             out.append(ch)
+    if len(out) != 1:
+        raise RuntimeError(f"HTTP read-path verification requires one flat CONSTRUCT; got {len(out)}")
     return out
 
 def sparql(query, accept):

@@ -39,6 +39,10 @@ RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 MARK = [(b"urn:circuit:Times", "Times"), (b"urn:circuit:Plus", "Plus"),
         (b"urn:circuit:answer", "answer"), (b"urn:circuit:feeds", "feeds"), (b"urn:circuit:in>", "in")]
 
+
+class BindingProbeError(RuntimeError):
+    """The requested safety binding could not be established."""
+
 def _prefixes(q):
     return dict(re.findall(r"PREFIX\s+(\w+):\s*<([^>]+)>", q))
 
@@ -68,7 +72,9 @@ def bind_source(q):
     the reified positive patterns) so the query becomes SELECTIVE. The bound var is dropped
     from the projection (it is now a constant) and substituted ONLY in the WHERE clause; if
     that empties the projection (e.g. a star whose only answer var is the hub), the first
-    remaining object variable is projected instead. Returns (bound_query, iri) or (q, None)."""
+    remaining object variable is projected instead. Returns (bound_query, iri) or (q, None) when
+    binding is not applicable. A failed or empty lookup raises BindingProbeError so callers never
+    mistake it for permission to run the original unbound query."""
     # strip SPARQL comments (may contain '{' or 'MINUS') but NOT a '#' inside an IRI (e.g. rev#): match
     # a full <...> first so its '#' is consumed as part of the IRI, only a bare '#' starts a comment.
     q = re.sub(r"<[^>]*>|#[^\n]*", lambda m: m.group(0) if m.group(0)[0] == "<" else "", q)
@@ -88,10 +94,10 @@ def bind_source(q):
         req = U.Request(EP, data=finder.encode(), method="POST")
         req.add_header("Content-Type", "application/sparql-query"); req.add_header("Accept", "text/csv")
         rows = U.urlopen(req, timeout=60).read().decode().splitlines()
-    except Exception:
-        return q, None
+    except Exception as ex:
+        raise BindingProbeError(f"source-binding lookup failed: {type(ex).__name__}: {ex}") from ex
     if len(rows) < 2 or not rows[1].strip():
-        return q, None                                     # no entity satisfies the full pattern
+        raise BindingProbeError("source-binding lookup returned no matching entity")
     iri = rows[1].strip().strip('"')
     msel = re.search(r"SELECT\s+(.+?)\s+WHERE", q, re.S)
     proj = [v for v in msel.group(1).split() if v.startswith("?") and v != src]
@@ -118,7 +124,11 @@ def post_stream(body, ctype, accept, count):
 def run_query(name, qtext, arity):
     src = None
     if BOUND:
-        qtext, src = bind_source(qtext)
+        try:
+            qtext, src = bind_source(qtext)
+        except BindingProbeError as ex:
+            tqdm.write(f"  -> {name} [binding required]: ERROR {ex}")
+            return dict(query=name, bound=False, status="err:binding-probe")
     tf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False)
     tf.write(qtext); tf.close()
     tag = f"{name}" + (f" [bound {src.rsplit('/', 1)[-1]}]" if src else " [unbound]")

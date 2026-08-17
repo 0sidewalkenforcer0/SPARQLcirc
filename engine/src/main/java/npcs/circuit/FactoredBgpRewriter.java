@@ -465,7 +465,7 @@ final class FactoredBgpRewriter {
             " IF(isBlank(" + term + "), CONCAT(\"b\", SHA256(STR(" + term + ")))," +
             " IF(isLiteral(" + term + "), CONCAT(\"l\", SHA256(STR(" + term + "))," +
             " SHA256(STR(DATATYPE(" + term + "))), SHA256(LCASE(LANG(" + term + "))))," +
-            " \"x\"))))";
+            " CONCAT(\"t\", SHA256(STR(" + term + ")))))))";
         return "SHA256(CONCAT(\"" + escapeString(label) + "=\", " + enc + "))";
     }
 

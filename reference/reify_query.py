@@ -46,24 +46,27 @@ def normalize_scheme(value):
 
 def term(t):
     if isinstance(t, Variable): return "?" + str(t)
-    if isinstance(t, URIRef):   return "<" + str(t) + ">"
-    if isinstance(t, BNode):    return "_:" + str(t)
-    if isinstance(t, Literal):
-        lex = '"' + str(t).replace("\\", "\\\\").replace('"', '\\"') + '"'
-        if t.language: return lex + "@" + t.language
-        if t.datatype: return lex + "^^<" + str(t.datatype) + ">"
-        return lex
+    if isinstance(t, (URIRef, BNode, Literal)): return t.n3()
     raise ValueError(f"unhandled term {type(t).__name__}: {t!r}")
 
 class Reifier:
-    def __init__(self, scheme=STANDARD):
+    def __init__(self, scheme=STANDARD, variables=()):
         self.scheme = normalize_scheme(scheme)
         self.n = 0
+        self.variables = {str(variable) for variable in variables}
+
+    def fresh_statement_variable(self):
+        while True:
+            self.n += 1
+            name = f"__t{self.n}"
+            if name not in self.variables:
+                self.variables.add(name)
+                return "?" + name
 
     def bgp(self, triples, ind):
         out = []
         for s, p, o in triples:
-            self.n += 1; t = f"?__t{self.n}"
+            t = self.fresh_statement_variable()
             if self.scheme == SPARQL_STAR:
                 out.append(
                     f"{ind}<< {term(s)} {term(p)} {term(o)} >> "
@@ -111,11 +114,36 @@ def reify(query_text, scheme=STANDARD):
     body_root = proj
     while getattr(body_root, "name", "") in ("Project", "Distinct", "Reduced", "Slice", "ToMultiSet"):
         body_root = body_root["p"]
-    r = Reifier(scheme)
+    r = Reifier(scheme, alg.get("_vars") or ())
     body = r.walk(body_root, "  ")
     proj_str = " ".join("?" + str(v) for v in pv) if pv else "*"
     distinct = "DISTINCT " if _has(proj, "Distinct") else ""
-    return f"SELECT {distinct}{proj_str} WHERE {{\n{body}\n}}\n"
+    modifiers = []
+    slice_node = _find(proj, "Slice")
+    if slice_node is not None:
+        length = slice_node.get("length")
+        start = slice_node.get("start")
+        if length is not None:
+            modifiers.append(f"LIMIT {length}")
+        if start:
+            modifiers.append(f"OFFSET {start}")
+    suffix = "" if not modifiers else "\n" + "\n".join(modifiers)
+    return f"SELECT {distinct}{proj_str} WHERE {{\n{body}\n}}{suffix}\n"
+
+
+def _find(node, name):
+    seen = set()
+    def go(n):
+        if id(n) in seen: return None
+        seen.add(id(n)); nm = getattr(n, "name", None)
+        if nm == name: return n
+        for key in getattr(n, "keys", lambda: [])():
+            value = n[key]
+            if hasattr(value, "name"):
+                found = go(value)
+                if found is not None: return found
+        return None
+    return go(node)
 
 def _has(node, name):
     seen = set()

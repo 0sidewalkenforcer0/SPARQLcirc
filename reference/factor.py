@@ -94,7 +94,7 @@ def factored_bgp(c, patterns, data, out_vars):
         rels = rest + [marginalize(c, j, x)]
 
     if not rels:
-        return {}
+        return {frozenset(): c.CONST1}
     fin = rels[0]
     for r in rels[1:]:
         fin = join(c, fin, r)

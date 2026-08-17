@@ -26,6 +26,16 @@ Each eval returns a dict:  binding (frozenset of (var,value)) -> root gate id.
 from collections import defaultdict
 
 
+def _bind_term(binding, pattern, value):
+    """Bind one pattern term without overwriting an incompatible prior binding."""
+    if isinstance(pattern, str) and pattern.startswith("?"):
+        if pattern in binding and binding[pattern] != value:
+            return False
+        binding[pattern] = value
+        return True
+    return pattern == value
+
+
 def _match_bgp(patterns, data):
     """All matches of a BGP. data: token -> (s,p,o).
     Yields (binding_dict, tuple_of_tokens_in_pattern_order)."""
@@ -214,10 +224,10 @@ def eval_path(circ, subj, pexpr, obj, data):
     groups = defaultdict(list)
     for (u, v), g in rel.items():
         b = {}
-        if isinstance(subj, str) and subj.startswith("?"): b[subj] = u
-        elif subj != u: continue
-        if isinstance(obj, str) and obj.startswith("?"): b[obj] = v
-        elif obj != v: continue
+        if not _bind_term(b, subj, u):
+            continue
+        if not _bind_term(b, obj, v):
+            continue
         groups[frozenset(b.items())].append(g)
     return {k: circ.oplus(v) for k, v in groups.items()}
 

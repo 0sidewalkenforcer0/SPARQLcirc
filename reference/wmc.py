@@ -131,10 +131,10 @@ def _plain_eval(q, T):
         out = []
         for (u, v) in _path_pairs(pexpr, T):
             b = {}
-            if isinstance(subj, str) and subj.startswith("?"): b[subj] = u
-            elif subj != u: continue
-            if isinstance(obj, str) and obj.startswith("?"): b[obj] = v
-            elif obj != v: continue
+            if not gamma._bind_term(b, subj, u):
+                continue
+            if not gamma._bind_term(b, obj, v):
+                continue
             out.append(b)
         return out
     raise ValueError(t)

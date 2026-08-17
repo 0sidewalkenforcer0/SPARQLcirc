@@ -24,13 +24,19 @@ def post(body, ctype, accept):
     return (time.time() - t) * 1000, data
 
 def get_construct(qfile):
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
-                        "bench_engine/tiny.ttl", qfile], capture_output=True, text=True)
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
+                        "Standard", "bench_engine/tiny.ttl", qfile], capture_output=True,
+                       text=True, check=True)
     out, p = [], False
+    plans = 0
     for l in r.stderr.splitlines():
-        if l.startswith("PREFIX c:"): p = True
+        if l.startswith("PREFIX c:"):
+            p = True
+            plans += 1
         if l.startswith("# circuit triples"): p = False
         if p: out.append(l)
+    if plans != 1:
+        raise RuntimeError(f"one-shot WatDiv execution requires exactly one flat CONSTRUCT; got {plans}")
     return "\n".join(out)
 
 def get_npcs(qfile):

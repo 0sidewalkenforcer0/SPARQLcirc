@@ -1,7 +1,5 @@
 package npcs;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 
@@ -53,7 +51,7 @@ public final class App {
         // well-formed SPARQL (used to check that rewritten output re-parses).
         if ("parsecheck".equals(schemeName)) {
             String q = "path".equals(mode)
-                    ? new String(Files.readAllBytes(Paths.get(third)), StandardCharsets.UTF_8)
+                    ? Utf8Text.read(Paths.get(third))
                     : third;
             try {
                 new org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(q, null);
@@ -67,7 +65,7 @@ public final class App {
 
         String query;
         if ("path".equals(mode)) {
-            query = new String(Files.readAllBytes(Paths.get(third)), StandardCharsets.UTF_8);
+            query = Utf8Text.read(Paths.get(third));
         } else if ("query".equals(mode)) {
             query = third;
         } else {
@@ -78,6 +76,6 @@ public final class App {
 
         Reification scheme = Reification.fromName(schemeName);
         String rewritten = new NpcsRewriter(scheme).rewrite(query);
-        System.out.println(rewritten);
+        Utf8Text.println(rewritten);
     }
 }

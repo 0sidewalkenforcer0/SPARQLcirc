@@ -17,7 +17,7 @@ PS  = "http://www.wikidata.org/prop/statement/"
 
 def main(inp, out):
     n = 0; passed = 0
-    with open(inp) as f, open(out, "w") as g:
+    with open(inp, encoding="utf-8") as f, open(out, "w", encoding="utf-8", newline="\n") as g:
         for line in f:
             line = line.rstrip("\n")
             if not line.endswith("."):

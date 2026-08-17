@@ -13,6 +13,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -69,9 +70,17 @@ public final class Skolem {
         return unhex(iri.substring(NS.length()));
     }
 
-    /** {@code sk} on one term; anything that is not a blank node passes through. */
+    /** {@code sk} on one term, recursively including the constituents of quoted triples. */
     public static Value apply(Value value, ValueFactory vf) {
-        return value instanceof BNode ? of((BNode) value, vf) : value;
+        if (value instanceof BNode) return of((BNode) value, vf);
+        if (value instanceof Triple) {
+            Triple triple = (Triple) value;
+            Resource subject = (Resource) apply(triple.getSubject(), vf);
+            Value object = apply(triple.getObject(), vf);
+            if (subject == triple.getSubject() && object == triple.getObject()) return value;
+            return vf.createTriple(subject, triple.getPredicate(), object);
+        }
+        return value;
     }
 
     public static Statement apply(Statement st, ValueFactory vf) {
@@ -135,8 +144,34 @@ public final class Skolem {
      * loaded, because that is the one route where the engine cannot have applied {@code sk} itself.
      */
     public static boolean graphHasBlankNodes(RepositoryConnection con) {
-        return con.prepareBooleanQuery(
-                "ASK { ?s ?p ?o FILTER(isBlank(?s) || isBlank(?o)) }").evaluate();
+        return graphHasBlankNodes(con, false);
+    }
+
+    /** Also inspect quoted-triple constituents when the selected endpoint scheme supports RDF-star. */
+    public static boolean graphHasBlankNodes(RepositoryConnection con, boolean inspectQuotedTriples) {
+        if (con.prepareBooleanQuery(
+                "ASK { ?s ?p ?o FILTER(isBlank(?s) || isBlank(?o)) }").evaluate()) {
+            return true;
+        }
+        if (!inspectQuotedTriples) return false;
+        String query = "SELECT ?qs ?qo WHERE { "
+                + "{ << ?qs ?qp ?qo >> ?p ?o } UNION { ?s ?p << ?qs ?qp ?qo >> } }";
+        try (org.eclipse.rdf4j.query.TupleQueryResult result = con.prepareTupleQuery(query).evaluate()) {
+            while (result.hasNext()) {
+                org.eclipse.rdf4j.query.BindingSet row = result.next();
+                if (containsBlankNode(row.getValue("qs")) || containsBlankNode(row.getValue("qo"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsBlankNode(Value value) {
+        if (value instanceof BNode) return true;
+        if (!(value instanceof Triple)) return false;
+        Triple triple = (Triple) value;
+        return containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject());
     }
 
     private static String hex(String label) {

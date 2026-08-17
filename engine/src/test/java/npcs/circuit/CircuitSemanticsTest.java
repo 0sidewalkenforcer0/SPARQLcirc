@@ -193,7 +193,37 @@ public class CircuitSemanticsTest {
                 Arrays.asList("x")),
             new Shape("shared D-only var",
                 "SELECT ?x ?v2 WHERE { ?x <urn:p0> ?v2 MINUS { ?x <urn:p1> ?v1 OPTIONAL { ?x <urn:p2> ?v2 } } }",
-                Arrays.asList("x", "v2"))));
+                Arrays.asList("x", "v2")),
+            new Shape("D-only var hidden in C subtrahend",
+                "SELECT ?x ?h WHERE { ?x <urn:p0> ?h MINUS { "
+              + "{ ?x <urn:p1> ?v1 MINUS { ?h <urn:p2> ?v2 } } "
+              + "OPTIONAL { ?h <urn:p3> ?v3 } } }",
+                Arrays.asList("x", "h"))));
+    }
+
+    @Test
+    public void propertyPathFrontierKeepsLiteralTermType() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            ValueFactory vf = con.getValueFactory();
+            IRI token = vf.createIRI("urn:r:literal-path");
+            Value literal = vf.createLiteral("terminal");
+            con.add(token, vf.createIRI(RDF.NAMESPACE, "subject"), vf.createIRI("urn:s"));
+            con.add(token, vf.createIRI(RDF.NAMESPACE, "predicate"), vf.createIRI("urn:p"));
+            con.add(token, vf.createIRI(RDF.NAMESPACE, "object"), literal);
+
+            Model circuit = new LinkedHashModel();
+            CircuitRewriter.PathQuery path = new CircuitRewriter(
+                    Reification.STANDARD, ConstructionMode.FLAT, "junit-path-literal")
+                    .pathQuery("SELECT ?y WHERE { <urn:s> <urn:p>+ ?y }");
+            CircuitRun.buildPathCircuit(con, path, circuit);
+
+            Set<String> values = new TreeSet<>();
+            for (Resource root : answerRoots(circuit)) values.add(bindingsOf(circuit, root).get("y"));
+            assertEquals(java.util.Collections.singleton(NTriplesUtil.toNTriplesString(literal)), values);
+        } finally {
+            repo.shutDown();
+        }
     }
 
     /** {@code (A ∖ B) ∖ P ≡ A ∖ (B ∪ P)} — chained MINUS, and MINUS chained onto an OPTIONAL. */
@@ -322,6 +352,40 @@ public class CircuitSemanticsTest {
                 CircuitRun.executeConstructionPlan(con, plan, circuit, false);
                 assertEquals(mode + ": an IRI answer and a literal answer are two answers",
                         2, answerRoots(circuit).size());
+            }
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** RDF-star bindings use the quoted triple's canonical lexical form in the gate identity. */
+    @Test
+    public void gateIdentityDistinguishesQuotedTripleBindings() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            ValueFactory vf = con.getValueFactory();
+            IRI occurrence = vf.createIRI("http://example.org/occurrenceOf");
+            for (String suffix : new String[]{"one", "two"}) {
+                Resource quoted = vf.createTriple(vf.createIRI("urn:nested:" + suffix),
+                        vf.createIRI("urn:q"), vf.createLiteral("value"));
+                Resource statement = vf.createTriple(vf.createIRI("urn:s"),
+                        vf.createIRI("urn:p"), quoted);
+                con.add(statement, occurrence, vf.createIRI("urn:token:" + suffix));
+            }
+
+            for (ConstructionMode mode : ConstructionMode.values()) {
+                Model circuit = new LinkedHashModel();
+                CircuitConstructionPlan plan = new CircuitRewriter(Reification.SPARQL_STAR, mode,
+                        "junit-quoted-terms")
+                        .constructionPlan("SELECT ?o WHERE { <urn:s> <urn:p> ?o }");
+                CircuitRun.executeConstructionPlan(con, plan, circuit, false);
+                Set<Resource> roots = answerRoots(circuit);
+                assertEquals(mode + ": distinct quoted triples must have distinct answer roots",
+                        2, roots.size());
+                Set<String> values = new LinkedHashSet<>();
+                for (Resource root : roots) values.add(bindingsOf(circuit, root).get("o"));
+                assertEquals(mode + ": each root must retain its quoted-triple binding",
+                        2, values.size());
             }
         } finally {
             repo.shutDown();
@@ -699,6 +763,25 @@ public class CircuitSemanticsTest {
                   + NTriplesUtil.toNTriplesString(st.getObject()) + " .");
         }
         return out;
+    }
+
+    @Test
+    public void circuitSerializationIsSortedIndependentlyOfInsertionOrder() {
+        ValueFactory vf = SimpleValueFactory.getInstance();
+        org.eclipse.rdf4j.model.Statement first = vf.createStatement(
+                vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createLiteral("1"));
+        org.eclipse.rdf4j.model.Statement second = vf.createStatement(
+                vf.createIRI("urn:z"), vf.createIRI("urn:p"), vf.createLiteral("2"));
+        Model forward = new LinkedHashModel();
+        forward.add(first); forward.add(second);
+        Model reverse = new LinkedHashModel();
+        reverse.add(second); reverse.add(first);
+        java.io.ByteArrayOutputStream left = new java.io.ByteArrayOutputStream();
+        java.io.ByteArrayOutputStream right = new java.io.ByteArrayOutputStream();
+        CircuitRun.writeCircuit(forward, left);
+        CircuitRun.writeCircuit(reverse, right);
+        assertEquals(left.toString(), right.toString());
+        assertTrue(left.toString().indexOf("<urn:a>") < left.toString().indexOf("<urn:z>"));
     }
 
     // ------------------------------------------------------------------ the emitted plan log
@@ -1366,6 +1449,34 @@ public class CircuitSemanticsTest {
             new Shape("bound variable source",
                                         "SELECT ?x ?y WHERE { ?x <urn:q> ?z . ?x <urn:p>+ ?y }",
                                         Arrays.asList("x", "y")));
+        for (Reification scheme : new Reification[]{Reification.STANDARD, Reification.SPARQL_STAR}) {
+            checkAgainstOracle(shapes, facts, ConstructionMode.values(), scheme);
+        }
+    }
+
+    /** RDF4J's parser-generated set wrappers around {@code :p?} remain transparent in every operand. */
+    @Test
+    public void optionalPathAtomsComposeWithEverySupportedOperator() {
+        String[][] facts = {
+            {"urn:r:e0", "urn:n0", "urn:p", "urn:n1"},
+            {"urn:r:q0", "urn:n0", "urn:q", "urn:z"},
+            {"urn:r:q1", "urn:n2", "urn:q", "urn:z"},
+            {"urn:r:r0", "urn:n0", "urn:r", "urn:w"},
+        };
+        List<Shape> shapes = Arrays.asList(
+            new Shape("p? in join",
+                    "SELECT ?x ?y WHERE { ?x <urn:q> ?z . ?x <urn:p>? ?y }",
+                    Arrays.asList("x", "y")),
+            new Shape("p? under filter",
+                    "SELECT ?x ?y WHERE { ?x <urn:q> ?z . ?x <urn:p>? ?y FILTER(?x = ?y) }",
+                    Arrays.asList("x", "y")),
+            new Shape("p? in optional",
+                    "SELECT ?x ?y WHERE { ?x <urn:q> ?z OPTIONAL { ?x <urn:p>? ?y } }",
+                    Arrays.asList("x", "y")),
+            new Shape("p? in minus",
+                    "SELECT ?x WHERE { ?x <urn:q> ?z MINUS { ?x <urn:p>? ?y . "
+                  + "?y <urn:r> <urn:w> } }",
+                    Arrays.asList("x")));
         for (Reification scheme : new Reification[]{Reification.STANDARD, Reification.SPARQL_STAR}) {
             checkAgainstOracle(shapes, facts, ConstructionMode.values(), scheme);
         }

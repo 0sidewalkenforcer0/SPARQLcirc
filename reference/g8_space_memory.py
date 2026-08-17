@@ -9,12 +9,13 @@ Three numbers a systems reviewer asks for, on the REAL circuits:
 
   LD_LIBRARY_PATH=$CONDA_PREFIX/lib python3 g8_space_memory.py
 """
-import os, sys, time, subprocess, csv, re, tempfile
+import os, sys, time, subprocess, csv, re, signal, tempfile
 sys.setrecursionlimit(1_000_000)
 import g3_pqe_latency as g3
 import compile_bdd
 from e6_minus import parse_circuit, counts, JAR, EMPTY, post
 import e3_run
+from experiment_timeouts import QUERY_TIMEOUT_S
 
 GDB   = "http://localhost:7200/repositories"
 PLEAF = 0.5
@@ -51,24 +52,58 @@ def shared_obdd_nodes(circ, ans):
             seen.add(x); _, lo, hi = bdd.nodes[x]; stack += [lo, hi]
     return len(seen)
 
-def peak_rss_path(ep, qf, heap="8g"):
+def _measure_process(cmd, timeout_s):
+    """Return peak RSS and wall time, rejecting timeout and nonzero exit."""
+    started = time.monotonic()
+    deadline = started + timeout_s
+    with tempfile.TemporaryFile() as diagnostics:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=diagnostics,
+            start_new_session=True,
+        )
+        peak_kb = 0
+        while process.poll() is None:
+            if time.monotonic() >= deadline:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                raise subprocess.TimeoutExpired(cmd, timeout_s)
+            try:
+                with open(f"/proc/{process.pid}/status", encoding="ascii") as status:
+                    for line in status:
+                        if line.startswith("VmHWM"):
+                            peak_kb = max(peak_kb, int(line.split()[1]))
+                            break
+            except (FileNotFoundError, ProcessLookupError):
+                pass
+            time.sleep(0.15)
+        returncode = process.wait()
+        if returncode:
+            diagnostics.seek(0, os.SEEK_END)
+            end = diagnostics.tell()
+            diagnostics.seek(max(0, end - 4096))
+            detail = diagnostics.read().decode("utf-8", "replace").strip()
+            raise RuntimeError(f"CircuitRun rc={returncode}: {detail}")
+    return (peak_kb / 1024 if peak_kb else None), time.monotonic() - started
+
+
+def peak_rss_path(ep, qf, heap="8g", timeout_s=QUERY_TIMEOUT_S):
     """Peak RSS of the CircuitRun path build by polling /proc/<pid>/status VmHWM
     (/usr/bin/time is absent here). Returns (peak_rss_mb, wall_s)."""
     cmd = ["java", f"-Xmx{heap}", "-cp", JAR, "npcs.circuit.CircuitRun",
            "Standard", EMPTY.name, qf, ep]
-    t = time.time()
-    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    peak_kb = 0
-    while p.poll() is None:
-        try:
-            for line in open(f"/proc/{p.pid}/status"):
-                if line.startswith("VmHWM"):
-                    peak_kb = max(peak_kb, int(line.split()[1])); break
-        except Exception:
-            pass
-        time.sleep(0.15)
-    p.wait()
-    return (peak_kb / 1024 if peak_kb else None), time.time() - t
+    return _measure_process(cmd, timeout_s)
 
 SOB_MAX = int(os.environ.get("G8_SOB_MAX", "20000"))       # shared-OBDD only when cheap (pure-Python)
 

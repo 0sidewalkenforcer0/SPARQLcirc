@@ -13,7 +13,8 @@ Run from reference/ with the env active:  python3 e11_real.py
 import sys, time, csv, collections, os
 sys.setrecursionlimit(1_000_000)
 import gates, gamma, factor, wmc
-from e11_per_answer_vs_shared import compile_shared, compile_per_answer, global_order, repr_size
+from e11_per_answer_vs_shared import (compile_shared, compile_per_answer, global_order,
+                                      probability_parity, repr_size)
 
 WN = os.environ.get("WATDIV_NT", "/mnt/nfs/home/ac145595/workspace/watdiv-data/watdiv.10M.nt")
 FRIEND = "http://db.uwaterloo.ca/~galuc/wsdbm/friendOf"
@@ -92,8 +93,7 @@ def run_real(name, data, q, sel):
     cflat = gates.Circuit(); roots_theirs = gamma.project(cflat, gamma.eval_q(cflat, q, data), sel)
     flat = nderiv <= 256
     pa_size, pa_ms, pa_prob = compile_per_answer(cflat.gates, roots_theirs, P, order, flat=flat)
-    keys = set(s_prob) & set(pa_prob)
-    parity = max((abs(s_prob[k] - pa_prob[k]) for k in keys), default=0.0)
+    parity = probability_parity(s_prob, pa_prob)
     T_string = nderiv * len(pats)
     row = dict(query=name, answers=len(roots_ours), deriv=nderiv, tokens=len(data),
                T_string=T_string, T_circuit=T_circuit,

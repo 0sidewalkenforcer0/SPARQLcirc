@@ -43,13 +43,12 @@ MANIFEST = os.path.join(REF_PAPER, "workload_manifest.csv")
 
 
 def find_csvs():
-    """List of matrix CSVs to merge. Prefer committed reference/paper/construction_matrix_*.csv
-    (reproducible, per-scale), else PCM_MATRIX_CSV (os.pathsep list), else newest artifact."""
+    """List matrix CSVs to merge: explicit override, committed inputs, then newest artifact."""
+    if os.environ.get("PCM_MATRIX_CSV"):
+        return os.environ["PCM_MATRIX_CSV"].split(os.pathsep)
     committed = sorted(glob.glob(os.path.join(REF_PAPER, "construction_matrix_*.csv")))
     if committed:
         return committed
-    if os.environ.get("PCM_MATRIX_CSV"):
-        return os.environ["PCM_MATRIX_CSV"].split(os.pathsep)
     cands = glob.glob(os.path.join(ROOT, "artifacts", "r9", "*", "construction_brnc.csv"))
     return [max(cands, key=os.path.getmtime)] if cands else []
 

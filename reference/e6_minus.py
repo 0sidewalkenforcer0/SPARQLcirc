@@ -21,21 +21,47 @@ RUNS = int(os.environ.get("E6_RUNS", "5"))
 BOUND = os.environ.get("E6_BOUND", "1") != "0"       # bound=selective; 0=raw unbound query
 MAXTRIP = int(os.environ.get("E6_MAXTRIP", "4000000"))  # safety cap on the collected circuit
 POST_TIMEOUT = QUERY_TIMEOUT_S                         # canonical per-CONSTRUCT performance-cell limit
+PLAN_TIMEOUT = QUERY_TIMEOUT_S                         # Java rewrite/construction-plan deadline
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"; C = "urn:circuit:"
 
-def plan_constructs(bound_query):
-    """Emit the multi-CONSTRUCT plan by running CircuitRun in-memory on empty data (it prints each
-    CONSTRUCT to stderr with '# --- step N ---' separators), and split it into individual queries."""
-    qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False); qf.write(bound_query); qf.close()
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat", "Standard", EMPTY.name, qf.name],
-                       capture_output=True, text=True)
+def emit_construct_plan(query_text, scheme, allow_unsupported=False):
+    """Run CircuitRun with a hard deadline and return a complete flat CONSTRUCT plan."""
+    qf = tempfile.NamedTemporaryFile("w", suffix=".rq", delete=False, encoding="utf-8")
+    try:
+        qf.write(query_text); qf.close()
+        try:
+            r = subprocess.run(
+                ["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
+                 scheme, EMPTY.name, qf.name],
+                capture_output=True, text=True, check=True, timeout=PLAN_TIMEOUT,
+            )
+        except subprocess.CalledProcessError as ex:
+            if allow_unsupported and "Unsupported" in (ex.stderr or ""):
+                return []
+            raise
+    finally:
+        try:
+            os.unlink(qf.name)
+        except FileNotFoundError:
+            pass
+    if allow_unsupported and "Unsupported" in r.stderr:
+        return []
+    if "Exception" in r.stderr:
+        raise RuntimeError("CircuitRun reported an exception despite a zero exit status")
     chunks = re.split(r"# --- step \d+ ---", r.stderr)
     out = []
     for ch in chunks[1:]:
         ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
         if ch.startswith("PREFIX") or ch.startswith("CONSTRUCT"):
             out.append(ch)
+    if not out:
+        raise RuntimeError("CircuitRun emitted no CONSTRUCT plan")
     return out
+
+
+def plan_constructs(bound_query):
+    """Emit the Standard multi-CONSTRUCT plan used by the E6 experiment."""
+    return emit_construct_plan(bound_query, "Standard")
 
 def post(construct, accept="application/n-triples"):
     req = U.Request(e3_run.EP, data=construct.encode(), method="POST")

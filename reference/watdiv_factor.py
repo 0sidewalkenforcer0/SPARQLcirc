@@ -66,14 +66,17 @@ def main():
         cx = gates.Circuit(); t = time.time()
         xa = factor.factored_bgp(cx, pats, data, outv); tx = (time.time() - t) * 1000
         xg, xe = reach(cx.gates, xa.values())
-        # WMC spot check: same P over shared tokens, compare a sample of shared answers
+        # WMC spot check: require identical answer sets before sampling their probabilities.
         toks = {t for _, (op, t) in cf.gates.items() if op == "leaf"} | \
                {t for _, (op, t) in cx.gates.items() if op == "leaf"}
         P = {tk: round(random.uniform(0.2, 0.9), 3) for tk in toks}
-        shared = list(set(fa) & set(xa))
-        samp = shared if len(shared) <= 40 else random.sample(shared, 40)
-        ok = all(abs(compile_bdd.probability(cf.gates, fa[k], P)[0] -
-                     compile_bdd.probability(cx.gates, xa[k], P)[0]) < 1e-9 for k in samp)
+        keys = list(fa)
+        samp = keys if len(keys) <= 40 else random.sample(keys, 40)
+        ok = set(fa) == set(xa) and all(
+            abs(compile_bdd.probability(cf.gates, fa[k], P)[0] -
+                compile_bdd.probability(cx.gates, xa[k], P)[0]) < 1e-9
+            for k in samp
+        )
         print(f"{name:>8} {len(fa):>7} | {fg:>10} {fe:>7} {tf:>5.0f} | "
               f"{xg:>10} {xe:>7} {tx:>5.0f} | {fg/max(xg,1):>5.1f}x | {'OK' if ok else 'FAIL':>8}")
 

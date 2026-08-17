@@ -188,6 +188,43 @@ def _fsync_directory(path):
         os.close(descriptor)
 
 
+def _normalize_escaped_apostrophe(line):
+    """Normalize MillenniumDB's non-standard \' only inside an N-Triples literal."""
+    out = []
+    in_literal = False
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == '"':
+            in_literal = not in_literal
+            out.append(char)
+            index += 1
+            continue
+        if in_literal and char == "\\":
+            end = index
+            while end < len(line) and line[end] == "\\":
+                end += 1
+            count = end - index
+            if end < len(line) and line[end] == '"':
+                out.append("\\" * count)
+                out.append('"')
+                if count % 2 == 0:
+                    in_literal = False
+                index = end + 1
+                continue
+            if end < len(line) and line[end] == "'" and count % 2:
+                out.append("\\" * (count - 1))
+                out.append("'")
+                index = end + 1
+                continue
+            out.append("\\" * count)
+            index = end
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def canonical_bytes(lines):
     """Return sorted, deduplicated N-Triples bytes without private messages."""
     unique = set()
@@ -197,10 +234,10 @@ def canonical_bytes(lines):
         except UnicodeDecodeError:
             raise
         line = line.strip()
-        # Serialization-agnostic content-addressing (RQ3 byte-identity): N-Triples does
-        # not escape "'", so "\'" == "'".  MillenniumDB emits the non-standard "\'";
-        # normalize it so the circuit hash is identical to the engines that emit plain "'".
-        line = line.replace("\\'", "'")
+        # Serialization-agnostic content-addressing (RQ3 byte-identity): MillenniumDB emits
+        # the non-standard escape \' for an apostrophe. Normalize only an unescaped \' inside
+        # a literal; preserve \\' because it denotes a lexical backslash followed by apostrophe.
+        line = _normalize_escaped_apostrophe(line)
         if not line or PRIVATE_PREDICATE.match(line):
             continue
         if not line.endswith(" ."):

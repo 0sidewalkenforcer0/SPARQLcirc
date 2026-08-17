@@ -14,6 +14,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -120,6 +121,39 @@ public class SkolemTest {
         } finally {
             data.delete();
         }
+    }
+
+    @Test
+    public void quotedTripleConstituentsAreSkolemizedAndDetectedRecursively() {
+        SimpleValueFactory vf = SimpleValueFactory.getInstance();
+        Triple nested = vf.createTriple(vf.createIRI("urn:inner"), vf.createIRI("urn:q"),
+                vf.createBNode("inner-object"));
+        Triple quoted = vf.createTriple(vf.createBNode("outer-subject"), vf.createIRI("urn:p"),
+                nested);
+        Statement raw = vf.createStatement(quoted, vf.createIRI("urn:meta"), vf.createLiteral("x"));
+        Statement transformed = Skolem.apply(raw, vf);
+        assertFalse("recursive skolemization must remove every nested blank node",
+                containsBlankNode(transformed.getSubject()));
+
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            con.add(raw);
+            assertTrue("the RDF-star guard must see a nested blank node",
+                    Skolem.graphHasBlankNodes(con, true));
+            con.clear();
+            con.add(transformed);
+            assertFalse("the RDF-star guard must accept the recursively skolemized term",
+                    Skolem.graphHasBlankNodes(con, true));
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    private static boolean containsBlankNode(Value value) {
+        if (value instanceof org.eclipse.rdf4j.model.BNode) return true;
+        if (!(value instanceof Triple)) return false;
+        Triple triple = (Triple) value;
+        return containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject());
     }
 
     private static Model build(File data) {

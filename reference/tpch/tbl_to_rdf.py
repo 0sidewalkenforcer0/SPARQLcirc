@@ -37,27 +37,28 @@ def esc(s):
 
 def main(tbldir, out):
     n = 0
-    with open(out, "w") as g:
+    with open(out, "w", encoding="utf-8", newline="\n") as g:
         for table, (cols, pk, fks) in SCHEMA.items():
             path = os.path.join(tbldir, f"{table}.tbl")
             if not os.path.exists(path):
                 continue
             ecls = ENTITY[table]
-            for line in open(path):
-                vals = line.rstrip("\n").split("|")
-                if len(vals) < len(cols):
-                    continue
-                row = dict(zip(cols, vals))
-                pkval = "-".join(row[k] for k in pk)
-                subj = f"<{BASE}{ecls}/{pkval}>"
-                g.write(f"{subj} <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{BASE}{ecls}> .\n"); n += 1
-                for c in cols:
-                    v = row[c]
-                    if c in fks:
-                        g.write(f"{subj} <{BASE}{c}> <{BASE}{ENTITY[fks[c]]}/{v}> .\n")
-                    else:
-                        g.write(f'{subj} <{BASE}{c}> "{esc(v)}" .\n')
-                    n += 1
+            with open(path, encoding="utf-8") as source:
+                for line in source:
+                    vals = line.rstrip("\n").split("|")
+                    if len(vals) < len(cols):
+                        continue
+                    row = dict(zip(cols, vals))
+                    pkval = "-".join(row[k] for k in pk)
+                    subj = f"<{BASE}{ecls}/{pkval}>"
+                    g.write(f"{subj} <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{BASE}{ecls}> .\n"); n += 1
+                    for c in cols:
+                        v = row[c]
+                        if c in fks:
+                            g.write(f"{subj} <{BASE}{c}> <{BASE}{ENTITY[fks[c]]}/{v}> .\n")
+                        else:
+                            g.write(f'{subj} <{BASE}{c}> "{esc(v)}" .\n')
+                        n += 1
     print(f"wrote {n} triples -> {out}")
 
 if __name__ == "__main__":

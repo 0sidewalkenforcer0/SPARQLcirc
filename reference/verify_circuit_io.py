@@ -10,6 +10,9 @@ value), so answer recovery was not lossless for escaped literals. This checks th
 import sys
 import circuit_io as cio
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="backslashreplace")
+
 # (raw N-Triples object token, expected decoded lexical value)
 CASES = [
     (r'"plain"',                       "plain"),

@@ -1877,7 +1877,7 @@ def parse_circuit(nt_lines, include_keys=False):
     plus = sum(1 for value in typ.values() if value.endswith("Plus"))
     minus = sum(1 for value in typ.values() if value.endswith("Minus"))
     leaves = sum(1 for op, _payload in circ.values() if op == "leaf")
-    edges = sum(map(len, tin.values())) + sum(map(len, feeds.values()))
+    edges = sum(map(len, tin.values())) + sum(map(len, feeds.values())) + 2 * minus
     # RQ2 compactness node count: each leaf, product, sum and difference is one node.  `gates`
     # stays operator-only for back-compat; `nodes` = leaves + operators is the full count that is
     # compared against the NPCS node count.

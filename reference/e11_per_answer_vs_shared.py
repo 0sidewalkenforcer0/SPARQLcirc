@@ -48,6 +48,16 @@ sys.setrecursionlimit(1_000_000)
 import gates, gamma, wmc, compile_bdd, factor
 
 
+def probability_parity(left, right):
+    """Return the maximum difference only when both methods produced the same answers."""
+    left_keys, right_keys = set(left), set(right)
+    if left_keys != right_keys:
+        missing = sorted(left_keys - right_keys, key=str)
+        extra = sorted(right_keys - left_keys, key=str)
+        raise ValueError(f"answer-key mismatch: missing={missing[:3]}, extra={extra[:3]}")
+    return max((abs(left[key] - right[key]) for key in left_keys), default=0.0)
+
+
 # ------------------------------- families (same as E2 / bench.py) -----------------------------------
 def layered(k, W):
     data = {}
@@ -197,8 +207,7 @@ def run(name, q, data, sel):
     flat = nderiv <= FLAT_CAP
     pa_size, pa_ms, pa_prob = compile_per_answer(cflat.gates, roots_theirs, P, order, flat=flat)
 
-    keys = set(s_prob) & set(pa_prob)
-    parity = max((abs(s_prob[k] - pa_prob[k]) for k in keys), default=0.0)   # ours == theirs (both exact)
+    parity = probability_parity(s_prob, pa_prob)   # ours == theirs (both exact)
     if ntok <= 20:
         truth = wmc.pwe(q, sel, data, P)
         pwe = max(abs(s_prob.get(k, 0.0) - truth.get(k, 0.0)) for k in set(s_prob) | set(truth))

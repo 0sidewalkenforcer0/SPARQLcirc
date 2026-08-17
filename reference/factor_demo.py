@@ -50,9 +50,13 @@ cf = gates.Circuit(); flat = gamma.project(cf, gamma.eval_bgp(cf, pats, data), o
 cx = gates.Circuit(); fac = factor.factored_bgp(cx, pats, data, set(out))
 wf, wx = wmap(cf, flat, P), wmap(cx, fac, P)
 truth = {frozenset((v.lstrip("?"), vv) for v, vv in k): p for k, p in wmc.pwe(s["q"], out, data, P).items()}
+truth_keys = {frozenset((v.lstrip("?"), vv) for v, vv in k) for k in wf}
+same_answers = set(wf) == set(wx) and truth_keys == set(truth)
+if not same_answers:
+    raise RuntimeError("flat, factored, and PWE answer-key sets differ")
 for k in sorted(wf, key=str):
     kk = frozenset((v.lstrip("?"), vv) for v, vv in k)
-    good = abs(wf[k]-wx[k]) < 1e-9 and abs(wf[k]-truth.get(kk,0)) < 1e-9
+    good = same_answers and abs(wf[k]-wx[k]) < 1e-9 and abs(wf[k]-truth[kk]) < 1e-9
     print(f"   {str(dict(k)):24} flat={wf[k]:.6f} factored={wx[k]:.6f} PWE={truth.get(kk,0):.6f} {'OK' if good else 'FAIL'}")
 print(f"   gates(times,plus): flat={sizes(cf)}  factored={sizes(cx)}")
 
@@ -71,10 +75,11 @@ for W in [3, 4, 6, 8]:
     data, pats, out = layered(k, W)
     cf = gates.Circuit(); flat = gamma.project(cf, gamma.eval_bgp(cf, pats, data), out)
     cx = gates.Circuit(); fac = factor.factored_bgp(cx, pats, data, set(out))
-    toks = list(data); keys = set(flat) & set(fac); ok = True
-    for _ in range(2000):
-        asn = {t: random.random() < 0.5 for t in toks}
-        mf, mx = {}, {}
-        if any(ev(cf.gates, flat[kk], asn, mf) != ev(cx.gates, fac[kk], asn, mx) for kk in keys):
-            ok = False; break
+    toks = list(data); keys = set(flat); ok = keys == set(fac)
+    if ok:
+        for _ in range(2000):
+            asn = {t: random.random() < 0.5 for t in toks}
+            mf, mx = {}, {}
+            if any(ev(cf.gates, flat[kk], asn, mf) != ev(cx.gates, fac[kk], asn, mx) for kk in keys):
+                ok = False; break
     print(f"   W={W}: answers={len(keys)}  flat⊗={sizes(cf)[0]} factored⊗={sizes(cx)[0]}  agree -> {'OK' if ok else 'FAIL'}")
