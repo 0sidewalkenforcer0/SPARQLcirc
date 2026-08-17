@@ -1991,10 +1991,21 @@ public class CircuitRewriter {
             baseC.add(q.toString());
         }
         // The reach/base gates were already isolated per path by `fp`; the ANSWER gate was not, so two
-        // different path queries collapsed onto one root. Reuse `fp` as this projection's pattern tag —
-        // but only when this atom really is the projection (see @param wholePattern). A composed atom
-        // keeps the θ constructionPlan() derived from the WHOLE query.
-        String pathTag = "A@" + sha256hex("ANSWERPATH" + part(fp) + "|W" + partsOf(W));
+        // different path queries collapsed onto one root. This projection's pattern tag is therefore
+        // derived from `fp` — but only when this atom really is the projection (see @param
+        // wholePattern). A composed atom keeps the θ constructionPlan() derived from the WHOLE query.
+        //
+        // The ENDPOINTS must enter the tag separately: `fp` deliberately erases them (subst() rewrote
+        // both to ?u/?v so the base relation is all-pairs and shareable across sources), which is right
+        // for reach/base gates and wrong for θ. Without them, {<a> :p+ ?y} and {<b> :p+ ?y} — the same
+        // sub-path from two sources — minted byte-identical answer roots, so merging their circuits on
+        // one store (CIRCUIT_PERSIST, or feedback left behind) ORed "a reaches y" with "b reaches y"
+        // under one root: exactly the aliasing Def. 4.6's θ exists to prevent, and exactly the case
+        // distinctQueriesNeverShareAnAnswerRoot guards now. varSemanticKey renders a constant endpoint
+        // by its term and a variable one by its (canonicalized) name, matching querySemanticKey's ALP
+        // key on the composed route.
+        String pathTag = "A@" + sha256hex("ANSWERPATH" + part(fp)
+                + part(varSemanticKey(s)) + part(varSemanticKey(o)) + "|W" + partsOf(W));
         if (wholePattern) answerTag = pathTag;
         return new PathQuery(baseC, branchWheres, endOf(s, subjName), endOf(o, objName),
                 star, W, fp, generatedPrefix, pathTag, scheme);

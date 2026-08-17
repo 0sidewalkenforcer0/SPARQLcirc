@@ -409,6 +409,14 @@ public class CircuitSemanticsTest {
             "SELECT ?y ?z WHERE { <urn:s> <urn:p0>+ ?y . ?y <urn:p1> ?z }",
             "SELECT ?y ?z WHERE { <urn:s> <urn:p0>+ ?y . ?y <urn:p2> ?z }",
             "SELECT ?y ?z WHERE { <urn:s> <urn:p0>+ ?y . ?y <urn:p1> ?z . ?z <urn:p2> ?y }",
+            // Whole-pattern closure atoms differing ONLY in an endpoint. The per-path fingerprint
+            // erases the endpoints by design (the base relation is all-pairs, shared across sources),
+            // so a θ derived from the fingerprint alone minted byte-identical answer roots for the
+            // first two — "s reaches y" and "a reaches y" collapsed onto one root when their circuits
+            // met on one store. The endpoints enter ANSWERPATH separately now.
+            "SELECT ?y WHERE { <urn:s> <urn:p0>+ ?y }",
+            "SELECT ?y WHERE { <urn:a> <urn:p0>+ ?y }",
+            "SELECT ?y WHERE { <urn:s> <urn:p0>* ?y }",
         };
         Map<String, String> rootByQuery = new LinkedHashMap<>();
         for (String query : queries) {
@@ -427,6 +435,9 @@ public class CircuitSemanticsTest {
                         ConstructionMode.FLAT),
                 answerIdentity("SELECT ?y ?z WHERE { <urn:s> <urn:p0> ?y . ?y <urn:p1> ?z }",
                         ConstructionMode.FACTORED));
+        assertEquals("... and re-planning the same whole-pattern path query must not move its root",
+                answerIdentity("SELECT ?y WHERE { <urn:s> <urn:p0>+ ?y }"),
+                answerIdentity("SELECT ?y WHERE { <urn:s> <urn:p0>+ ?y }"));
     }
 
     /**
@@ -458,16 +469,18 @@ public class CircuitSemanticsTest {
                         patternTag(entry.getKey(), mode));
             }
         }
-        // The whole-pattern closure atom keys its answers off the path fingerprint instead (it is
-        // planned by pathQuery(), not by constructionPlan()); those are the IRIs the published
-        // cross-engine path circuits carry.
+        // The whole-pattern closure atom keys its answers off the path fingerprint plus its own
+        // endpoints (it is planned by pathQuery(), not by constructionPlan()); those are the IRIs the
+        // published cross-engine path circuits carry. Tag re-pinned 2026-08-17 when the endpoints
+        // entered ANSWERPATH: the fingerprint erases them (all-pairs base), so a tag derived from it
+        // alone aliased {<a> :p+ ?y} with {<b> :p+ ?y}. The fingerprint itself is unchanged.
         CircuitRewriter rewriter = new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT,
                 "junit-frozen");
         CircuitRewriter.PathQuery path = rewriter.pathQuery("SELECT ?y WHERE { <urn:a> <urn:p>+ ?y }");
         assertEquals("path fingerprint", "190ff1dd155514ac389c75756c4d06d2ac9db7749ceddf3bbf693c1d18d9a313",
                 path.fingerprint());
         assertEquals("whole-pattern path answer tag",
-                "A@c97ef7e2236b3c1ea40771e06dd84ea119e8611eade389f60f2df140b2cbd91c",
+                "A@d22cdde0f801faae86e182bc9b7c0f415b7bd28d34aa412b8ed598b6d0264bff",
                 tagOf(path.projectAnswers(3).get(0)));
     }
 
