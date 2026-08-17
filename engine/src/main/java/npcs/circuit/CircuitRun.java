@@ -95,6 +95,8 @@ public final class CircuitRun {
             System.err.println("    CIRCUIT_SKIP_LOAD=1            (data already bulk-loaded on the engine)");
             System.err.println("    CIRCUIT_READONLY=1            (engine has no SPARQL UPDATE: QLever/MillenniumDB)");
             System.err.println("    CIRCUIT_PARALLELISM=N          (same as --parallelism=N; default 1 = sequential)");
+            System.err.println("    CIRCUIT_EXACT_LEVELS=0         (property paths: restore the pre-2026-08-17 carry,");
+            System.err.println("                                    which republished each reach level into the next)");
             System.err.println("  --parallelism=N runs a plan's INDEPENDENT steps concurrently, N at a time. The");
             System.err.println("  circuit is byte-identical either way (it is the set union of the steps' triples);");
             System.err.println("  only construction_ms changes, so published timings stay comparable at the default.");

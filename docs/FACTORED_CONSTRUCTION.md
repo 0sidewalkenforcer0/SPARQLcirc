@@ -175,8 +175,10 @@ regime is untouched. L-path 10M dropped to **143 gates / 513 ms** (49 base token
 Full regime map + numbers: `reference/FACTORED_REGIMES.md`, `reference/watdiv/rdfstar_factored_vs_flat.csv`,
 `reference/watdiv/unbound_factored_vs_flat.csv`.
 
-**Update (2026-08-07) — four construction-cost changes, and which published numbers they move.**
-Every one of them is off-by-default-reversible, because three of the four change measured quantities.
+**Update (2026-08-07, extended 2026-08-17) — construction-cost changes, and which published numbers
+they move.** Each one keeps a switch that restores the previous behaviour, because most of them
+change a measured quantity. Rows 1–3 landed 2026-08-07; row 4 landed 2026-08-17 and is the only one
+that changes gate IRIs, so every path-circuit size predates it.
 Correctness is checked by the possible-world oracle in `engine/.../CircuitSemanticsTest.java` (see
 `docs/…` and the class comment) plus `verify_composition.py` / `verify_gallery.py` for probabilities.
 
@@ -185,6 +187,7 @@ Correctness is checked by the possible-world oracle in `engine/.../CircuitSemant
 | 1 | **one-pass base relations.** The semi-join restriction each base relation of a *selective* BGP needs IS the whole BGP, so the k base queries had the same WHERE and were k evaluations of one join. One CONSTRUCT now publishes all k. | **byte-identical** | `CIRCUIT_ONE_PASS_BASE=0` / `-Dsparqlcirc.perPatternBase=true` |
 | 2 | **step parallelism.** A plan's independent steps run concurrently, scheduled by the real dependency DAG (`Step.reads()/writes()`); an undeclared step is a barrier both ways. | **byte-identical** | default is `--parallelism=1` (sequential) |
 | 3 | **restricted subtrahend marginal.** `⊕_{P2}` bindings compatible with no minuend binding got gates no answer can reach, so the whole right operand was materialized. Now semi-joined to the minuend (skipped for domain-disjoint operands, where it would be a cross product). The **minuend is never restricted** — each of its bindings is an answer. | **fewer triples**, all of them unreachable from every answer gate; reachable circuit and every probability unchanged | `CIRCUIT_RESTRICT_SUBTRAHEND=0` / `-Dsparqlcirc.unrestrictedSubtrahendMarginal=true` |
+| 4 | **exact closure levels** (2026-08-17). `reach^k` holds the paths of exactly `k+1` edges and the answer/row projection unions every non-base level, instead of carrying `reach^k` into `reach^{k+1}` so a single-level projection can read the last one. The carry cost twice: it republished each pair once per remaining round as a one-input `⊕`, and republishing **renamed** the pair (the level is in the gate key), so the next round's composition built a second `⊗` for a derivation it had already multiplied — content addressing merges syntactically identical subcircuits, not semantically equivalent ones. Dropping the carry removes both. The client also stops as soon as a round produces no gates, which the carry had masked (with it, a round is never empty). | **different gate IRIs**, so every path-circuit size moves; same answers and same probabilities | `CIRCUIT_EXACT_LEVELS=0` / `-Dsparqlcirc.cumulativeLevels=true` |
 
 Measured (1 on GraphDB 10.7.6 / WatDiv 10M Standard-reified; 2 and 3 in-process, since a flat operator
 plan on that store runs past 900 s per query):
@@ -194,6 +197,12 @@ plan on that store runs past 900 s per query):
 2  flat operator plan, p=4              MINUS 1.34x  OPTIONAL 1.68x  OPT+MINUS 1.77x  UNION3 1.73x
    factored operator plan, p=4/8        MINUS 1.96x  two OPTIONALs 2.06x/2.47x  unbound star-4 1.15x
 3  selective minuend, 40k right operand OPTIONAL 2220→38 ms (162 900→3 300 triples)
+4  path gallery, 9 shapes, in-process   1427→1093 triples (23.4%); p? and p* unchanged (p? has no
+                                        rounds; p*'s zero-length gates already act as the carry)
+   triples vs path depth, chain L       L=3 1.73x  L=10 3.25x  L=20 5.42x   (O(L²) → O(L))
+   GraphDB 10.7.6, isolated scratch repo, best of 3 — MEASURED BEFORE the RDF-star path merge,
+   re-run before quoting: Wikidata wdt:P279+ from Q7397 (17 nodes, depth 7) 1794→576 ms, 2566→426
+   triples, 16→6 rounds · chain of 30  3181→1566 ms, 5217→687 triples
                                         MINUS    2030→27 ms (161 500→1 900 triples)
 ```
 

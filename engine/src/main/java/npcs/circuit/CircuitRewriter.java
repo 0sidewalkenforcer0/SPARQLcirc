@@ -449,23 +449,28 @@ public class CircuitRewriter {
     }
 
     /**
-     * EXPERIMENTAL. Level gates hold paths of EXACTLY k+1 edges instead of at most k+1, and the
-     * answer/row projection reads every non-base level instead of only the last.
+     * Level gates hold the paths of EXACTLY k+1 edges, and the answer/row projection unions every
+     * non-base level rather than reading only the last one. Default since the closure was measured.
      *
-     * <p>The default (cumulative) form carries reach^k forward into reach^{k+1} with a second
-     * CONSTRUCT per round, so a short path is copied once per remaining round. Those copies are ⊕
-     * gates with a single input: they denote their input and compile away, but they are materialized
-     * and shipped. Under exact levels the carry is dropped and the projection unions the levels
-     * instead, which is the same denotation because a ⊕ over the levels a pair appears in is exactly
-     * the ⊕ the carry chain was building one level at a time.</p>
+     * <p>The alternative (cumulative) form carries reach^k forward into reach^{k+1} with a second
+     * CONSTRUCT per round, so that the last level accumulates every length and a single-level
+     * projection can read it. That carry costs twice over. It republishes each pair once per
+     * remaining round as a ⊕ with one input — a gate that denotes its input and compiles away, but
+     * is still built, stored and shipped. Worse, republishing RENAMES the pair (the level is in the
+     * gate key), so the next round's composition no longer recognises it as the operand it already
+     * multiplied: {@code reach⁰(a→b) ⊗ base(b→c)} and {@code reach¹(a→b) ⊗ base(b→c)} denote the
+     * same derivation and still get two ⊗ gates, because content addressing merges syntactically
+     * identical subcircuits, not semantically equivalent ones. Dropping the carry keeps each fact
+     * at the one level where it belongs, so neither duplicate arises.</p>
      *
-     * <p>Opt-in, because it MOVES gate IRIs: every reach gate above level 0 keys off a different
-     * child set, so published node counts and the cross-engine byte-identity fixtures would all
-     * change. Off by default keeps the emitted circuit byte-for-byte what it was.</p>
+     * <p>Both forms denote the same thing: the ⊕ over the levels a pair appears in is exactly the ⊕
+     * the carry chain was building one level at a time. Set {@code CIRCUIT_EXACT_LEVELS=0} (or
+     * {@code -Dsparqlcirc.cumulativeLevels=true}) to restore the carry — it emits the circuit the
+     * pre-2026-08 path measurements were taken on.</p>
      */
     private static boolean exactLevels() {
-        return Boolean.getBoolean("sparqlcirc.exactLevels")
-                || "1".equals(System.getenv("CIRCUIT_EXACT_LEVELS"));
+        return !"0".equals(System.getenv("CIRCUIT_EXACT_LEVELS"))
+                && !Boolean.getBoolean("sparqlcirc.cumulativeLevels");
     }
 
     private static UnsupportedOperationException unboundSource(String sourceVar) {
