@@ -740,7 +740,17 @@ public final class CircuitRun {
         for (String c : pathq.init()) runFeed(con, circuit, workspace, reachNodes, c);
         int k = 0, lastLevel = 0;
         while (k < cap) {
-            for (String c : pathq.step(k)) runFeed(con, circuit, workspace, reachNodes, c);
+            int produced = 0;
+            for (String c : pathq.step(k)) produced += runFeed(con, circuit, workspace, reachNodes, c);
+            // Fixpoint reached: reach^{k+1} is empty, so reach^{k+2} = reach^{k+1} ∘ base is too, and
+            // every later level with it. lastLevel deliberately stays on the last NON-empty level.
+            // Only ever fires under exact levels -- the cumulative form's carry republishes reach^k at
+            // every level, so a round there is never empty and this signal does not exist.
+            if (produced == 0) {
+                System.err.println("# ---- fixpoint converged at level " + k
+                    + ": round produced no gates, " + (cap - k) + " of " + cap + " rounds skipped ----");
+                break;
+            }
             lastLevel = ++k;
             if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
         }
@@ -754,8 +764,8 @@ public final class CircuitRun {
     /** Run one path-round CONSTRUCT, add its triples to the accumulated circuit AND back into the
      *  store (feedback for the next round), and record any reach-gate endpoints (c:rfrom/c:rto) so the
      *  caller can bound the loop by the live reachable-set size |V_s|. */
-    private static void runFeed(RepositoryConnection con, Model circuit, Model workspace,
-                                java.util.Set<String> reachNodes, String construct) {
+    private static int runFeed(RepositoryConnection con, Model circuit, Model workspace,
+                               java.util.Set<String> reachNodes, String construct) {
         System.err.println("# --- path CONSTRUCT ---\n" + construct);   // emit the plan (stderr)
         Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
         try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
@@ -784,5 +794,6 @@ public final class CircuitRun {
                     && !baseGates.contains(st.getSubject().stringValue()))
                 reachNodes.add(st.getObject().stringValue());
         }
+        return m.size();
     }
 }

@@ -445,6 +445,26 @@ public class CircuitRewriter {
                 || "1".equals(System.getenv("CIRCUIT_UNBOUND_PATHS"));
     }
 
+    /**
+     * EXPERIMENTAL. Level gates hold paths of EXACTLY k+1 edges instead of at most k+1, and the
+     * answer/row projection reads every non-base level instead of only the last.
+     *
+     * <p>The default (cumulative) form carries reach^k forward into reach^{k+1} with a second
+     * CONSTRUCT per round, so a short path is copied once per remaining round. Those copies are ⊕
+     * gates with a single input: they denote their input and compile away, but they are materialized
+     * and shipped. Under exact levels the carry is dropped and the projection unions the levels
+     * instead, which is the same denotation because a ⊕ over the levels a pair appears in is exactly
+     * the ⊕ the carry chain was building one level at a time.</p>
+     *
+     * <p>Opt-in, because it MOVES gate IRIs: every reach gate above level 0 keys off a different
+     * child set, so published node counts and the cross-engine byte-identity fixtures would all
+     * change. Off by default keeps the emitted circuit byte-for-byte what it was.</p>
+     */
+    private static boolean exactLevels() {
+        return Boolean.getBoolean("sparqlcirc.exactLevels")
+                || "1".equals(System.getenv("CIRCUIT_EXACT_LEVELS"));
+    }
+
     private static UnsupportedOperationException unboundSource(String sourceVar) {
         return new UnsupportedOperationException(
             "Unsupported: closure atom with an UNBOUND source ?" + sourceVar + ". No operand "
@@ -2030,6 +2050,14 @@ public class CircuitRewriter {
                     + "\" ; c:rfrom " + pv(gp, "u") + " ; c:rto " + pv(gp, "v");
         }
         private String rpathGuard() { return " ; c:rpath \"" + fp + "\""; }       // append to any reach/base match pattern
+        /** What the final projection matches: one level, or every level under {@link #exactLevels()}. */
+        private String finalLevel(int lastLevel) {
+            return exactLevels() ? "c:rlvl " + v("lvl") : "c:rlvl \"" + lastLevel + "\"";
+        }
+        /** Exact-level mode matches an open ?lvl, so the all-pairs base relation must be excluded by hand. */
+        private String finalLevelFilter() {
+            return exactLevels() ? "  FILTER(" + v("lvl") + " != \"base\")\n" : "";
+        }
         static String comp2(String c0, String c1, String out, String gp) {  // content-addressed 2-child ⊗ gate
             String h0 = pv(gp, "h0"), h1 = pv(gp, "h1"), lo = pv(gp, "lo"), hi = pv(gp, "hi");
             return "  BIND(SHA256(STR(" + c0 + ")) AS " + h0 + ")\n  BIND(SHA256(STR(" + c1 + ")) AS " + h1 + ")\n"
@@ -2094,9 +2122,11 @@ public class CircuitRewriter {
                   + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + w + " .\n"
                   + "  " + rb + " a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom " + w + " ; c:rto " + vv + " .\n"
                   + reachIri(u, vv, k1, fp, gp) + comp2(rk, rb, comp, gp) + "}\n");
-            out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n  " + rk + " c:feeds " + rg + " .\n}\nWHERE {\n"  // (B) carry
-                  + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + vv + " .\n"
-                  + reachIri(u, vv, k1, fp, gp) + "}\n");
+            if (!exactLevels()) {                                        // (B) carry: reach^k ⊆ reach^{k+1}
+                out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n  " + rk + " c:feeds " + rg + " .\n}\nWHERE {\n"
+                      + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + vv + " .\n"
+                      + reachIri(u, vv, k1, fp, gp) + "}\n");
+            }
             return out;
         }
         /**
@@ -2128,9 +2158,9 @@ public class CircuitRewriter {
             for (String column : operandColumns) {
                 q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(column)).append("> ?").append(column);
             }
-            q.append(" .\n}\nWHERE {\n  ").append(rg).append(" a c:Plus ; c:rlvl \"").append(lastLevel)
-             .append("\"").append(rpathGuard()).append(" ; c:rfrom ").append(fromPat)
-             .append(" ; c:rto ").append(toPat).append(" .\n")
+            q.append(" .\n}\nWHERE {\n  ").append(rg).append(" a c:Plus ; ").append(finalLevel(lastLevel))
+             .append(rpathGuard()).append(" ; c:rfrom ").append(fromPat)
+             .append(" ; c:rto ").append(toPat).append(" .\n").append(finalLevelFilter())
              .append(pinned ? "  BIND(<" + pinnedSource + "> AS ?" + subj.var + ")\n" : "")
              .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
                      idKey(operandColumns, "PATHROW@" + fp)))
@@ -2163,8 +2193,8 @@ public class CircuitRewriter {
             rk.append(")"); idk.append(")");
             String q = PRE + "CONSTRUCT {\n  " + rg + " c:feeds " + ans + " .\n  " + ans
                      + " a c:Plus ; c:answer " + anskey + " .\n" + ctor + "}\nWHERE {\n"
-                     + "  " + rg + " a c:Plus ; c:rlvl \"" + lastLevel + "\"" + rpathGuard()
-                     + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n"
+                     + "  " + rg + " a c:Plus ; " + finalLevel(lastLevel) + rpathGuard()
+                     + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n" + finalLevelFilter()
                      + "  BIND(" + rk + " AS " + anskey + ")\n"
                      + "  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(" + idk + "))) AS " + ans + ")\n" + binds + "}\n";
             return java.util.Collections.singletonList(q);
