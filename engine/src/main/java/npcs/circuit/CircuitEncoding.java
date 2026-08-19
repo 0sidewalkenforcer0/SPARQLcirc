@@ -6,6 +6,8 @@ import java.util.List;
 /** Helpers for the native RDF circuit representation. */
 final class CircuitEncoding {
 
+    static final String BIND_PREFIX = "urn:circuit:bind:";
+
     private CircuitEncoding() {}
 
     /** Hash a content address and retain 128 bits in its generated IRI. */
@@ -21,6 +23,11 @@ final class CircuitEncoding {
             out.append(Character.forDigit(b & 0xF, 16));
         }
         return out.toString();
+    }
+
+    /** Direct-binding predicate IRI for one projected variable. */
+    static String bindingPredicateIri(String variable) {
+        return BIND_PREFIX + variableHex(variable);
     }
 
     /** Projected-variable schema carried by an answer-root triple. */

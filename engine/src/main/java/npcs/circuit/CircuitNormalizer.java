@@ -32,8 +32,6 @@ final class CircuitNormalizer {
     private static final IRI MINUEND = VF.createIRI(C, "minuend");
     private static final IRI SUBTRAHEND = VF.createIRI(C, "subtrahend");
     static final IRI ANSWER_ROOT = VF.createIRI(C, "answerRoot");
-    static final String BIND_PREFIX = C + "bind:";
-    static final String UNBOUND_PREFIX = C + "unbound:";
 
     private CircuitNormalizer() {}
 
@@ -41,7 +39,7 @@ final class CircuitNormalizer {
         int originalTriples = circuit.size();
         int collapsed = collapseUnaryPlus(circuit);
         int omittedTypes = omitInferableTypes(circuit);
-        return new Result(circuit, originalTriples, collapsed, omittedTypes);
+        return new Result(originalTriples, collapsed, omittedTypes);
     }
 
     /** Collapse a non-answer Plus with exactly one child and no path metadata. */
@@ -173,13 +171,11 @@ final class CircuitNormalizer {
     }
 
     static final class Result {
-        final Model circuit;
         final int originalTriples;
         final int collapsedUnaryPlus;
         final int omittedTypes;
 
-        Result(Model circuit, int originalTriples, int collapsedUnaryPlus, int omittedTypes) {
-            this.circuit = circuit;
+        Result(int originalTriples, int collapsedUnaryPlus, int omittedTypes) {
             this.originalTriples = originalTriples;
             this.collapsedUnaryPlus = collapsedUnaryPlus;
             this.omittedTypes = omittedTypes;

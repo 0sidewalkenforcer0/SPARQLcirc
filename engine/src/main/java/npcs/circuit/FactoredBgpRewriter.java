@@ -394,9 +394,9 @@ final class FactoredBgpRewriter {
         String answer = qv("ans");
         StringBuilder ctor = new StringBuilder();
         for (String variable : outputVariables) {
-            String encoded = CircuitEncoding.variableHex(variable);
-            ctor.append("  ").append(answer).append(" <urn:circuit:bind:")
-                .append(encoded).append("> ?").append(variable).append(" .\n");
+            ctor.append("  ").append(answer).append(" <")
+                .append(CircuitEncoding.bindingPredicateIri(variable)).append("> ?")
+                .append(variable).append(" .\n");
         }
 
         StringBuilder query = new StringBuilder(PRE);

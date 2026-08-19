@@ -639,8 +639,8 @@ public class CircuitRewriter {
          .append(" ; c:feeds ").append(ans).append(" .\n")
          .append(answerTriple(ans, zv));
         for (String w : zv) {
-            q.append("  ").append(ans).append(" <urn:circuit:bind:")
-             .append(CircuitEncoding.variableHex(w)).append("> ").append(u).append(" .\n");
+            q.append("  ").append(ans).append(" <")
+             .append(CircuitEncoding.bindingPredicateIri(w)).append("> ").append(u).append(" .\n");
         }
         q.append("}\nWHERE {\n");
         q.append(zeroLengthWhere(zlp, u, tok));
@@ -1659,14 +1659,14 @@ public class CircuitRewriter {
         sb.append(")");
         return sb.toString();
     }
-    /** CONSTRUCT triples recording each projected var's binding as recoverable RDF (preserves term
-     *  type/datatype/lang). Unbound vars get a binding node with no c:val. `?ans` must already be bound. */
+    /** CONSTRUCT triples recording each bound projected variable as its native RDF term.
+     *  Variables declared by the answer schema without such a triple are unbound. */
     private String bindingCtor(List<String> vars) {
         StringBuilder sb = new StringBuilder();
         for (String v : vars) {
-            String encoded = CircuitEncoding.variableHex(v);
-            sb.append("  ").append(qv("ans")).append(" <urn:circuit:bind:")
-              .append(encoded).append("> ?").append(v).append(" .\n");
+            sb.append("  ").append(qv("ans")).append(" <")
+              .append(CircuitEncoding.bindingPredicateIri(v)).append("> ?")
+              .append(v).append(" .\n");
         }
         return sb.toString();
     }
@@ -2339,8 +2339,8 @@ public class CircuitRewriter {
             for (String[] p : proj) {
                 projectedVariables.add(p[0]);
                 idk.append(", ").append(termHash(p[0], p[1]));
-                ctor.append("  ").append(ans).append(" <urn:circuit:bind:")
-                    .append(CircuitEncoding.variableHex(p[0])).append("> ").append(p[1])
+                ctor.append("  ").append(ans).append(" <")
+                    .append(CircuitEncoding.bindingPredicateIri(p[0])).append("> ").append(p[1])
                     .append(" .\n");
             }
             idk.append(")");

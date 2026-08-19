@@ -233,11 +233,10 @@ public final class CircuitRun {
                 preNormalizedCircuit = new LinkedHashModel(circuit);
             }
             CircuitNormalizer.Result normalized = CircuitNormalizer.normalize(circuit);
-            circuit = normalized.circuit;
             System.err.println("# ---- circuit encoding: native_ids=128bit, direct_bindings=true, "
                     + "inferred_types=true; final_triples=" + normalized.originalTriples + " -> "
                     + circuit.size() + ", collapsed_unary_plus=" + normalized.collapsedUnaryPlus
-                    + ", post_omitted_types=" + normalized.omittedTypes + " ----");
+                    + ", omitted_types=" + normalized.omittedTypes + " ----");
             // Uniform construction-time basis for flat vs factored: wall time of plan execution plus
             // final normalization. JVM startup and data load remain
             // outside this window. Parsed by the D2 harness (reference/rdfstar_factored.py).

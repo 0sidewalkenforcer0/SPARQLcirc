@@ -23,8 +23,6 @@ final class CircuitTestSupport {
 
     private static final ValueFactory VF = SimpleValueFactory.getInstance();
     private static final String C = "urn:circuit:";
-    private static final String BIND_PREFIX = C + "bind:";
-    private static final String UNBOUND_PREFIX = C + "unbound:";
     private static final IRI TIMES = VF.createIRI(C, "Times");
     private static final IRI PLUS = VF.createIRI(C, "Plus");
     private static final IRI MINUS = VF.createIRI(C, "Minus");
@@ -76,10 +74,9 @@ final class CircuitTestSupport {
         }
         for (Statement statement : model.filter(root, null, null)) {
             String predicate = statement.getPredicate().stringValue();
-            if (predicate.startsWith(BIND_PREFIX)) {
-                bindings.put(decodeHex(predicate.substring(BIND_PREFIX.length())), statement.getObject());
-            } else if (predicate.startsWith(UNBOUND_PREFIX)) {
-                bindings.put(decodeHex(predicate.substring(UNBOUND_PREFIX.length())), null);
+            if (predicate.startsWith(CircuitEncoding.BIND_PREFIX)) {
+                bindings.put(decodeHex(predicate.substring(CircuitEncoding.BIND_PREFIX.length())),
+                        statement.getObject());
             }
         }
         return bindings;

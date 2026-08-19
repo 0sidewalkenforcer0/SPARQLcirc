@@ -2,7 +2,6 @@ package npcs.circuit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -27,6 +26,7 @@ public class CircuitNormalizerTest {
         IRI answer = gate("a", '3');
         IRI emptyPlus = gate("sub", '4');
         String unicodeVariable = "\u53d8\u91cf";
+        String answerSchema = "vars:" + utf8Hex("x") + "," + utf8Hex(unicodeVariable);
 
         Model circuit = new LinkedHashModel();
         circuit.add(token0, iri(C + "feeds"), unary);
@@ -35,16 +35,13 @@ public class CircuitNormalizerTest {
         circuit.add(product, iri(C + "in"), token1);
         circuit.add(product, iri(C + "feeds"), answer);
         circuit.add(answer, RDF.TYPE, iri(C + "Plus"));
-        circuit.add(answer, CircuitNormalizer.ANSWER_ROOT, VF.createLiteral(true));
-        circuit.add(answer, iri(CircuitNormalizer.BIND_PREFIX + utf8Hex("x")),
+        circuit.add(answer, CircuitNormalizer.ANSWER_ROOT, VF.createLiteral(answerSchema));
+        circuit.add(answer, iri(CircuitEncoding.bindingPredicateIri("x")),
                 VF.createLiteral("same lexical form", "en"));
-        circuit.add(answer, iri(CircuitNormalizer.UNBOUND_PREFIX + utf8Hex(unicodeVariable)),
-                VF.createLiteral(true));
         circuit.add(emptyPlus, RDF.TYPE, iri(C + "Plus"));
 
         CircuitNormalizer.Result normalized = CircuitNormalizer.normalize(circuit);
 
-        assertSame(circuit, normalized.circuit);
         assertEquals(1, normalized.collapsedUnaryPlus);
         assertEquals(2, normalized.omittedTypes);
         assertTrue(circuit.size() < normalized.originalTriples);
@@ -54,13 +51,13 @@ public class CircuitNormalizerTest {
         assertTrue(circuit.contains(product, iri(C + "in"), token1));
         assertFalse(circuit.contains(product, RDF.TYPE, null));
         assertFalse(circuit.contains(answer, RDF.TYPE, null));
-        assertTrue(circuit.contains(answer, CircuitNormalizer.ANSWER_ROOT, VF.createLiteral(true)));
+        assertTrue(circuit.contains(answer, CircuitNormalizer.ANSWER_ROOT,
+                VF.createLiteral(answerSchema)));
         assertTrue(circuit.contains(answer,
-                iri(CircuitNormalizer.BIND_PREFIX + utf8Hex("x")),
+                iri(CircuitEncoding.bindingPredicateIri("x")),
                 VF.createLiteral("same lexical form", "en")));
-        assertTrue(circuit.contains(answer,
-                iri(CircuitNormalizer.UNBOUND_PREFIX + utf8Hex(unicodeVariable)),
-                VF.createLiteral(true)));
+        assertFalse(circuit.contains(answer,
+                iri(CircuitEncoding.bindingPredicateIri(unicodeVariable)), null));
 
         // An empty Plus is the zero anchor used by MINUS; it is not inferable from an incoming edge.
         assertTrue(circuit.contains(emptyPlus, RDF.TYPE, iri(C + "Plus")));

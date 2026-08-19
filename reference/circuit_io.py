@@ -16,7 +16,6 @@ SK = "urn:sk:"                                                     # npcs.rewrit
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 C = "urn:circuit:"
 BIND_PREFIX = C + "bind:"
-UNBOUND_PREFIX = C + "unbound:"
 ANSWER_SCHEMA_PREFIX = "vars:"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
 RDF_LANGSTRING = RS + "langString"
@@ -208,10 +207,6 @@ def parse(nt):
         elif p.startswith(BIND_PREFIX):
             variable = _decode_variable(p[len(BIND_PREFIX):], p)
             _collect(direct_bind, s, (variable, o))
-            ans_gates.add(s)
-        elif p.startswith(UNBOUND_PREFIX):
-            variable = _decode_variable(p[len(UNBOUND_PREFIX):], p)
-            _collect(direct_bind, s, (variable, None))
             ans_gates.add(s)
     # A gate carrying c:binding IS an answer gate — do NOT rely on the c:answer DEBUG label, which can be
     # dropped when a projected var is unbound in a UNION/OPTIONAL branch (STR(?unbound) -> label unbound).
