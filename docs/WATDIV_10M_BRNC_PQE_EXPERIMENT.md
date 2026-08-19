@@ -74,6 +74,12 @@ occurrence encoding. A common smoke suite covers quoted-triple lookup, token
 bindings, update and cleanup behavior, and circuit equivalence before timing
 begins.
 
+A lab-local 1+1 toy preflight has exercised B, R, N, C-flat, C-factored, and
+C-path against all three pinned engine versions. It also checked direct
+candidate-answer equality and private-state cleanup. This is compatibility
+evidence only; its timings are not benchmark results. The external Slurm
+wrappers and their output remain outside the repository.
+
 Each executable `query × engine × variant` combination forms one cell. A cell
 contains one warm-up execution followed by five measured executions. Every
 endpoint execution has its own 1,200-second deadline. For C, that deadline
@@ -98,9 +104,12 @@ mismatches, and infrastructure failures retain distinct status codes.
 Endpoint timing uses client-observed boundaries that are available across all
 three engines. B, R, and N record request duration, time to first byte, response
 drain time, response bytes, decoding, canonicalization, and artifact storage.
-C records plan generation, each construction or feedback step, client-side RDF
-processing, merge, cleanup, and final circuit storage. Both method-core and
-end-to-end totals are reported.
+C records the complete `CircuitRun` wall interval, its reported construction
+interval, requested and effective mode, plan size, path-round information,
+final circuit bytes, circuit decoding, answer-reachable structure, and PQE.
+Per-CONSTRUCT and per-feedback time and workspace peaks still require opt-in
+structured instrumentation inside `CircuitRun`; they are not inferred from its
+log text.
 
 `N_request_ms` spans the HTTP request through receipt of the final response
 byte. It combines query processing, server-side serialization, transport, and
@@ -140,12 +149,12 @@ construction and feedback request, required client-side RDF work, cleanup, and
 final circuit persistence; circuit decode, validation, shared compilation, WMC,
 and result persistence remain separately observable offline stages.
 
-The offline NPCS and C pipelines use separate query-level deadlines for decode,
-normalization, structural interning, optional factorization, compilation, and
-WMC. These deadlines are independent of the endpoint's 1,200-second budget.
-The resource record combines wall time, CPU time, client and engine peak RSS,
-temporary storage, endpoint workspace size, serialized bytes, and Slurm/cgroup
-measurements.
+Each paired offline NPCS or C pipeline has its own query-level deadline,
+independent of the endpoint's 1,200-second budget. Component timers separate
+decode, normalization, structural interning, compilation, WMC, and persistence
+within that pipeline. Process-local CPU and peak RSS are recorded by the
+runner. Remote-engine RSS, cgroup totals, temporary-store peaks, and Slurm job
+figures are attached by the cluster deployment wrapper.
 
 Structural measurements use the same node-plus-edge convention throughout:
 
@@ -249,9 +258,9 @@ nested tuples provide structural identity, so this path does not compute an
 additional content digest.
 
 The CLI starts from a fully downloaded response file and currently decodes the
-complete JSON document in memory. Endpoint timing, raw-response capture,
-process deadlines, and cgroup-level resource sampling therefore remain
-responsibilities of the outer experiment runner. Its timing scope is recorded
+complete JSON document in memory. Endpoint timing, raw-response capture, and
+process deadlines are supplied by the outer experiment runner; cgroup-level
+resource sampling remains a deployment concern. Its timing scope is recorded
 as `offline_from_complete_response_file`; `response_read_ms` and
 `pp_hc_build_wall_ms` are top-level fields, while `probability_load_ms`,
 `pqe_total_ms`, and `pqe_wall_ms` appear in the nested `compiler` record. These
@@ -262,13 +271,32 @@ Hash-consing only merges structurally equal subexpressions. Algebraic
 factorization is outside the current implementation; its metrics use
 `factor_status: "not_implemented"` and `factor_ms: null`.
 
-### Existing circuit reader and PQE support
+### Single-cell runner and C-side processing
 
 `reference/circuit_io.py` reads both the current native circuit encoding and
-the earlier explicit encoding. `reference/pqe.py` already provides shared
-multi-root compilation and WMC. The remaining C-side work is experiment-runner
-integration: durable artifact storage, answer-reachable structural counts,
-stage-level timing, and resource measurements.
+the earlier explicit encoding. `reference/paper/watdiv10m_runner.py` executes
+one `query x engine x method` cell. It provides the following boundaries:
+
+- one new artifact directory for every warm-up or measured execution;
+- an independent process-group deadline for every endpoint execution and a
+  separate deadline for its paired offline pipeline;
+- streamed SPARQL Results JSON persistence with request, first-byte, drain,
+  response-size, and atomic-finalization measurements for B, R, and N;
+- exactly one NPCS post-processing invocation for each saved N response;
+- strict `C-flat`, `C-factored`, and dedicated `C-path` execution through
+  `CircuitRun`, with requested/effective mode validation and no silent fallback;
+- durable circuits, term-aware answer records, answer-reachable `|V|+|E|`, and
+  optional shared CUDD or oracle PQE for C;
+- direct, complete-content comparison of measured answer records and repeated
+  C circuit artifacts, without experiment-level digests;
+- raw observations plus median, mean, standard deviation, extrema, and IQR for
+  the measured executions.
+
+The runner stops a cell after its first failed execution. This prevents later
+samples from using an endpoint that may still contain partial private state.
+The external launcher must restore and verify the private store before any
+retry. Per-step C time/space instrumentation and engine-level resource sampling
+remain separate tasks.
 
 ## Remaining integration work
 
@@ -278,18 +306,11 @@ The timed evaluation still depends on the following components:
   deduplicated WatDiv 10M `friendOf` graph;
 - one real WatDiv 0.6 generation run on a compute node, followed by audit and
   archival of the 281 concrete queries;
-- a B/R/N/C endpoint runner with one warm-up and five measured executions per
-  cell, with an independent 1,200-second deadline for every execution;
-- structured C metrics for requested and effective construction mode,
-  fallback reason, plan steps, feedback, cleanup, and workspace peaks;
-- HTTP measurements for N covering request duration, time to first byte,
-  response drain time, and response bytes;
-- C-side integration with `circuit_io.py` and `pqe.py`, including durable
-  circuit artifacts and answer-reachable size measurements;
-- a common occurrence-encoding smoke suite for GraphDB 10.7.6, Fuseki 5.4.0,
-  and Oxigraph 0.4.11;
-- Slurm jobs for preparation, compatibility checks, pilot runs, endpoint
-  cells, PQE, resource sampling, and result merging;
+- structured C metrics for individual CONSTRUCT, feedback, cleanup, and
+  workspace-peak intervals beyond the aggregate markers now captured;
+- a lab-local Slurm launcher for preparation, store restore, cell execution,
+  resource sampling, and result merging; this deployment tool is intentionally
+  kept outside the repository;
 - parser differential tests using responses from all three engines, followed
   by large-answer, truncated-response, timeout, memory, storage, and recovery
   tests;
@@ -305,6 +326,7 @@ python reference/tests.py
 python reference/quick_verify.py
 python reference/paper/test_npcs_postprocess.py
 python reference/paper/test_watdiv10m_workload.py
+python reference/paper/test_watdiv10m_runner.py
 ```
 
 A workload snapshot is generated and audited with:
@@ -322,6 +344,26 @@ python reference/paper/watdiv10m_workload.py generate \
 python reference/paper/watdiv10m_workload.py audit \
   /absolute/read-only/batches/watdiv10m-formal-v1
 ```
+
+A single B cell can then be run as follows:
+
+```bash
+python reference/paper/watdiv10m_runner.py \
+  --query /absolute/batch/queries/L1-00.rq \
+  --query-id L1-00 \
+  --engine graphdb-10.7.6 \
+  --method B \
+  --base-endpoint http://127.0.0.1:7200/repositories/watdiv-base \
+  --out /node-local/cells/graphdb/B/L1-00
+```
+
+For `N`, add the reified endpoint and JAR, select `--pqe-backend cudd`, and
+provide either `--uniform-probability 0.5` or a probability file. For C, use
+`C-flat`, `C-factored`, or `C-path` and add `--reified-data`; factored and path
+cells also require `--update-endpoint`. The defaults are one warm-up, five
+measured executions, the `SPARQL_Star` occurrence scheme, and independent
+1,200-second endpoint and offline deadlines. `--scheme Standard` is available
+only for a store loaded with the three-triple standard-reification encoding.
 
 The path-source input contains ten distinct source rows with this schema:
 

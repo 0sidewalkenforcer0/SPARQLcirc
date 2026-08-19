@@ -56,7 +56,6 @@ def main():
     # (4) match rdflib (the PWE-oracle side), if available.
     try:
         import rdflib
-        from rdflib.plugins.parser.ntriples import unquote  # noqa: F401  (presence check)
     except Exception:
         print("\n[rdflib] not available locally — decode+distinctness checks stand; "
               "server suite covers canon_term == canon_rdflib.")

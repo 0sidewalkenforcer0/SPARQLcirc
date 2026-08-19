@@ -36,6 +36,8 @@ jobs:
         run: python reference/paper/test_npcs_postprocess.py
       - name: WatDiv 10M formal-workload freeze and audit regressions
         run: python reference/paper/test_watdiv10m_workload.py
+      - name: WatDiv B/R/N/C single-cell runner regressions
+        run: python reference/paper/test_watdiv10m_runner.py
       - name: R9 hard-deadline and term-aware parity regressions
         run: python reference/paper/test_r9_construction_harness.py
       - name: Canonical external circuit-cache regressions
