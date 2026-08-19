@@ -45,7 +45,7 @@ python3 pqe.py --circuit data/drug.circuit.nt --probabilities data/drug.probabil
 Built on the NPCS Java rewriter (`../engine`), `npcs.circuit.CircuitRewriter`
 emits a **CONSTRUCT** query that makes an **unmodified** SPARQL engine materialize
 the shared circuit as RDF — ProvProd/ProvAggSum replaced by ⊗/⊕ gate constructors
-with content-addressed gate IRIs (`IRI("urn:g:t:"+SHA256(...))`). Leaves are the
+with content-addressed gate IRIs (`IRI("urn:g:t:"+SUBSTR(SHA256(...),1,32))`). Leaves are the
 `?fprov` tokens, so shared leaves dedupe automatically via RDF set semantics.
 
 ```
@@ -83,7 +83,7 @@ python3 verify_nonmono.py       # MINUS + OPTIONAL: ALL MATCH PWE
 
 `CircuitRewriter` emits a **comparator network** (bubble sort in pure SPARQL 1.1
 `IF/CONCAT/STR/<=`) that hashes each ⊗-child with `SHA256`, sorts the fixed-width
-hex hashes, and concatenates them (delimiter-safe) before the final `SHA256` gate
+hex hashes, and concatenates them (delimiter-safe) before the final 128-bit SHA-256 prefix used by the gate
 IRI. Before the final SHA-256, a ⊗-gate's key is a **canonical, order-independent,
 injective serialization** of its sorted child sequence — closing the `issue.txt`
 ambiguous-concatenation concern (no SUM/COUNT). The resulting id is collision-resistant.
@@ -109,10 +109,10 @@ fingerprinting and independent MINUS/OPTIONAL identities directly.
 ⊕/answer/group/reach gate keys are now **collision-resistant + term-type-aware**: each binding is
 kind-tagged (IRI/literal/blank/unbound) and per-part `SHA256`-hashed before concatenation (`termHash`,
 same discipline as the product-gate key), so distinct RDF terms — IRI vs same-lexical literal, differing
-datatype/language tag, or bound-vs-unbound — never collapse to one gate. Answer **recovery** is via the
-structured `c:binding`/`c:var`/`c:val` nodes (which preserve the RDF term losslessly); the readable
-`c:answer "A|var=value|…"` literal is a **debug label only** — it is `STR()`-based and *not* injective, so
-do not key or de-duplicate on it. Regression: `verify_answer_keys.py`; term-aware oracle: `verify_gallery.py`.
+datatype/language tag, or bound-vs-unbound — never collapse to one gate. Answer **recovery** is via
+`c:answerRoot` plus direct `c:bind:<utf8-hex-variable>` predicates, which preserve each RDF term
+losslessly. A variable declared by the root schema without a direct binding is unbound. Regression:
+`verify_answer_keys.py`; term-aware oracle: `verify_gallery.py`.
 
 ## Production knowledge compilation (CUDD ROBDD) — done ✅
 
@@ -240,8 +240,7 @@ still polynomial; a minor optimization.)
 **Real deployed triple store.** `graphdb_harness.sh` runs the flat engine-native
 CONSTRUCT on a **GraphDB 10.7** server (not in-memory): create repo → load reified
 data → POST our CONSTRUCT → get the circuit back as N-Triples. On the drug example
-GraphDB returns the **same 25-triple circuit** as RDF4J (19 core gates + 6 c:binding recovery; 3 Times, 2 Plus, p1 & p3
-each shared across 2 gates); compiling it gives **Clopidogrel 0.358800, Omeprazole
+GraphDB and RDF4J return the same circuit; compiling it gives **Clopidogrel 0.358800, Omeprazole
 0.774298 = PWE**. So the method is engine-agnostic on a *deployed* endpoint, end to
 end. (Gotcha baked into the script: extract the CONSTRUCT with explicit file
 redirection — `2>plan.txt >/dev/null` — because zsh's MULTIOS tees both streams.)

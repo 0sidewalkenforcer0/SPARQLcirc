@@ -16,7 +16,7 @@ INDEPENDENT oracles rather than against itself:
   mis-hoisted condition silently deletes correct answers.
 
 Both construction modes are checked: flat and factored must agree with the oracles
-AND with each other.
+and with each other.
 
 A note on the rdflib oracle, because it bit us: probability accrues per WORLD per
 ANSWER, not per result row. A union whose branches both match yields the same answer
@@ -273,10 +273,11 @@ def main() -> int:
                     print(f"           {label:16} {expected}")
             else:
                 print(f"  [OK ] {name:32} {len(oracles)} oracle(s), "
-                      f"{len(results['flat'])} answers")
+                      f"{len(next(iter(results.values())))} answers")
         for name, sparql, selected in PATH_CASES:
             truth = _rdflib_pwe(sparql, selected, PATH_TOKENS)
-            results = {mode: _engine(sparql, selected, mode, workdir, PATH_TOKENS, "paths.ttl")
+            results = {mode: _engine(
+                           sparql, selected, mode, workdir, PATH_TOKENS, "paths.ttl")
                        for mode in ("flat", "factored")}
             if any(truth != got for got in results.values()):
                 failures += 1

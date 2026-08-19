@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -54,7 +55,7 @@ QUERY = (
 
 def _run_python_checks() -> None:
     for script in ("tests.py", "wmc.py", "verify_boolean_boundary.py",
-                   "verify_circuit_io.py", "verify_pqe_cli.py"):
+                   "verify_circuit_io.py", "verify_circuit_encoding.py", "verify_pqe_cli.py"):
         print(f"# running reference/{script}", flush=True)
         subprocess.run([sys.executable, script], cwd=REFERENCE, check=True)
 
@@ -100,7 +101,8 @@ def _fresh_engine_circuit() -> str:
         raise RuntimeError("engine/target/npcs-rewrite.jar is missing; run: mvn -q -f engine/pom.xml package")
 
     cmd = [
-        "java", "-jar", str(JAR), "circuit", "Standard", str(DATA), str(QUERY_FILE),
+        "java", "-jar", str(JAR), "circuit",
+        "Standard", str(DATA), str(QUERY_FILE),
     ]
     print("# generating a fresh circuit through the fat-JAR circuit entry point", flush=True)
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
@@ -159,6 +161,17 @@ def _check_fresh_circuit(nt: str) -> None:
     )
 
 
+def _check_native_encoding(nt: str) -> None:
+    """Check the required RDF shape in addition to the denotation checked above."""
+    if "<urn:circuit:binding>" in nt or "<urn:circuit:answer>" in nt:
+        raise AssertionError("circuit retained legacy answer metadata")
+    if re.search(r"<urn:g:[^:]+:[0-9a-f]{64}>", nt):
+        raise AssertionError("circuit retained a 256-bit generated identifier")
+    if "<urn:circuit:answerRoot>" not in nt or "<urn:circuit:bind:" not in nt:
+        raise AssertionError("circuit omitted its direct answer encoding")
+    print("NATIVE CIRCUIT ENCODING OK")
+
+
 def _check_pqe_jar_cli() -> None:
     """Exercise the documented one-command --jar path, including App dispatch."""
     cmd = [
@@ -182,13 +195,16 @@ def _check_pqe_jar_cli() -> None:
     }
     if set(got) != set(truth) or any(abs(got[k] - truth[k]) >= 1e-9 for k in truth):
         raise AssertionError(f"pqe.py --jar result mismatch: got={got} truth={truth}")
-    print(f"PQE --JAR CLI OK: answers={result['answer_count']} gates={result['gate_count']} WMC==PWE")
+    print(f"PQE --JAR CLI OK: answers={result['answer_count']} "
+          f"gates={result['gate_count']} WMC==PWE")
 
 
 def main() -> int:
     try:
         _run_python_checks()
-        _check_fresh_circuit(_fresh_engine_circuit())
+        circuit = _fresh_engine_circuit()
+        _check_fresh_circuit(circuit)
+        _check_native_encoding(circuit)
         _check_pqe_jar_cli()
         _check_composition()
         _check_skolem_roundtrip()

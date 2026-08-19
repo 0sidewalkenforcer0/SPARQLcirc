@@ -3,8 +3,9 @@
 ONE place that turns the emitted RDF circuit into
   (a) `circ`     : {node: ('leaf',tok)|('times',(kids))|('plus',(kids))|('minus',(m,s))}  (compile_bdd format)
   (b) `answers`  : set of answer-gate IRIs
-  (c) `bindings` : {gate: {var: canonical-RDF-term}}   recovered from the structured
-                   c:binding / c:var / c:val nodes (NOT the lossy readable c:answer string).
+  (c) `bindings` : {gate: {var: canonical-RDF-term}}   recovered from either legacy
+                   c:binding / c:var / c:val nodes or native direct-binding predicates
+                   (NOT the lossy readable c:answer string).
 
 Every verification / experiment consumer should call `parse()` and identify answers by
 `answer_key(bindings[gate])` (or the gate IRI), so answer identity is term-aware everywhere:
@@ -14,6 +15,9 @@ collapse. `canon_rdflib()` gives the matching key for a PWE oracle's rdflib term
 SK = "urn:sk:"                                                     # npcs.rewrite.Skolem.NS
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 C = "urn:circuit:"
+BIND_PREFIX = C + "bind:"
+UNBOUND_PREFIX = C + "unbound:"
+ANSWER_SCHEMA_PREFIX = "vars:"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
 RDF_LANGSTRING = RS + "langString"
 US = "\x1f"                                                        # unit separator (never in our terms)
@@ -176,7 +180,7 @@ def parse(nt):
     """nt: a string or iterable of N-Triples lines. Returns (circ, answers, bindings)."""
     lines = nt.splitlines() if isinstance(nt, str) else nt
     typ, feeds, tin, minu, subt = {}, {}, {}, {}, {}
-    ans_gates, g_bind, b_var, b_val = set(), {}, {}, {}
+    ans_gates, g_bind, b_var, b_val, direct_bind, answer_schema = set(), {}, {}, {}, {}, {}
     for line in lines:
         line = line.strip()
         if not line.endswith(" ."):
@@ -194,14 +198,37 @@ def parse(nt):
         elif p == C + "minuend": _collect(minu, s, _resource(o, "c:minuend object"))
         elif p == C + "subtrahend": _collect(subt, s, _resource(o, "c:subtrahend object"))
         elif p == C + "answer": ans_gates.add(s)
+        elif p == C + "answerRoot":
+            ans_gates.add(s)
+            if o.startswith('"' + ANSWER_SCHEMA_PREFIX):
+                _collect(answer_schema, s, _plain_literal(o, "c:answerRoot schema"))
         elif p == C + "binding": g_bind.setdefault(s, set()).add(_resource(o, "c:binding object"))
         elif p == C + "var": _collect(b_var, s, _plain_literal(o, "c:var object"))
         elif p == C + "val": _collect(b_val, s, o)                         # RAW N-Triples term token
+        elif p.startswith(BIND_PREFIX):
+            variable = _decode_variable(p[len(BIND_PREFIX):], p)
+            _collect(direct_bind, s, (variable, o))
+            ans_gates.add(s)
+        elif p.startswith(UNBOUND_PREFIX):
+            variable = _decode_variable(p[len(UNBOUND_PREFIX):], p)
+            _collect(direct_bind, s, (variable, None))
+            ans_gates.add(s)
     # A gate carrying c:binding IS an answer gate — do NOT rely on the c:answer DEBUG label, which can be
     # dropped when a projected var is unbound in a UNION/OPTIONAL branch (STR(?unbound) -> label unbound).
     ans_gates |= set(g_bind)
-    types = {node: _single(typ, node, f"rdf:type of {node}", required=True)
-             for node in sorted(typ)}
+    inferred = {}
+    for node in tin:
+        _collect(inferred, node, C + "Times")
+    for node in set(minu) | set(subt):
+        _collect(inferred, node, C + "Minus")
+    for node in set(feeds) | ans_gates:
+        _collect(inferred, node, C + "Plus")
+    types = {}
+    for node in sorted(set(typ) | set(inferred)):
+        candidates = set(typ.get(node, ())) | set(inferred.get(node, ()))
+        if len(candidates) != 1:
+            raise CircuitFormatError(f"gate {node} has conflicting types: {sorted(candidates)}")
+        types[node] = next(iter(candidates))
     minus_nodes = {node for node, gate_type in types.items() if gate_type.endswith("Minus")}
     stray_minus_fields = (set(minu) | set(subt)) - minus_nodes
     if stray_minus_fields:
@@ -225,14 +252,53 @@ def parse(nt):
     bindings = {}
     for g in sorted(ans_gates):
         d = {}
+        seen = set()
+        schema = _single(answer_schema, g, f"c:answerRoot schema of {g}")
+        if schema is not None:
+            for v in _decode_answer_schema(schema):
+                d[v] = "u"
         for b in sorted(g_bind.get(g, ())):
             v = _single(b_var, b, f"c:var of binding {b}", required=True)
-            if v in d:
+            if v in seen:
                 raise CircuitFormatError(f"answer gate {g} has multiple bindings for ?{v}")
             value = _single(b_val, b, f"c:val of binding {b}")
             d[v] = canon_term(value)                                     # missing c:val -> 'u' (unbound)
+            seen.add(v)
+        for v, value in sorted(direct_bind.get(g, ()), key=lambda item: item[0]):
+            if v in seen:
+                raise CircuitFormatError(f"answer gate {g} has multiple bindings for ?{v}")
+            if schema is not None and v not in d:
+                raise CircuitFormatError(f"answer gate {g} binds undeclared variable ?{v}")
+            d[v] = canon_term(value)
+            seen.add(v)
         bindings[g] = d
     return circ, ans_gates, bindings
+
+
+def _decode_variable(encoded, predicate):
+    """Inverse of the UTF-8 hex variable-name predicate encoding."""
+    if not encoded or len(encoded) % 2:
+        raise CircuitFormatError(f"invalid binding predicate: {predicate!r}")
+    try:
+        return bytes.fromhex(encoded).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise CircuitFormatError(f"invalid binding predicate: {predicate!r}") from exc
+
+
+def _decode_answer_schema(schema):
+    """Decode `vars:<utf8-hex>[,<utf8-hex>...]` from an answer-root object."""
+    if not schema.startswith(ANSWER_SCHEMA_PREFIX):
+        raise CircuitFormatError(f"invalid answer schema: {schema!r}")
+    encoded_variables = schema[len(ANSWER_SCHEMA_PREFIX):]
+    if not encoded_variables:
+        return ()
+    variables = tuple(
+        _decode_variable(encoded, C + "answerRoot")
+        for encoded in encoded_variables.split(",")
+    )
+    if len(set(variables)) != len(variables):
+        raise CircuitFormatError(f"duplicate variable in answer schema: {schema!r}")
+    return variables
 
 
 def answer_probs(nt, P, prob_fn):

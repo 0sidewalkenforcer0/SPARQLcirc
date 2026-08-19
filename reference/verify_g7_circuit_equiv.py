@@ -10,7 +10,8 @@ scheme and canonical-diffs each against Standard:
   • structural    : circuit_io.parse gives the same gate DAG and the same answer-gate set;
 so the reification scheme is a pure front-end choice with ZERO effect on the compiled circuit.
 
-Coverage: Standard vs {SPARQL_Star, NamedGraph}, over the four operator classes (AND/UNION/OPTIONAL/MINUS).
+Coverage: Standard vs {SPARQL_Star, NamedGraph}, over the four operator classes
+(AND/UNION/OPTIONAL/MINUS).
 This closes the E1 gap where NAMED_GRAPH had only a hand-written 2-input byte-identity check: it now goes
 through the same battery as RDF-star. (Wikidata's tokens are urn:wds:N, not ex:u_i, so it is NOT byte-
 identical by construction — it is covered structurally + by WMC in wikidata/WIKIDATA_REIF_EQUIV.md. Property
@@ -61,10 +62,12 @@ def main():
             ok = byte_ok and struct_ok
             allok &= ok
             print(f"[{label:9}] Standard == {scheme:11}: byte-identical={byte_ok} "
-                  f"struct-identical={struct_ok}  ({n} triples, {len(a0)} answer gates)  {'OK' if ok else 'FAIL'}")
+                  f"struct-identical={struct_ok}  ({n} triples, {len(a0)} answer gates)  "
+                  f"{'OK' if ok else 'FAIL'}")
             if not ok:
                 import difflib
-                for d in list(difflib.unified_diff(sorted(std.splitlines()), sorted(alt.splitlines()), lineterm=""))[:8]:
+                for d in list(difflib.unified_diff(
+                        sorted(std.splitlines()), sorted(alt.splitlines()), lineterm=""))[:8]:
                     print("     ", d)
     print("\nALL OK (circuit is reification-independent)" if allok else "\nFAILURES")
     sys.exit(0 if allok else 1)

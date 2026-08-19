@@ -61,8 +61,10 @@ public class SkolemTest {
         try {
             Files.write(data.toPath(), GRAPH.getBytes(StandardCharsets.UTF_8));
             Set<Value> answered = new LinkedHashSet<>();
-            for (Statement st : build(data)) {
-                if (st.getPredicate().stringValue().equals("urn:circuit:val")) answered.add(st.getObject());
+            Model circuit = build(data);
+            for (org.eclipse.rdf4j.model.Resource root : CircuitTestSupport.answerRoots(circuit)) {
+                Value value = CircuitTestSupport.bindingValues(circuit, root).get("y");
+                if (value != null) answered.add(value);
             }
             assertEquals("the answer must exist and bind one term", 1, answered.size());
             assertEquals("and it must be sk of the document's label", "x",

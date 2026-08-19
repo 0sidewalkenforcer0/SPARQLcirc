@@ -299,13 +299,13 @@ Output is JSON: term-aware RDF bindings, the exact probability, and the compiled
       "binding": { "z": { "type": "iri", "value": "urn:d:Clopidogrel" } },
       "probability": 0.3588,
       "bdd_nodes": 3,
-      "root": "urn:g:a:ae36bfce546381bd6bf9b49e38018deb3ade971ea1bd4db55fa415b513bd0c3a"
+      "root": "urn:g:a:ae36bfce546381bd6bf9b49e38018deb"
     },
     {
       "binding": { "z": { "type": "iri", "value": "urn:d:Omeprazole" } },
       "probability": 0.774297708,
       "bdd_nodes": 8,
-      "root": "urn:g:a:aa73e46b90b3c91e730ff228c9d11d8487bae06064b3cf5a5782aa9f3df9651a"
+      "root": "urn:g:a:aa73e46b90b3c91e730ff228c9d11d8"
     }
   ],
   "compilation": { "backend": "cudd", "mode": "shared", "root_count": 2, "sharing_ratio": 1.0 }
@@ -482,34 +482,34 @@ The circuit is an ordinary RDF graph in the `urn:circuit:` namespace (`c:` below
 
 | Term | Meaning |
 |------|---------|
-| `c:Times` | ⊗ gate (join) |
-| `c:Plus` | ⊕ gate (union); an answer root when it carries `c:binding` |
-| `c:Minus` | ⊖ gate (difference / OPTIONAL / MINUS) |
+| `c:Times` | ⊗ gate (join), inferred from a `c:in` subject |
+| `c:Plus` | ⊕ gate (union), inferred from a `c:feeds` object or `c:answerRoot` |
+| `c:Minus` | ⊖ gate (difference / OPTIONAL / MINUS), inferred from its operand edges |
 | `c:in` | gate input edge (child gate or leaf token) |
 | `c:feeds` | gate output edge |
-| `c:binding` | link from an answer root to one projected-variable binding node |
-| `c:var` | the variable name of a binding node |
-| `c:val` | the bound RDF term; **absent means unbound** |
-| `c:answer` | human-readable display label only, **not** an identifier |
+| `c:minuend`, `c:subtrahend` | the two ordered inputs of a ⊖ gate |
+| `c:answerRoot` | answer marker whose value declares the projected-variable schema |
+| `c:bind:<hex>` | direct RDF-term binding; `<hex>` is the UTF-8 variable name in hex |
 
-Gate IRIs are `urn:g:t:<sha256>` for internal gates and `urn:g:a:<sha256>` for answer roots.
+Gate IRIs are `urn:g:t:<128-bit-sha256-prefix>` for internal gates and
+`urn:g:a:<128-bit-sha256-prefix>` for answer roots. An explicit `rdf:type` is retained only when the
+edge vocabulary cannot recover the kind, notably for the empty Plus that represents zero.
 
 ---
 
 ## From Circuit Back to Answers
 
 The rewritten query is a **CONSTRUCT**, so the engine returns an RDF graph rather than a result
-table, but the SELECT bindings are not lost. Each answer's root ⊕ gate carries its projected binding
-as **structured RDF** that preserves the exact RDF term (IRI vs. literal, datatype, language tag,
-bound vs. unbound):
+table, but the SELECT bindings are not lost. Each answer's root ⊕ gate carries a schema and its bound
+RDF terms directly. The representation preserves IRI vs. literal, datatype, language tag, and
+bound vs. unbound:
 
 ```
-<urn:g:a:…> a c:Plus ;
-    c:binding [ c:var "y" ; c:val <…#Bob>  ] ,
-              [ c:var "c" ; c:val <…#Rome> ] .            # ?y=Bob,   ?c=Rome
-<urn:g:a:…> a c:Plus ;
-    c:binding [ c:var "y" ; c:val <…#Carol> ] ,
-              [ c:var "c" ] .                             # ?y=Carol, ?c UNBOUND (no c:val)
+<urn:g:a:…> c:answerRoot "vars:79,63" ;
+    <urn:circuit:bind:79> <…#Bob> ;
+    <urn:circuit:bind:63> <…#Rome> .                       # ?y=Bob,   ?c=Rome
+<urn:g:a:…> c:answerRoot "vars:79,63" ;
+    <urn:circuit:bind:79> <…#Carol> .                      # ?y=Carol, ?c UNBOUND
 ```
 
 The gate IRI is a **collision-resistant, term-type-aware identity hash** (`SHA256` of a kind-tagged,
@@ -519,17 +519,14 @@ per-part-hashed serialization of the binding), so two answers that differ only b
 
 The client-side recovery step is:
 
-1. find every gate with `c:binding` (equivalently, a `c:answer` label) → the answer roots;
-2. for each, read its `c:binding` nodes → `c:var` (the variable) and `c:val` (the RDF term); a
-   binding with **no `c:val` means that variable is unbound**, for example an unmatched OPTIONAL;
+1. find every gate with `c:answerRoot`;
+2. decode its `vars:<hex>[,<hex>…]` schema and read the corresponding `c:bind:<hex>` predicates; a
+   declared variable with no direct binding is **unbound**, for example after an unmatched OPTIONAL;
 3. compile the sub-circuit rooted there and weighted-model-count it → that row's probability.
 
 This reconstructs the ordinary SELECT table plus a probability column, so the CONSTRUCT output is a
-**superset** of the SELECT output. The `c:answer "A|var=value|…"` literal each gate also carries is a
-display and debug label only: it is built from `STR()` and is **not** injective (an IRI and a
-same-lexical literal render identically), so **never use `c:answer` to identify or de-duplicate
-answers** — use the gate IRI or `c:binding`. `reference/verify_gallery.py` and
-`reference/verify_answer_keys.py` do exactly this.
+**superset** of the SELECT output. The answer gate IRI remains the identity used for compilation and
+de-duplication. See `reference/CIRCUIT_ENCODING.md` for the encoding and compatibility details.
 
 ---
 

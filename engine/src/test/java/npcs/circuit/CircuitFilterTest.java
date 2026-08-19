@@ -434,19 +434,14 @@ public class CircuitFilterTest {
     }
 
     private static Set<Resource> answerRoots(Model model) {
-        IRI answer = SimpleValueFactory.getInstance().createIRI(C, "answer");
-        return new LinkedHashSet<>(model.filter(null, answer, null).subjects());
+        return CircuitTestSupport.answerRoots(model);
     }
 
     private static Set<Value> bindingValues(Model model, String variable) {
-        ValueFactory vf = SimpleValueFactory.getInstance();
-        IRI var = vf.createIRI(C, "var");
-        IRI val = vf.createIRI(C, "val");
         Set<Value> out = new LinkedHashSet<>();
-        for (Resource binding : model.filter(null, var, vf.createLiteral(variable)).subjects()) {
-            for (Statement statement : model.filter(binding, val, null)) {
-                out.add(statement.getObject());
-            }
+        for (Resource root : answerRoots(model)) {
+            Value value = CircuitTestSupport.bindingValues(model, root).get(variable);
+            if (value != null) out.add(value);
         }
         return out;
     }
@@ -478,13 +473,11 @@ public class CircuitFilterTest {
 
     /** The ⊗ gates: content-addressed, so equal id ⇒ equal Boolean function ⇒ safe to share. */
     private static Set<Resource> productGates(Model model) {
-        IRI times = SimpleValueFactory.getInstance().createIRI(C, "Times");
-        return new LinkedHashSet<>(model.filter(null, RDF.TYPE, times).subjects());
+        return CircuitTestSupport.gatesOfType(model, "Times");
     }
 
     private static Set<Resource> minusRoots(Model model) {
-        IRI minus = SimpleValueFactory.getInstance().createIRI(C, "Minus");
-        return new HashSet<>(model.filter(null, RDF.TYPE, minus).subjects());
+        return CircuitTestSupport.gatesOfType(model, "Minus");
     }
 
     private static Set<Value> subtrahends(Model model) {
@@ -496,15 +489,7 @@ public class CircuitFilterTest {
 
     /** The leaves of the circuit: {@code c:in} targets the circuit does not itself type as a gate. */
     private static Set<String> leaves(Model model) {
-        IRI in = SimpleValueFactory.getInstance().createIRI(C, "in");
-        Set<String> out = new HashSet<>();
-        for (Statement st : model.filter(null, in, null)) {
-            Value child = st.getObject();
-            if (child instanceof Resource && model.filter((Resource) child, RDF.TYPE, null).isEmpty()) {
-                out.add(child.stringValue());
-            }
-        }
-        return out;
+        return CircuitTestSupport.leaves(model);
     }
 
     private static void reify(RepositoryConnection con, String token, String s, String p, String o) {

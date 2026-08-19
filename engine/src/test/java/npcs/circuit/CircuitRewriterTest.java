@@ -500,10 +500,8 @@ public class CircuitRewriterTest {
                 Resource unmatched = null;
                 for (Resource root : roots) {
                     int bound = 0;
-                    for (Value b : circuit.filter(root, SimpleValueFactory.getInstance()
-                            .createIRI(C, "binding"), null).objects()) {
-                        if (!circuit.filter((Resource) b, SimpleValueFactory.getInstance()
-                                .createIRI(C, "val"), null).isEmpty()) bound++;
+                    for (Value value : CircuitTestSupport.bindingValues(circuit, root).values()) {
+                        if (value != null) bound++;
                     }
                     if (bound == 1) unmatched = root;                 // only ?x carries a value
                 }
@@ -1055,50 +1053,16 @@ public class CircuitRewriterTest {
     }
 
     private static Set<Resource> answerRoots(Model model) {
-        IRI answer = SimpleValueFactory.getInstance().createIRI(C, "answer");
-        return new LinkedHashSet<>(model.filter(null, answer, null).subjects());
+        return CircuitTestSupport.answerRoots(model);
     }
 
     private static int gateCount(Model model, String type) {
-        IRI gateType = SimpleValueFactory.getInstance().createIRI(C, type);
-        return model.filter(null, RDF.TYPE, gateType).subjects().size();
+        return CircuitTestSupport.gatesOfType(model, type).size();
     }
 
     private static boolean evaluate(Model model, Resource node, Set<String> world,
                                     Map<Resource, Boolean> memo) {
-        Boolean known = memo.get(node);
-        if (known != null) return known;
-        SimpleValueFactory vf = SimpleValueFactory.getInstance();
-        IRI times = vf.createIRI(C, "Times");
-        IRI plus = vf.createIRI(C, "Plus");
-        IRI minus = vf.createIRI(C, "Minus");
-        IRI in = vf.createIRI(C, "in");
-        IRI feeds = vf.createIRI(C, "feeds");
-        IRI minuend = vf.createIRI(C, "minuend");
-        IRI subtrahend = vf.createIRI(C, "subtrahend");
-        boolean value;
-        if (model.contains(node, RDF.TYPE, times)) {
-            value = true;
-            for (Value child : model.filter(node, in, null).objects()) {
-                value &= evaluate(model, (Resource) child, world, memo);
-            }
-        } else if (model.contains(node, RDF.TYPE, plus)) {
-            value = false;
-            for (Resource child : model.filter(null, feeds, node).subjects()) {
-                value |= evaluate(model, child, world, memo);
-            }
-        } else if (model.contains(node, RDF.TYPE, minus)) {
-            // Eq. (3): ⊖(C,d) = (∨C) ∧ ¬d. Without this branch a ⊖ gate fell through to the leaf case
-            // and read as FALSE in every world, which silently weakened every non-monotone assertion.
-            Value pos = model.filter(node, minuend, null).objects().iterator().next();
-            Value neg = model.filter(node, subtrahend, null).objects().iterator().next();
-            value = evaluate(model, (Resource) pos, world, memo)
-                    && !evaluate(model, (Resource) neg, world, memo);
-        } else {
-            value = world.contains(node.stringValue());
-        }
-        memo.put(node, value);
-        return value;
+        return CircuitTestSupport.evaluate(model, node, world, memo);
     }
 
     private static void assertNoFactoredMetadata(RepositoryConnection con) {
@@ -1112,8 +1076,7 @@ public class CircuitRewriterTest {
     }
 
     private static Set<Resource> minusRoots(Model model) {
-        IRI minus = SimpleValueFactory.getInstance().createIRI(C, "Minus");
-        return new HashSet<>(model.filter(null, RDF.TYPE, minus).subjects());
+        return CircuitTestSupport.gatesOfType(model, "Minus");
     }
 
     private static Set<Value> subtrahends(Model model) {
@@ -1134,14 +1097,7 @@ public class CircuitRewriterTest {
     }
 
     private static Map<String, Value> recoveredBindings(Model model) {
-        IRI var = SimpleValueFactory.getInstance().createIRI(C, "var");
-        IRI val = SimpleValueFactory.getInstance().createIRI(C, "val");
-        Map<String, Value> out = new HashMap<>();
-        for (Statement st : model.filter(null, var, null)) {
-            Value value = model.filter(st.getSubject(), val, null).objects().stream().findFirst().orElse(null);
-            out.put(st.getObject().stringValue(), value);
-        }
-        return out;
+        return CircuitTestSupport.allBindingValues(model);
     }
 
     private static void reify(RepositoryConnection con, String token, String s, String p, String o) {

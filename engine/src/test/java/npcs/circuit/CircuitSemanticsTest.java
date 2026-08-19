@@ -1865,18 +1865,7 @@ public class CircuitSemanticsTest {
 
     /** An answer gate's recovered bindings: {@code c:binding} -> {@code c:var} / {@code c:val}. */
     private static Map<String, String> bindingsOf(Model circuit, Resource root) {
-        Map<String, String> out = new TreeMap<>();
-        IRI binding = VF.createIRI(C, "binding");
-        IRI var = VF.createIRI(C, "var");
-        IRI val = VF.createIRI(C, "val");
-        for (Value node : circuit.filter(root, binding, null).objects()) {
-            Set<Value> names = circuit.filter((Resource) node, var, null).objects();
-            if (names.isEmpty()) continue;
-            Set<Value> values = circuit.filter((Resource) node, val, null).objects();
-            out.put(names.iterator().next().stringValue(), values.isEmpty()
-                    ? null : NTriplesUtil.toNTriplesString(values.iterator().next()));
-        }
-        return out;
+        return CircuitTestSupport.bindingStrings(circuit, root);
     }
 
     // ------------------------------------------------------------------ shape generation
@@ -1987,42 +1976,17 @@ public class CircuitSemanticsTest {
     }
 
     private static Set<Resource> answerRoots(Model model) {
-        return new LinkedHashSet<>(model.filter(null, VF.createIRI(C, "answer"), null).subjects());
+        return CircuitTestSupport.answerRoots(model);
     }
 
     private static Set<Resource> gatesOfType(Model model, String type) {
-        return new LinkedHashSet<>(model.filter(null, RDF.TYPE, VF.createIRI(C, type)).subjects());
+        return CircuitTestSupport.gatesOfType(model, type);
     }
 
     /** Eq. (1)-(3): ⊗ = ∧ of children, ⊕ = ∨ of feeders, ⊖(C,d) = (∨C) ∧ ¬d, leaf = token ∈ world. */
     private static boolean evaluate(Model model, Resource node, Set<String> world,
                                     Map<Resource, Boolean> memo) {
-        Boolean known = memo.get(node);
-        if (known != null) return known;
-        memo.put(node, false);                    // cycle guard: a level-indexed circuit has none
-        boolean value;
-        if (model.contains(node, RDF.TYPE, VF.createIRI(C, "Times"))) {
-            value = true;
-            for (Value child : model.filter(node, VF.createIRI(C, "in"), null).objects()) {
-                value &= evaluate(model, (Resource) child, world, memo);
-            }
-        } else if (model.contains(node, RDF.TYPE, VF.createIRI(C, "Plus"))) {
-            value = false;
-            for (Resource child : model.filter(null, VF.createIRI(C, "feeds"), node).subjects()) {
-                value |= evaluate(model, child, world, memo);
-            }
-        } else if (model.contains(node, RDF.TYPE, VF.createIRI(C, "Minus"))) {
-            Value positive = model.filter(node, VF.createIRI(C, "minuend"), null)
-                    .objects().iterator().next();
-            Value negative = model.filter(node, VF.createIRI(C, "subtrahend"), null)
-                    .objects().iterator().next();
-            value = evaluate(model, (Resource) positive, world, memo)
-                    && !evaluate(model, (Resource) negative, world, memo);
-        } else {
-            value = world.contains(node.stringValue());
-        }
-        memo.put(node, value);
-        return value;
+        return CircuitTestSupport.evaluate(model, node, world, memo);
     }
 
     private static void reify(RepositoryConnection con, String token, String s, String p, String o) {

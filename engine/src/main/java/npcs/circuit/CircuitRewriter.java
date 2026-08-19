@@ -622,41 +622,34 @@ public class CircuitRewriter {
                     "Zero-length paths (:p?) support Standard and SPARQL_Star reification only.");
         Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
         String u = qv("u"), tok = qv("tok"), times = qv("t");
-        String ans = qv("ans"), anskey = qv("anskey");
+        String ans = qv("ans");
         List<String> zv = new ArrayList<>();                   // projected endpoint vars (both bound to ?u)
         for (String w : W)
             if ((!s.hasValue() && w.equals(s.getName())) || (!o.hasValue() && w.equals(o.getName())))
                 zv.add(w);
-        // rk keeps the bare "A" (a human-readable c:answer label, not an identity); idk carries the
-        // query's pattern tag so this branch's answer gate is the SAME gate the sibling BGP branch of
+        // idk carries the query's pattern tag so this branch's answer gate is the SAME gate the sibling BGP branch of
         // a `:p?` UNION builds, and a DIFFERENT gate from any other query's.
-        StringBuilder rk = new StringBuilder("CONCAT(\"A\"");
         StringBuilder idk = new StringBuilder("CONCAT(\"").append(answerTag).append("\"");
-        for (String w : zv) {                                  // rk = readable label; idk = identity
-            rk.append(", \"|").append(w).append("=\", STR(").append(u).append(")");
+        for (String w : zv) {
             idk.append(", ").append(termHash(w, u));
         }
-        rk.append(")"); idk.append(")");
+        idk.append(")");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ; c:in ").append(tok)
-         .append(" ; c:feeds ").append(ans).append(" .\n  ").append(ans)
-         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n");
+        q.append("CONSTRUCT {\n  ").append(times).append(" c:in ").append(tok)
+         .append(" ; c:feeds ").append(ans).append(" .\n")
+         .append(answerTriple(ans, zv));
         for (String w : zv) {
-            String b = qv("b_" + w);
-            q.append("  ").append(ans).append(" c:binding ").append(b).append(" . ").append(b)
-             .append(" c:var \"").append(w).append("\" ; c:val ").append(u).append(" .\n");
+            q.append("  ").append(ans).append(" <urn:circuit:bind:")
+             .append(CircuitEncoding.variableHex(w)).append("> ").append(u).append(" .\n");
         }
         q.append("}\nWHERE {\n");
         q.append(zeroLengthWhere(zlp, u, tok));
-        q.append("  BIND(").append(rk).append(" AS ").append(anskey).append(")\n")
-         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(")
-         .append(tok).append(")))))) AS ").append(times).append(")\n")
-         .append("  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(").append(idk).append("))) AS ").append(ans).append(")\n");
-        for (String w : zv) {
-            String b = qv("b_" + w);
-            q.append("  BIND(IRI(CONCAT(STR(").append(ans).append("), \"#").append(w)
-             .append("\")) AS ").append(b).append(")\n");
-        }
+        q.append("  BIND(IRI(CONCAT(\"urn:g:t:\", ")
+         .append(CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + tok + ")))"))
+         .append(")) AS ").append(times).append(")\n")
+         .append("  BIND(IRI(CONCAT(\"urn:g:a:\", ")
+         .append(CircuitEncoding.hashExpression(idk.toString()))
+         .append(")) AS ").append(ans).append(")\n");
         q.append("}\n");
         return q.toString();
     }
@@ -688,17 +681,18 @@ public class CircuitRewriter {
         String u = qv("u"), tok = qv("tok"), times = qv("t"), plus = "?" + gateVar;
         String row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ; c:in ").append(tok)
-         .append(" ; c:feeds ").append(plus).append(" .\n  ").append(plus).append(" a c:Plus .\n  ")
-         .append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
+        q.append("CONSTRUCT {\n  ").append(times).append(" c:in ").append(tok)
+         .append(" ; c:feeds ").append(plus).append(" .\n  ").append(row).append(" <")
+         .append(FactoredBgpRewriter.MESSAGE).append("> <")
          .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ")
          .append(plus);
         for (String column : columns) {
             q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(column)).append("> ").append(u);
         }
         q.append(" .\n}\nWHERE {\n").append(zeroLengthWhere(zlp, u, tok))
-         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(")
-         .append(tok).append(")))))) AS ").append(times).append(")\n");
+         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", ")
+         .append(CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + tok + ")))"))
+         .append(")) AS ").append(times).append(")\n");
         for (String column : columns) q.append(bind("?" + column, u));
         q.append(bindIri(plus, "urn:g:z:", idKey(columns, "ZLP@" + zeroFp)))
          .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
@@ -712,17 +706,15 @@ public class CircuitRewriter {
         List<String> toks = new ArrayList<>();
         StringBuilder where = reify(block, "a", toks);
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
-        String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
+        String times = qv("t"), ans = qv("ans");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times);
         for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
-        q.append(" c:feeds ").append(ans).append(" .\n  ").append(ans)
-         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
+        q.append(" c:feeds ").append(ans).append(" .\n").append(answerTriple(ans, W))
+         .append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
-        q.append(bind(anskey, ansKey(W, setOf(W))));                 // readable label (display/debug)
         q.append(bindIri(times, "urn:g:t:", tkey));
         q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));     // collision-resistant identity
-        q.append(bindingWhere(W));                                      // recoverable per-var RDF bindings
         q.append("}\n");
         return q.toString();
     }
@@ -798,8 +790,8 @@ public class CircuitRewriter {
                 restriction.emit(where, tokPrefix + "mr", new ArrayList<>());
             }
             String plus = qv("pg");
-            StringBuilder q = new StringBuilder(PRE)
-                    .append("CONSTRUCT {\n  ").append(plus).append(" a c:Plus .\n  ?").append(gateVar)
+            StringBuilder q = new StringBuilder(PRE).append("CONSTRUCT {\n")
+                    .append("  ?").append(gateVar)
                     .append(" c:feeds ").append(plus).append(" .\n}\nWHERE {\n").append(where)
                     .append(bindIri(plus, plusPrefix, idKey(scope, groupTag))).append("}\n");
             List<CircuitConstructionPlan.Step> out = new ArrayList<>();
@@ -1035,7 +1027,7 @@ public class CircuitRewriter {
         String minus = "?" + gateVar, p1 = qv("p1"), sub = qv("sub"), row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
         q.append("CONSTRUCT {\n");
-        q.append("  ").append(minus).append(" a c:Minus ; c:minuend ").append(p1)
+        q.append("  ").append(minus).append(" c:minuend ").append(p1)
          .append(" ; c:subtrahend ").append(sub).append(" .\n");
         q.append("  ").append(sub).append(" a c:Plus .\n");
         q.append("  ").append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
@@ -1062,7 +1054,7 @@ public class CircuitRewriter {
         String tkey = emitSortedProdKey(where, children);
         String times = "?" + gateVar, row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times);
         for (String c : children) q.append(" c:in ?").append(c).append(" ;");
         q.setLength(q.length() - 2);
         q.append(".\n  ").append(row).append(" <").append(FactoredBgpRewriter.MESSAGE).append("> <")
@@ -1085,17 +1077,15 @@ public class CircuitRewriter {
         for (int i = 0; i < operands.size(); i++) operands.get(i).emit(where, "j" + i + "_", children);
         where.append(Filters.emit(conditions));
         String tkey = emitSortedProdKey(where, children);
-        String times = qv("t"), ans = qv("ans"), anskey = qv("anskey");
+        String times = qv("t"), ans = qv("ans");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times);
         for (String c : children) q.append(" c:in ?").append(c).append(" ;");
-        q.append(" c:feeds ").append(ans).append(" .\n  ").append(ans)
-         .append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
+        q.append(" c:feeds ").append(ans).append(" .\n").append(answerTriple(ans, W))
+         .append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
-        q.append(bind(anskey, ansKey(W, setOf(W))));
         q.append(bindIri(times, "urn:g:t:", tkey));
         q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));
-        q.append(bindingWhere(W));
         q.append("}\n");
         return q.toString();
     }
@@ -1159,9 +1149,9 @@ public class CircuitRewriter {
         String tkey = emitSortedProdKey(where, toks);   // canonical (order-independent) ⊗ key
         String times = qv("t"), plus = qv("pg");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" a c:Times ;");
+        q.append("CONSTRUCT {\n  ").append(times);
         for (String t : toks) q.append(" c:in ?").append(t).append(" ;");
-        q.append(" c:feeds ").append(plus).append(" .\n  ").append(plus).append(" a c:Plus .\n}\nWHERE {\n").append(where);
+        q.append(" c:feeds ").append(plus).append(" .\n}\nWHERE {\n").append(where);
         q.append(bindIri(times, "urn:g:t:", tkey));
         q.append(bindIri(plus, plusPrefix, idKey(canonicalVars(groupVars), groupTag)));
         q.append("}\n");
@@ -1191,20 +1181,18 @@ public class CircuitRewriter {
         core.left.emit(where, "a", new ArrayList<>());
         LinkedHashSet<String> V1 = core.scope;
         String minus = qv("m"), p1 = qv("p1"), sub = qv("sub");
-        String ans = qv("ans"), anskey = qv("anskey");
+        String ans = qv("ans");
         StringBuilder q = new StringBuilder(PRE);
         q.append("CONSTRUCT {\n");
-        q.append("  ").append(minus).append(" a c:Minus ; c:minuend ").append(p1)
+        q.append("  ").append(minus).append(" c:minuend ").append(p1)
          .append(" ; c:subtrahend ").append(sub).append(" ; c:feeds ").append(ans).append(" .\n");
         q.append("  ").append(sub).append(" a c:Plus .\n");
-        q.append("  ").append(ans).append(" a c:Plus ; c:answer ").append(anskey).append(" .\n").append(bindingCtor(W))
+        q.append(answerTriple(ans, W)).append(bindingCtor(W))
          .append("}\nWHERE {\n").append(where);
         q.append(bindIri(p1, "urn:g:p1:", idKey(canonicalVars(V1), core.p1Tag)));
         q.append(bindIri(sub, "urn:g:sub:", idKey(canonicalVars(V1), "SUB@" + core.opFp)));
         q.append(bindIri(minus, "urn:g:m:", idKey(canonicalVars(V1), "M@" + core.opFp)));
-        q.append(bind(anskey, ansKey(W, V1)));                        // readable label (W vars not in V1 -> NULL)
         q.append(bindIri(ans, "urn:g:a:", idKey(W, answerTag)));      // collision-resistant identity
-        q.append(bindingWhere(W));
         q.append("}\n");
         return q.toString();
     }
@@ -1309,29 +1297,13 @@ public class CircuitRewriter {
         return key.toString();
     }
 
-    private static String ansKey(List<String> W, Set<String> bound) { return ansKey(W, bound, "A"); }
-
-    /** CONCAT("tag", "|x=", STR(?x), "|y=", (bound?STR(?y):"NULL"), ...) — group/answer key. */
-    private static String ansKey(List<String> vars, Set<String> bound, String tag) {
-        StringBuilder sb = new StringBuilder("CONCAT(\"").append(tag).append("\"");
-        for (String v : vars) {
-            sb.append(", \"|").append(v).append("=\", ");
-            // Runtime BOUND guard even for statically-"bound" vars: in a UNION arm that does not bind a
-            // projected var (heterogeneous UNION), or a dynamically-unbound OPTIONAL var, raw STR(?v) is a
-            // type error that leaves ?anskey UNBOUND -> the whole c:answer triple is dropped by CONSTRUCT.
-            // c:answer is only a debug label, but its loss must not depend on runtime bindings.
-            sb.append(bound.contains(v) ? "IF(BOUND(?" + v + "), STR(?" + v + "), \"NULL\")" : "\"NULL\"");
-        }
-        sb.append(")");
-        return sb.toString();
-    }
-
     private static String bind(String var, String expr) {
         return "  BIND(" + expr + " AS " + var + ")\n";
     }
 
-    private static String bindIri(String var, String prefix, String keyExpr) {
-        return "  BIND(IRI(CONCAT(\"" + prefix + "\", SHA256(" + keyExpr + "))) AS " + var + ")\n";
+    private String bindIri(String var, String prefix, String keyExpr) {
+        return "  BIND(IRI(CONCAT(\"" + prefix + "\", " + CircuitEncoding.hashExpression(keyExpr)
+                + ")) AS " + var + ")\n";
     }
 
     // ---- collision-resistant, term-type-aware gate IDENTITY key (fix for the STR-collision bug) ----
@@ -1692,20 +1664,15 @@ public class CircuitRewriter {
     private String bindingCtor(List<String> vars) {
         StringBuilder sb = new StringBuilder();
         for (String v : vars) {
-            String b = qv("b_" + v);
-            sb.append("  ").append(qv("ans")).append(" c:binding ").append(b).append(" . ").append(b)
-              .append(" c:var \"").append(v).append("\" ; c:val ?").append(v).append(" .\n");
+            String encoded = CircuitEncoding.variableHex(v);
+            sb.append("  ").append(qv("ans")).append(" <urn:circuit:bind:")
+              .append(encoded).append("> ?").append(v).append(" .\n");
         }
         return sb.toString();
     }
-    private String bindingWhere(List<String> vars) {
-        StringBuilder sb = new StringBuilder();
-        for (String v : vars) {
-            String b = qv("b_" + v);
-            sb.append("  BIND(IRI(CONCAT(STR(").append(qv("ans")).append("), \"#").append(v)
-              .append("\")) AS ").append(b).append(")\n");
-        }
-        return sb.toString();
+    private String answerTriple(String answer, List<String> variables) {
+        return "  " + answer + " c:answerRoot "
+                + CircuitEncoding.answerSchema(variables) + " .\n";
     }
 
     private static List<StatementPattern> collect(TupleExpr te) {
@@ -1946,8 +1913,6 @@ public class CircuitRewriter {
         LinkedHashSet<String> s = new LinkedHashSet<>(a); s.retainAll(b); return s;
     }
 
-    private static Set<String> setOf(List<String> l) { return new LinkedHashSet<>(l); }
-
     private static Projection outerProjection(TupleExpr te) {
         Projection[] found = new Projection[1];
         te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -2077,7 +2042,7 @@ public class CircuitRewriter {
             StringBuilder where = whereFull.get(i);
             StringBuilder q = new StringBuilder(PRE);
             q.append("CONSTRUCT {\n  ").append(PathQuery.reachHead("base", fp, generatedPrefix))
-             .append(" .\n  ").append(times).append(" a c:Times ;");
+             .append(" .\n  ").append(times);
             for (String t : tokss.get(i)) q.append(" c:in ?").append(t).append(" ;");
             q.append(" c:feeds ").append(reach).append(" .\n}\nWHERE {\n").append(where)
              .append(PathQuery.reachIri(u, v, "base", fp, generatedPrefix))
@@ -2173,6 +2138,10 @@ public class CircuitRewriter {
         }
         private static String pv(String gp, String hint) { return "?" + gp + hint; }
         private String v(String hint) { return pv(gp, hint); }
+        private String bindIri(String variable, String prefix, String key) {
+            return "  BIND(IRI(CONCAT(\"" + prefix + "\", " + CircuitEncoding.hashExpression(key)
+                    + ")) AS " + variable + ")\n";
+        }
         /** The per-path fingerprint (for logging / cross-checking gate isolation). */
         public String fingerprint() { return fp; }
         /** G1: is the path source a bound constant? (only then can we restrict the base to a reachable subgraph). */
@@ -2218,8 +2187,10 @@ public class CircuitRewriter {
             return subj.isVar ? "" : "  FILTER(" + v("u") + " = " + subj.iri + ")\n";
         }
         static String reachIri(String from, String to, String lvl, String fp, String gp) {  // reach gate IRI = f(path fp, level, from, to)
-            return "  BIND(IRI(CONCAT(\"urn:g:r:\", SHA256(CONCAT(\"R|\", \"" + fp + "|\", SHA256(\"" + lvl + "\"), \"|\", "
-                 + termHash("f", from) + ", " + termHash("t", to) + ")))) AS " + pv(gp, "rg") + ")\n";
+            String key = "CONCAT(\"R|\", \"" + fp + "|\", SHA256(\"" + lvl + "\"), \"|\", "
+                    + termHash("f", from) + ", " + termHash("t", to) + ")";
+            return "  BIND(IRI(CONCAT(\"urn:g:r:\", " + CircuitEncoding.hashExpression(key)
+                    + ")) AS " + pv(gp, "rg") + ")\n";
         }
         static String reachHead(String lvl, String fp, String gp) {                          // gate carries its path fp for the c:rpath guard
             return pv(gp, "rg") + " a c:Plus ; c:rlvl \"" + lvl + "\" ; c:rpath \"" + fp
@@ -2239,15 +2210,20 @@ public class CircuitRewriter {
             return "  BIND(SHA256(STR(" + c0 + ")) AS " + h0 + ")\n  BIND(SHA256(STR(" + c1 + ")) AS " + h1 + ")\n"
                  + "  BIND(IF(" + h0 + " <= " + h1 + ", " + h0 + ", " + h1 + ") AS " + lo + ")\n"
                  + "  BIND(IF(" + h0 + " <= " + h1 + ", " + h1 + ", " + h0 + ") AS " + hi + ")\n"
-                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", " + lo + ", \"|\", " + hi + ")))) AS " + out + ")\n";
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", "
+                 + CircuitEncoding.hashExpression("CONCAT(\"T|\", " + lo + ", \"|\", " + hi + ")")
+                 + ")) AS " + out + ")\n";
         }
         String zeroLenConstruct() {                              // reach^0(u,u) = OR of tokens mentioning u
             String u = v("u"), vv = v("v"), z = v("z"), tg = v("tg"), rg = v("rg");
             return PRE + "CONSTRUCT {\n  " + reachHead("0", fp, gp) + " .\n  " + tg
-                 + " a c:Times ; c:in " + z + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
+                 + " c:in " + z + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
                  + activeNodePattern(z, u, "z")
-                 + "  BIND(" + u + " AS " + vv + ")\n" + sourceFilter() + reachIri(u, u, "0", fp, gp)
-                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", SHA256(STR(" + z + ")))))) AS " + tg + ")\n}\n";
+                 + "  BIND(" + u + " AS " + vv + ")\n" + sourceFilter()
+                 + reachIri(u, u, "0", fp, gp)
+                 + "  BIND(IRI(CONCAT(\"urn:g:t:\", "
+                 + CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + z + ")))")
+                 + ")) AS " + tg + ")\n}\n";
         }
         /** Distinct-node count over the reified data, to size the loop (rounds = N-1 simple-path bound). */
         public String nodeCountQuery() {
@@ -2294,10 +2270,12 @@ public class CircuitRewriter {
             String u = v("u"), vv = v("v"), w = v("w");
             List<String> out = new ArrayList<>();
             out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n"       // (A) reach^k(u,w) (*) base(w,v)
-                  + "  " + comp + " a c:Times ; c:in " + rk + " ; c:in " + rb + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
+                  + "  " + comp + " c:in " + rk + " ; c:in " + rb
+                  + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
                   + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + w + " .\n"
                   + "  " + rb + " a c:Plus ; c:rlvl \"base\"" + rpathGuard() + " ; c:rfrom " + w + " ; c:rto " + vv + " .\n"
-                  + reachIri(u, vv, k1, fp, gp) + comp2(rk, rb, comp, gp) + "}\n");
+                  + reachIri(u, vv, k1, fp, gp)
+                  + comp2(rk, rb, comp, gp) + "}\n");
             if (!exactLevels()) {                                        // (B) carry: reach^k ⊆ reach^{k+1}
                 out.add(PRE + "CONSTRUCT {\n  " + reachHead(k1, fp, gp) + " .\n  " + rk + " c:feeds " + rg + " .\n}\nWHERE {\n"
                       + "  " + rk + " a c:Plus ; c:rlvl " + kL + rpathGuard() + " ; c:rfrom " + u + " ; c:rto " + vv + " .\n"
@@ -2354,26 +2332,26 @@ public class CircuitRewriter {
                             : (obj.isVar && w.equals(obj.var) ? v("v") : null);
                 if (term != null) proj.add(new String[]{w, term});
             }
-            StringBuilder rk = new StringBuilder("CONCAT(\"A\"");            // readable c:answer label
             StringBuilder idk = new StringBuilder("CONCAT(\"").append(answerTag).append("\"");
-            StringBuilder ctor = new StringBuilder(), binds = new StringBuilder();
-            String ans = v("ans"), anskey = v("anskey"), rg = v("rg");
+            StringBuilder ctor = new StringBuilder();
+            java.util.List<String> projectedVariables = new ArrayList<>();
+            String ans = v("ans"), rg = v("rg");
             for (String[] p : proj) {
-                rk.append(", \"|").append(p[0]).append("=\", STR(").append(p[1]).append(")");
+                projectedVariables.add(p[0]);
                 idk.append(", ").append(termHash(p[0], p[1]));
-                String b = v("b_" + p[0]);
-                ctor.append("  ").append(ans).append(" c:binding ").append(b).append(" . ").append(b)
-                    .append(" c:var \"").append(p[0]).append("\" ; c:val ").append(p[1]).append(" .\n");
-                binds.append("  BIND(IRI(CONCAT(STR(").append(ans).append("), \"#").append(p[0])
-                    .append("\")) AS ").append(b).append(")\n");
+                ctor.append("  ").append(ans).append(" <urn:circuit:bind:")
+                    .append(CircuitEncoding.variableHex(p[0])).append("> ").append(p[1])
+                    .append(" .\n");
             }
-            rk.append(")"); idk.append(")");
+            idk.append(")");
             String q = PRE + "CONSTRUCT {\n  " + rg + " c:feeds " + ans + " .\n  " + ans
-                     + " a c:Plus ; c:answer " + anskey + " .\n" + ctor + "}\nWHERE {\n"
+                     + " c:answerRoot " + CircuitEncoding.answerSchema(projectedVariables) + " .\n"
+                     + ctor + "}\nWHERE {\n"
                      + "  " + rg + " a c:Plus ; " + finalLevel(lastLevel) + rpathGuard()
                      + " ; c:rfrom " + fromPat + " ; c:rto " + toPat + " .\n" + finalLevelFilter()
-                     + "  BIND(" + rk + " AS " + anskey + ")\n"
-                     + "  BIND(IRI(CONCAT(\"urn:g:a:\", SHA256(" + idk + "))) AS " + ans + ")\n" + binds + "}\n";
+                     + "  BIND(IRI(CONCAT(\"urn:g:a:\", "
+                     + CircuitEncoding.hashExpression(idk.toString())
+                     + ")) AS " + ans + ")\n}\n";
             return java.util.Collections.singletonList(q);
         }
     }

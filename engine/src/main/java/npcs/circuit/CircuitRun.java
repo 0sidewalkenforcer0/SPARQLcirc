@@ -135,7 +135,8 @@ public final class CircuitRun {
                         ? circuitGraphEnv : "urn:circuit:run:" + sha256hex(query))
                 : null;
 
-        CircuitRewriter rw = new CircuitRewriter(scheme, constructionMode, UUID.randomUUID().toString());
+        CircuitRewriter rw = new CircuitRewriter(
+                scheme, constructionMode, UUID.randomUUID().toString());
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
         CircuitConstructionPlan constructionPlan = pathq == null ? rw.constructionPlan(query) : null;
 
@@ -224,9 +225,22 @@ public final class CircuitRun {
                 }
                 executeConstructionPlan(con, repo, constructionPlan, circuit, true, parallelism);
             }
-            // Uniform construction-time basis for flat vs factored: wall time of the on-engine plan
-            // execution only (JVM startup and any data load happen outside this window). Parsed by the
-            // D2 flat-vs-factored deployment-time harness (reference/rdfstar_factored.py).
+            Model preNormalizedCircuit = null;
+            // Property-path and factored rounds feed their pre-normalization gates into the
+            // endpoint. If cleanup is requested, retain that exact removal set before folding
+            // client-side unary Plus gates; removing only the normalized form would leak state.
+            if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
+                preNormalizedCircuit = new LinkedHashModel(circuit);
+            }
+            CircuitNormalizer.Result normalized = CircuitNormalizer.normalize(circuit);
+            circuit = normalized.circuit;
+            System.err.println("# ---- circuit encoding: native_ids=128bit, direct_bindings=true, "
+                    + "inferred_types=true; final_triples=" + normalized.originalTriples + " -> "
+                    + circuit.size() + ", collapsed_unary_plus=" + normalized.collapsedUnaryPlus
+                    + ", post_omitted_types=" + normalized.omittedTypes + " ----");
+            // Uniform construction-time basis for flat vs factored: wall time of plan execution plus
+            // final normalization. JVM startup and data load remain
+            // outside this window. Parsed by the D2 harness (reference/rdfstar_factored.py).
             long constructionMs = (System.nanoTime() - constructionStartNanos) / 1_000_000L;
             System.err.println("# construction_ms: " + constructionMs);
             writeCircuit(circuit, System.out);
@@ -247,10 +261,13 @@ public final class CircuitRun {
                 try {
                     if (runGraph != null) {
                         con.clear(runGraph);       // SAFE: drop only THIS run's named graph, never shared gates
+                        if (preNormalizedCircuit != null) con.remove(preNormalizedCircuit);
                         System.err.println("# CIRCUIT_CLEANUP: dropped named graph <" + runGraph + ">");
                     } else {
-                        con.remove(circuit);       // legacy default-graph cleanup (see the warning above)
-                        System.err.println("# CIRCUIT_CLEANUP: removed " + circuit.size() + " gate triples from the endpoint");
+                        Model removal = preNormalizedCircuit == null ? circuit : preNormalizedCircuit;
+                        con.remove(removal);       // legacy default-graph cleanup (see the warning above)
+                        System.err.println("# CIRCUIT_CLEANUP: removed " + removal.size()
+                                + " gate triples from the endpoint");
                     }
                 } catch (RuntimeException e) {
                     System.err.println("# CIRCUIT_CLEANUP failed (non-fatal, circuit already emitted): " + e.getMessage());

@@ -124,7 +124,8 @@ final class FactoredBgpRewriter {
         for (String keep : keepVariables) semantic.append(part(keep));
         semantic.append("|TAG").append(part(gateTag));
         String fp = sha256hex(semantic.toString());
-        FactoredBgpRewriter planner = new FactoredBgpRewriter(scheme, generatedPrefix, workspaceId, fp);
+        FactoredBgpRewriter planner = new FactoredBgpRewriter(
+                scheme, generatedPrefix, workspaceId, fp);
         return planner.planMarginal(patterns, keepVariables, plusPrefix, gateTag);
     }
 
@@ -146,7 +147,6 @@ final class FactoredBgpRewriter {
         String inputRow = qv("f_input_row"), source = qv("f_source"), plus = qv("f_plus");
         StringBuilder query = new StringBuilder(PRE);
         query.append("CONSTRUCT {\n")
-             .append("  ").append(plus).append(" a c:Plus .\n")
              .append("  ").append(source).append(" c:feeds ").append(plus).append(" .\n")
              .append("}\nWHERE {\n")
              .append(rowPattern(inputRow, input, source))
@@ -274,8 +274,7 @@ final class FactoredBgpRewriter {
         for (int i = 0; i < patterns.size(); i++) {
             Relation output = outputs.get(i);
             String token = qv("f_token" + i), gate = qv("f_gate" + i), row = qv("f_row" + i);
-            template.append("  ").append(gate).append(" a c:Plus .\n")
-                    .append("  ").append(token).append(" c:feeds ").append(gate).append(" .\n")
+            template.append("  ").append(token).append(" c:feeds ").append(gate).append(" .\n")
                     .append(rowTemplate(row, output, gate));
             where.append(scheme.reify(patterns.get(i).pattern, token.substring(1)));
             binds.append(bindIri(gate, "urn:g:s:",
@@ -309,7 +308,6 @@ final class FactoredBgpRewriter {
         String tokenName = token.substring(1);
         StringBuilder query = new StringBuilder(PRE);
         query.append("CONSTRUCT {\n")
-             .append("  ").append(gate).append(" a c:Plus .\n")
              .append("  ").append(token).append(" c:feeds ").append(gate).append(" .\n")
              .append(rowTemplate(row, output, gate))
              .append("}\nWHERE {\n")
@@ -342,8 +340,8 @@ final class FactoredBgpRewriter {
         String h0 = qv("f_h0"), h1 = qv("f_h1"), lo = qv("f_lo"), hi = qv("f_hi");
 
         StringBuilder query = new StringBuilder(PRE);
-        query.append("CONSTRUCT {\n")
-             .append("  ").append(product).append(" a c:Times ; c:in ").append(leftGate)
+        query.append("CONSTRUCT {\n  ").append(product);
+        query.append(" c:in ").append(leftGate)
              .append(" ; c:in ").append(rightGate).append(" .\n")
              .append(rowTemplate(row, output, product))
              .append("}\nWHERE {\n")
@@ -355,8 +353,10 @@ final class FactoredBgpRewriter {
              .append(h0).append(", ").append(h1).append(") AS ").append(lo).append(")\n")
              .append("  BIND(IF(").append(h0).append(" <= ").append(h1).append(", ")
              .append(h1).append(", ").append(h0).append(") AS ").append(hi).append(")\n")
-             .append("  BIND(IRI(CONCAT(\"urn:g:t:\", SHA256(CONCAT(\"T|\", ")
-             .append(lo).append(", \"|\", ").append(hi).append(")))) AS ").append(product).append(")\n")
+             .append("  BIND(IRI(CONCAT(\"urn:g:t:\", ")
+             .append(CircuitEncoding.hashExpression(
+                     "CONCAT(\"T|\", " + lo + ", \"|\", " + hi + ")"))
+             .append(")) AS ").append(product).append(")\n")
              .append(bindIri(row, META_NS + "row:", bindingKey(output.messageIri, output.variables)))
              .append("}\n");
         steps.add(new CircuitConstructionPlan.Step(query.toString(), true,
@@ -377,7 +377,6 @@ final class FactoredBgpRewriter {
 
         StringBuilder query = new StringBuilder(PRE);
         query.append("CONSTRUCT {\n")
-             .append("  ").append(sum).append(" a c:Plus .\n")
              .append("  ").append(source).append(" c:feeds ").append(sum).append(" .\n")
              .append(rowTemplate(row, output, sum))
              .append("}\nWHERE {\n")
@@ -392,30 +391,22 @@ final class FactoredBgpRewriter {
 
     private String answerQuery(Relation input, List<String> outputVariables, String answerTag) {
         String inputRow = qv("f_input_row"), source = qv("f_source");
-        String answer = qv("ans"), answerKey = qv("anskey");
+        String answer = qv("ans");
         StringBuilder ctor = new StringBuilder();
-        StringBuilder binds = new StringBuilder();
         for (String variable : outputVariables) {
-            String binding = qv("b_" + variable);
-            ctor.append("  ").append(answer).append(" c:binding ").append(binding).append(" . ")
-                .append(binding).append(" c:var \"").append(escapeString(variable))
-                .append("\" ; c:val ?").append(variable).append(" .\n");
-            binds.append("  BIND(IRI(CONCAT(STR(").append(answer).append("), \"#")
-                 .append(escapeString(variable)).append("\")) AS ").append(binding).append(")\n");
+            String encoded = CircuitEncoding.variableHex(variable);
+            ctor.append("  ").append(answer).append(" <urn:circuit:bind:")
+                .append(encoded).append("> ?").append(variable).append(" .\n");
         }
 
-        Set<String> present = new HashSet<>(input.variables);
         StringBuilder query = new StringBuilder(PRE);
         query.append("CONSTRUCT {\n")
              .append("  ").append(source).append(" c:feeds ").append(answer).append(" .\n")
-             .append("  ").append(answer).append(" a c:Plus ; c:answer ").append(answerKey).append(" .\n")
+             .append(answerTriple(answer, outputVariables))
              .append(ctor)
              .append("}\nWHERE {\n")
              .append(rowPattern(inputRow, input, source))
-             .append("  BIND(").append(answerLabel(outputVariables, present)).append(" AS ")
-             .append(answerKey).append(")\n")
              .append(bindIri(answer, "urn:g:a:", bindingKey(answerTag, outputVariables)))
-             .append(binds)
              .append("}\n");
         return query.toString();
     }
@@ -446,17 +437,6 @@ final class FactoredBgpRewriter {
         return out.append(")").toString();
     }
 
-    private static String answerLabel(List<String> variables, Set<String> present) {
-        StringBuilder out = new StringBuilder("CONCAT(\"A\"");
-        for (String variable : variables) {
-            out.append(", \"|").append(escapeString(variable)).append("=\", ");
-            out.append(present.contains(variable)
-                    ? "IF(BOUND(?" + variable + "), STR(?" + variable + "), \"NULL\")"
-                    : "\"NULL\"");
-        }
-        return out.append(")").toString();
-    }
-
     /** Must remain byte-for-byte compatible with CircuitRewriter's answer identity. */
     private static String termHash(String label, String term) {
         String enc =
@@ -469,9 +449,15 @@ final class FactoredBgpRewriter {
         return "SHA256(CONCAT(\"" + escapeString(label) + "=\", " + enc + "))";
     }
 
-    private static String bindIri(String variable, String prefix, String key) {
-        return "  BIND(IRI(CONCAT(\"" + prefix + "\", SHA256(" + key + "))) AS "
+    private String bindIri(String variable, String prefix, String key) {
+        return "  BIND(IRI(CONCAT(\"" + prefix + "\", "
+                + CircuitEncoding.hashExpression(key) + ")) AS "
                 + variable + ")\n";
+    }
+
+    private String answerTriple(String answer, List<String> variables) {
+        return "  " + answer + " c:answerRoot "
+                + CircuitEncoding.answerSchema(variables) + " .\n";
     }
 
     private String qv(String hint) { return "?" + gp + hint; }
