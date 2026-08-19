@@ -536,6 +536,12 @@ Step-by-step instructions, expected outputs, and hardware notes are in
 **[docs/REPRODUCE.md](docs/REPRODUCE.md)**; the experiment-to-claim map is in
 **[docs/EVALUATION.md](docs/EVALUATION.md)**.
 
+The implementation status and run protocol for the planned WatDiv 10M B/R/N/C
+and NPCS post-processing/PQE evaluation are documented in
+**[docs/WATDIV_10M_BRNC_PQE_EXPERIMENT.md](docs/WATDIV_10M_BRNC_PQE_EXPERIMENT.md)**.
+The page covers experimental infrastructure and remaining integration work;
+it does not contain benchmark results.
+
 ### 1. No External Services
 
 All commands run from `reference/`.

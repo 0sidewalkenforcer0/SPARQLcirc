@@ -1,0 +1,8 @@
+#mapping v2 wsdbm:City uniform
+SELECT ?v0 ?v1 ?v3 WHERE {
+	%v2%	gn:parentCountry	?v3 .
+	?v0	sorg:nationality	?v3 .
+	OPTIONAL {
+		?v0	sorg:jobTitle	?v1 .
+	}
+}

@@ -1,0 +1,7 @@
+#mapping v2 wsdbm:Website uniform
+SELECT ?v0 WHERE {
+	?v0	wsdbm:subscribes	%v2% .
+	OPTIONAL {
+		?v0	wsdbm:likes	?v1 .
+	}
+}

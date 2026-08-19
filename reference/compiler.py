@@ -42,6 +42,8 @@ def _stable_text(value: Any) -> str:
 def _children(op: str, payload: Any) -> Tuple[Any, ...]:
     if op in ("leaf", "const"):
         return ()
+    if op == "not":
+        return (payload,)
     if op in ("times", "plus"):
         return tuple(payload)
     if op == "minus":
@@ -154,6 +156,8 @@ def _compile_roots(circ: Mapping[Any, Tuple[str, Any]], roots: Iterable[Any],
             for child in children:
                 result = disjunction(result, memo[child])
             return result
+        if op == "not":
+            return negate(memo[children[0]])
         if op == "minus":
             return conjunction(memo[children[0]], negate(memo[children[1]]))
         raise ValueError("unknown circuit operation: %r" % (op,))
@@ -405,14 +409,17 @@ def _manager_metrics(backend: str, groups: Sequence[_ManagerGroup]) -> Dict[str,
 def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
                  mode: str = "shared", backend: str = "cudd",
                  order: Optional[Sequence[str]] = None,
-                 dynamic_reordering: bool = False) -> CompiledBatch:
+                 dynamic_reordering: bool = False,
+                 record_order_fingerprint: bool = True) -> CompiledBatch:
     """Compile ``answer key -> circuit root`` into a multi-output BDD batch.
 
     ``shared`` uses one manager and one source-gate memo for the complete root
     vector.  ``per-root`` uses one manager per output.  Both modes derive the
     same deterministic global variable order; per-root managers receive the
     subsequence needed by their root, so mode comparisons do not conflate
-    cross-root sharing with a different ordering heuristic.
+    cross-root sharing with a different ordering heuristic.  Set
+    ``record_order_fingerprint=False`` for protocols that prohibit computing
+    digests; in that mode no order digest is computed or included in metrics.
     """
     if mode not in ("shared", "per-root"):
         raise ValueError("compile mode must be 'shared' or 'per-root'")
@@ -514,7 +521,6 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
         "manager_count": len(groups),
         "variable_count": len(support),
         "declared_variable_count": len(global_order),
-        "order_sha256": _order_fingerprint(global_order),
         "source_gate_count": source_gates,
         "source_edge_count": source_edges,
         "compiled_nodes_unique": compiled_unique,
@@ -532,5 +538,7 @@ def compile_many(circ: Mapping[Any, Tuple[str, Any]], roots: Mapping[Any, Any],
         "wmc_ms": None,
         "wmc_visited_nodes": None,
     }
+    if record_order_fingerprint:
+        metrics["order_sha256"] = _order_fingerprint(global_order)
     metrics.update(manager_metrics)
     return CompiledBatch(backend, mode, groups, root_sizes, metrics)
