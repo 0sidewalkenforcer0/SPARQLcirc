@@ -91,7 +91,8 @@ still factor each `⊖`-operand (a monotone BGP/UNION) and apply `⊖` on top.
 | **MINUS / OPTIONAL** | ⊖ (`a∧¬b`) | ⚠️ operands only | non-monotone: factor each operand, apply `⊖` at the top — cannot eliminate across `⊖` |
 | **Property paths** (`+`/`*`) | recursive | ❌ different mechanism | a level-indexed fixpoint (G1); sharing = content-addressed reach/base gates across levels, not variable elimination |
 | **FILTER** | — (no gate) | ❌ flat only | supported system-wide, but a filtered BGP falls back to the flat plan: the condition belongs in the operand's group, and the factored passes exchange materialized relations instead of one group |
-| **BIND / aggregation** | — | — | out of scope for the whole system |
+| **Output-only BIND** | — (no gate) | ❌ flat only | supported as a compatibility extension; a target used by a later triple pattern is rejected |
+| **Aggregation** | — | — | out of scope for the whole system |
 
 ---
 

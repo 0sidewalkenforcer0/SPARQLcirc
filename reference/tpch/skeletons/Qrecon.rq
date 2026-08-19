@@ -1,2 +1,2 @@
 BASE <http://example.org/>
-SELECT ?cust WHERE { ?cust <c_mktsegment> "BUILDING" . ?order <o_custkey> ?cust . }
+SELECT ?cust WHERE { ?cust <c_mktsegment> "BUILDING" . ?order <o_cust> ?cust . }

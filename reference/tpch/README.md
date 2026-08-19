@@ -13,14 +13,15 @@ Wikidata (E8, `reference/wikidata/`).
    **"base non-aggregate"** (their Fig. 3), not to their aggregate numbers.
 2. **No FILTER in the recorded runs.** SPARQLprov's `*_non_aggregate` queries still carry range/date
    FILTERs; the runs recorded here drop them and use the **pure BGP-join skeleton** — thinner still.
-   Say so explicitly. (The circuit rewriter *does* support FILTER now — docs/TECHREPORT.md §2 — so this is a
-   property of these committed measurements, not of the system; re-running with the FILTERs restored
-   would make the comparison tighter.)
+   Say so explicitly. The circuit rewriter now accepts every FILTER and output-only BIND form used by
+   SPARQLprov's 11 base-non-aggregate templates, so this is a property of the committed historical
+   measurements, not of the current system. FILTER/BIND queries use the flat construction plan because
+   the factored passes do not have a single group in which to evaluate those operations.
 3. **Per-row provenance** (see below) — the uncertain unit is a *row*, not a triple.
 
 Wikidata (`reference/wikidata/`) is the full-fit large-scale dataset; TPC-H here is comparability-only.
 
-## How SPARQLprov maps TPC-H (their `bin/tbl_to_rdf.rb` — reproduce this exactly)
+## How SPARQLprov maps TPC-H (their `bin/tbl_to_rdf.rb` — reproduced exactly)
 Textbook direct mapping, one translator per table:
 - **row → entity IRI** `<Table/PK>` (composite keys join the components: `<LineItem/order/linenumber>`,
   `<PartSupp/part/supp>`).
@@ -39,13 +40,22 @@ row**: mark only the per-row **`<Table/PK> a <Table>`** triple as the token and 
 deterministic; each query must then touch `?x a <Table>` for every row it depends on. (Alternative: add a
 `naryrel` reification scheme to the engine — token = row entity — to match SPARQLprov token-for-token.)
 
-## Plan (server)
+## Workflow (server)
 1. Generate TPC-H with `dbgen` at SPARQLprov's scale factors (`10^{i/4-2}`, i=1..8 → 1.2M–123M triples).
-2. **Direct-map** to RDF reproducing the mapping above — a `tbl_to_rdf.py` port (SPARQLprov ships the Ruby
-   original; we still need the ~50-line Python port). Keep the IRIs/vocab stable.
-3. Reify **per row** (token = the `a <Table>` triple), load into GraphDB, run the **non-aggregate,
-   filter-free** SPJ/MINUS skeletons of the SPARQLprov fragment (they omit templates 4,13,15,17,18,20,21,22).
+2. **Direct-map** to RDF with the compatible Python port:
+   `python3 reference/tpch/tbl_to_rdf.py <tbl-dir> tpch.nt`. SPARQLprov writes per-table Turtle while
+   the port writes one N-Triples file; after parsing, both contain the same RDF graph. The original
+   `*_base_non_aggregate.sparql` templates therefore run without predicate rewrites.
+3. Reify **per row** (token = the row entity), load into GraphDB, and run SPARQLprov's original 11
+   `*_base_non_aggregate.sparql` files directly. To reproduce the older tables in `RESULTS.md` instead,
+   use the committed filter-free SPJ/MINUS skeletons and retain their narrower-scope caveat.
 4. Report build_ms / gates / edges / answers / share, comparable to SPARQLprov base-non-aggregate.
+
+The stdlib-only compatibility regression is:
+
+```bash
+python3 reference/paper/test_tpch_rdf_mapping.py
+```
 
 Example skeleton (Q3-like, non-aggregate, filter-free; SPARQLprov's actual vocab):
 ```sparql

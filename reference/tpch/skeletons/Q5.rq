@@ -1,2 +1,2 @@
 BASE <http://example.org/>
-SELECT ?line WHERE { ?cust <c_nationkey> ?nat . ?order <o_custkey> ?cust . ?line <l_orderkey> ?order . ?line <l_suppkey> ?supp . ?supp <s_nationkey> ?nat . ?nat <n_regionkey> ?reg . }
+SELECT ?line WHERE { ?cust <c_nation> ?nat . ?order <o_cust> ?cust . ?line <l_order> ?order . ?line <l_supp> ?supp . ?supp <s_nation> ?nat . ?nat <n_region> ?reg . }

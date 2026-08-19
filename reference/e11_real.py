@@ -56,28 +56,34 @@ def load_tpch_q3(nt, ncust=6, max_ord=None):
     """Real TPC-H Q3 star-join (customer[BUILDING] -> orders -> lineitems) as a naryrel data dict:
     the token is the ROW entity (subject), so a customer row is SHARED across all its orders and an
     order across its lineitems -> genuine cross-answer sharing (real relational structure, not random).
-    Query: ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust . ?line l_orderkey ?order."""
+    Query: ?cust c_mktsegment "BUILDING" . ?order o_cust ?cust . ?line l_order ?order."""
     import collections
     o_by_cust = collections.defaultdict(list); l_by_order = collections.defaultdict(list); building = []
+
+    def entity_name(term):
+        value = term.strip("<>")
+        base = "http://example.org/"
+        return value[len(base):] if value.startswith(base) else value
+
     with open(nt) as f:
         for line in f:
             line = line.rstrip("\n")
             if line.endswith(" ."): line = line[:-2]
             parts = line.split(None, 2)
             if len(parts) != 3: continue
-            s, p, o = parts; pl = p.strip("<>").rsplit("/", 1)[-1]; sl = s.strip("<>").rsplit("/", 1)[-1]
+            s, p, o = parts; pl = p.strip("<>").rsplit("/", 1)[-1]; sl = entity_name(s)
             if pl == "c_mktsegment" and o.strip().strip('"') == "BUILDING": building.append(sl)
-            elif pl == "o_custkey": o_by_cust[o.strip("<>").rsplit("/", 1)[-1]].append(sl)
-            elif pl == "l_orderkey": l_by_order[o.strip("<>").rsplit("/", 1)[-1]].append(sl)
+            elif pl == "o_cust": o_by_cust[entity_name(o)].append(sl)
+            elif pl == "l_order": l_by_order[entity_name(o)].append(sl)
     data = {}
     for c in sorted(building)[:ncust]:
         data[c] = (c, "c_mktsegment", "BUILDING")                       # token = customer row
         for od in (sorted(o_by_cust.get(c, []))[:max_ord] if max_ord else sorted(o_by_cust.get(c, []))):
-            data[od] = (od, "o_custkey", c)                             # token = order row (shares cust)
+            data[od] = (od, "o_cust", c)                                # token = order row (shares cust)
             for li in sorted(l_by_order.get(od, [])):
-                data[li] = (li, "l_orderkey", od)                       # token = lineitem row (shares order)
-    pats = [("?cust", "c_mktsegment", "BUILDING"), ("?order", "o_custkey", "?cust"),
-            ("?line", "l_orderkey", "?order")]
+                data[li] = (li, "l_order", od)                          # token = lineitem row (shares order)
+    pats = [("?cust", "c_mktsegment", "BUILDING"), ("?order", "o_cust", "?cust"),
+            ("?line", "l_order", "?order")]
     return data, pats                                                   # caller picks the projection
 
 def run_real(name, data, q, sel):

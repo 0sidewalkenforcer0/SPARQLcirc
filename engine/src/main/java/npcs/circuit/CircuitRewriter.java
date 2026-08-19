@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -151,18 +153,20 @@ public class CircuitRewriter {
         TupleExpr body = normalize(projection.getArg());
         rejectBranchBlowup(unionBranchCount(body));
         TupleExpr bgpCandidate = unwrapSetWrappers(body, W);
-        // A FILTERed BGP keeps the flat plan: Def. 4.5's filter rule leaves the condition inside the
-        // operand's group, and the factored plan has no single group for it (its passes exchange
-        // materialized relations). Same answer gate either way, so this is a plan choice only.
-        if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)
-                && !Filters.of(bgpCandidate).isEmpty()) {
+        boolean pureBgp = isPureBgp(bgpCandidate);
+        Block candidateBlock = pureBgp ? collectBlock(bgpCandidate) : null;
+        // A FILTERed or extended BGP keeps the flat plan. Def. 4.5 leaves both operations inside the
+        // operand's group, while the factored passes exchange materialized relations and currently
+        // have no place to evaluate them. Same answer gate either way, so this is a plan choice only.
+        if (constructionMode == ConstructionMode.FACTORED && pureBgp
+                && candidateBlock.requiresFlatPlan()) {
             return new CircuitConstructionPlan(branchPlan(body, W), constructionMode,
-                    ConstructionMode.FLAT, "BGP carries a FILTER; the factored passes have no single "
-                    + "group for the condition, so the flat plan is used");
+                    ConstructionMode.FLAT, "BGP carries a FILTER or BIND; the factored passes have no "
+                    + "single group for the operation, so the flat plan is used");
         }
-        if (constructionMode == ConstructionMode.FACTORED && isPureBgp(bgpCandidate)) {
+        if (constructionMode == ConstructionMode.FACTORED && pureBgp) {
             return FactoredBgpRewriter.build(scheme, generatedPrefix, workspaceId,
-                    collect(bgpCandidate), W, answerTag);
+                    candidateBlock.patterns, W, answerTag);
         }
 
         List<CircuitConstructionPlan.Step> steps = branchPlan(body, W);
@@ -596,7 +600,8 @@ public class CircuitRewriter {
      * CONSTRUCT. This is where OPTIONAL's reconvergent P1∪P2 AND-branch gets compressed.
      */
     private List<CircuitConstructionPlan.Step> bgpSteps(Block block, List<String> W) {
-        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
+        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty()
+                && !block.requiresFlatPlan()) {
             return new ArrayList<>(FactoredBgpRewriter.build(
                     scheme, generatedPrefix, workspaceId, block.patterns, W, answerTag).steps());
         }
@@ -761,11 +766,11 @@ public class CircuitRewriter {
         @Override void emit(StringBuilder where, String prefix, List<String> children) {
             where.append(reify(block, prefix, children));
         }
-        @Override LinkedHashSet<String> scope() { return vars(block.patterns); }
+        @Override LinkedHashSet<String> scope() { return block.scope(); }
         @Override Set<String> relations() { return Collections.emptySet(); }
         @Override List<CircuitConstructionPlan.Step> marginal(String tokPrefix, String plusPrefix,
                                                               String groupTag, Operand restriction) {
-            return marginalPlus(block, tokPrefix, plusPrefix, groupTag, vars(block.patterns),
+            return marginalPlus(block, tokPrefix, plusPrefix, groupTag, block.scope(),
                     restriction);
         }
     }
@@ -1218,7 +1223,8 @@ public class CircuitRewriter {
      */
     private List<CircuitConstructionPlan.Step> marginalPlus(Block block, String tokPrefix,
             String plusPrefix, String groupTag, LinkedHashSet<String> groupVars, Operand restriction) {
-        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty() && !block.isFiltered()) {
+        if (constructionMode == ConstructionMode.FACTORED && !block.isEmpty()
+                && !block.requiresFlatPlan()) {
             // The restriction is not threaded into the factored elimination: its base relations are
             // keyed by their own patterns, and a sibling that is a materialized row relation has no
             // pattern to push down. Factored operands are already far smaller than flat ones, so this is
@@ -1235,7 +1241,8 @@ public class CircuitRewriter {
 
     // --------------------------- helpers ---------------------------
     /**
-     * Reified group of a BGP operand: its patterns followed by its FILTERs. Appending the conditions
+     * Reified group of a BGP operand: its patterns followed by its FILTERs and output-only BINDs.
+     * Appending the conditions
      * after the patterns is where Def. 4.5 puts them ("everything else, filters included, left in
      * place"): every variable a condition mentions is bound by this group ({@link Filters#of}
      * enforces that), so the position inside the group does not change its value.
@@ -1243,6 +1250,7 @@ public class CircuitRewriter {
     private StringBuilder reify(Block block, String tokPrefix, List<String> toksOut) {
         StringBuilder w = reify(block.patterns, tokPrefix, toksOut);
         w.append(Filters.emit(block.filters));
+        w.append(emitBindings(block.bindings));
         return w;
     }
 
@@ -1541,7 +1549,8 @@ public class CircuitRewriter {
     }
 
     /**
-     * Semantic key of a BGP operand: its pattern key plus its FILTER conditions. The filters must be
+     * Semantic key of a BGP operand: its pattern key plus its FILTER conditions and BIND expressions.
+     * The filters must be
      * in the key — two operands differing only by a filter denote different relations, so their ⊕/⊖
      * gates must not hash-cons (e.g. {@code A MINUS (P FILTER φ1)} and {@code A MINUS (P FILTER φ2)}
      * inside one query). The condition list is already canonically sorted by {@link Filters#of}.
@@ -1549,6 +1558,9 @@ public class CircuitRewriter {
     private static String bgpSemanticKey(Block block) {
         StringBuilder out = new StringBuilder(bgpSemanticKey(block.patterns));
         for (String condition : block.filters) out.append("FLT").append(part(condition));
+        for (ExtensionBinding binding : block.bindings) {
+            out.append("BND").append(part(binding.name)).append(part(binding.expression));
+        }
         return out.toString();
     }
 
@@ -1710,14 +1722,23 @@ public class CircuitRewriter {
     private static final class Block {
         final List<StatementPattern> patterns;
         final List<String> filters;              // rendered, canonically sorted; empty if unfiltered
+        final List<ExtensionBinding> bindings;   // evaluation order; BIND is not commutative
 
-        Block(List<StatementPattern> patterns, List<String> filters) {
+        Block(List<StatementPattern> patterns, List<String> filters,
+              List<ExtensionBinding> bindings) {
             this.patterns = patterns;
             this.filters = filters;
+            this.bindings = bindings;
         }
 
-        boolean isEmpty()     { return patterns.isEmpty(); }
-        boolean isFiltered()  { return !filters.isEmpty(); }
+        boolean isEmpty()          { return patterns.isEmpty(); }
+        boolean requiresFlatPlan() { return !filters.isEmpty() || !bindings.isEmpty(); }
+
+        LinkedHashSet<String> scope() {
+            LinkedHashSet<String> out = vars(patterns);
+            for (ExtensionBinding binding : bindings) out.add(binding.name);
+            return out;
+        }
 
         /** The operand of an OPTIONAL's AND-branch: the conjunction of both operands. */
         static Block concat(Block a, Block b) {
@@ -1725,12 +1746,77 @@ public class CircuitRewriter {
             List<String> f = new ArrayList<>(a.filters);
             for (String c : b.filters) if (!f.contains(c)) f.add(c);   // conjunction, idempotent
             Collections.sort(f);
-            return new Block(p, f);
+            List<ExtensionBinding> e = new ArrayList<>(a.bindings); e.addAll(b.bindings);
+            return new Block(p, f, e);
         }
     }
 
     private static Block collectBlock(TupleExpr te) {
-        return new Block(collect(te), Filters.of(te));
+        return new Block(collect(te), Filters.of(te), collectBindings(te));
+    }
+
+    /** One SPARQL {@code BIND(expr AS ?name)} carried through without adding a circuit gate. */
+    private static final class ExtensionBinding {
+        final String name;
+        final String expression;
+
+        ExtensionBinding(String name, String expression) {
+            this.name = name;
+            this.expression = expression;
+        }
+    }
+
+    /**
+     * Render the algebra's {@link Extension} nodes in evaluation order. BIND changes solution
+     * bindings but not their provenance annotation, so it is emitted after the operand's patterns
+     * and FILTERs and before the generated answer-key expressions.
+     *
+     * <p>That movement is safe only for output-only bindings: a target subsequently used by a triple
+     * pattern would turn a constrained match into an unconstrained one if the BIND were moved after
+     * the patterns. Such queries remain outside the fragment and are rejected explicitly. A later
+     * BIND may use an earlier target; preserving the extension order keeps that case sound.
+     */
+    private static List<ExtensionBinding> collectBindings(TupleExpr te) {
+        List<Extension> extensions = new ArrayList<>();
+        te.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+            @Override public void meet(Extension node) {
+                super.meet(node);                 // inner extensions bind before outer extensions
+                extensions.add(node);
+            }
+        });
+
+        Set<String> patternVariables = Filters.patternVars(te);
+        List<ExtensionBinding> out = new ArrayList<>();
+        for (Extension extension : extensions) {
+            LinkedHashSet<String> inScope = new LinkedHashSet<>(extension.getArg().getBindingNames());
+            for (ExtensionElem element : extension.getElements()) {
+                Set<String> used = Filters.conditionVars(element.getExpr());
+                used.removeAll(inScope);
+                if (!used.isEmpty()) {
+                    throw new UnsupportedOperationException(
+                        "Unsupported BIND: expression for ?" + element.getName() + " references "
+                      + used + ", which is not bound at that point in the group.");
+                }
+                if (patternVariables.contains(element.getName())) {
+                    throw new UnsupportedOperationException(
+                        "Unsupported BIND: ?" + element.getName() + " is subsequently used by a "
+                      + "triple pattern. The flat circuit plan can carry output-only BIND expressions "
+                      + "but cannot move a join-constraining BIND to the end of the reified group.");
+                }
+                out.add(new ExtensionBinding(element.getName(), Filters.render(element.getExpr())));
+                inScope.add(element.getName());
+            }
+        }
+        return out;
+    }
+
+    private static String emitBindings(List<ExtensionBinding> bindings) {
+        StringBuilder out = new StringBuilder();
+        for (ExtensionBinding binding : bindings) {
+            out.append("\tBIND(").append(binding.expression).append(" AS ?")
+               .append(binding.name).append(") \n");
+        }
+        return out.toString();
     }
 
     /**
@@ -1793,8 +1879,9 @@ public class CircuitRewriter {
 
     /**
      * Fail fast if a subtree we are about to treat as a BGP contains anything
-     * outside the supported fragment — BIND/Extension, a subquery, a
-     * nested UNION/OPTIONAL/MINUS operand, or a property path. Without this,
+     * outside the supported fragment — a subquery, a nested UNION/OPTIONAL/MINUS operand, or a
+     * property path. Output-only BIND/Extension is admitted and validated by
+     * {@link #collectBindings(TupleExpr)}. Without this,
      * {@link StatementPatternCollector} would silently ignore such a node and we
      * would emit a circuit for the WRONG query (e.g. — as a
      * fixed past bug — compiling UNION as a join).
@@ -1819,13 +1906,20 @@ public class CircuitRewriter {
                     ((Filter) node).getArg().visit(this);
                     return;
                 }
+                if (node instanceof Extension) {
+                    // BIND builds no gate. Recurse only into its tuple argument; collectBindings
+                    // validates and renders the value expressions without treating them as operators.
+                    ((Extension) node).getArg().visit(this);
+                    return;
+                }
                 bad[0] = node.getClass().getSimpleName();                     // anything else: reject
             }
         });
         if (bad[0] != null) {
             throw new UnsupportedOperationException(
                 "Unsupported operator in BGP position: " + bad[0] + ". Supported fragment = "
-                + "BGP/AND, FILTER, UNION, OPTIONAL, MINUS (no BIND/subquery/property paths).");
+                + "BGP/AND, FILTER, output-only BIND, UNION, OPTIONAL, MINUS "
+                + "(no subquery/property paths in BGP position).");
         }
     }
 

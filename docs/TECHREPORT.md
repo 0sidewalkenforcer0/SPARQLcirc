@@ -52,7 +52,8 @@ deduplicates shared gates automatically.
 - **Data:** ABox only (no TBox/reasoning), one default graph. `GRAPH`, `FROM`, and `FROM NAMED`
   are rejected fail-fast; the current token layouts do not encode graph context.
 - **Queries:** `SELECT`; the algebra fragment **BGP/AND, FILTER, UNION, OPTIONAL, MINUS**, **property
-  paths** (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6).
+  paths** (arbitrary-length `+`/`*`, and `/ | ^ ?`) + projection (§4.6), plus the implementation-only
+  output-binding compatibility extension described below.
 - **`FILTER`:** supported in the circuit rewriter. It builds no gate and renames none (`g_{σφ(P)} = g_P`),
   so the rewriting carries each operand's conditions into that operand's reified group and a filtered
   circuit is a **sub-circuit** of the unfiltered one. Two limits, both fail-fast: a condition outside the
@@ -63,7 +64,13 @@ deduplicates shared gates automatically.
   condition spans both operands) it is rejected. Filtered BGPs use the flat plan (the factored passes
   have no single group for the condition). The **NPCS string rewriter has no filter rule** and rejects
   `FILTER` outright.
-- **Excluded (by design):** `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
+- **Output-only `BIND` (implementation compatibility extension):** accepted when the target is not
+  used by a later triple pattern. Extend changes solution bindings but not their provenance annotation,
+  so the expression is carried into the flat reified group without adding a gate. This covers the
+  constants, aliases, `YEAR`, and arithmetic expressions in SPARQLprov's TPC-H non-aggregate queries.
+  A join-constraining `BIND` is rejected because moving it after the reified patterns would change the
+  query. This extension is outside the paper's formal fragment (claim P1.3).
+- **Excluded (by design):** general/join-constraining `BIND`, in-query aggregation, sub-`SELECT`, `VALUES`, and negated
   property sets `!(...)` — **rejected** (fail-fast, never silently mis-handled).
 - **Solution modifiers:** `LIMIT`/`OFFSET`/`ORDER BY` are **rejected** (they do not apply to a
   materialized circuit of all answers); `DISTINCT` is an **implicit no-op** (answer gates are a set).
@@ -337,11 +344,11 @@ removing derivation holds" — exactly W3C MINUS/OPTIONAL under the possible-wor
 - **Litmus test for "unmodified engine":** point the system at a fresh, unpatched store (or a
   different vendor) and it works with standard SPARQL; no plugin/UDF/patch/recompile. ProvSQL fails
   this (it forks PostgreSQL); we pass.
-- **Fail-fast guard** (`assertPureBgp`): anything outside {Join, Filter, StatementPattern} in a BGP
-  position (BIND/Extension, subquery, property path, an unsupported nested operand) throws
+- **Fail-fast guard** (`assertPureBgp`): anything outside {Join, Filter, output-only Extension,
+  StatementPattern} in a BGP position (subquery, property path, an unsupported nested operand) throws
   `UnsupportedOperationException` rather than being silently dropped by `StatementPatternCollector`.
-  `Filter` is admitted, and its *condition* is validated separately by `Filters`, which rejects any
-  expression it cannot render back into the group — so a filter is never silently dropped either.
+  `Filter` and output-only `Extension` are admitted, and their expressions are validated and rendered
+  separately — so neither operation is silently dropped.
   This is what prevents the class of silent-semantics bugs (e.g. a dropped FILTER, or the historical
   UNION-as-join). **[impl, verified]**
 

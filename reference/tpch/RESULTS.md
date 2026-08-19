@@ -19,9 +19,14 @@ unit, not a triple), the same ⊕/⊗/⊖ construction:
 
 ## Setup
 
+> **Migration note (2026-08-19).** The measurements below were collected with the former Python
+> mapping (`*key` foreign-key predicates, hyphenated composite row IRIs, untyped literals, and six
+> extra primary-key properties). The converter and committed skeletons now use SPARQLprov's exact
+> RDF vocabulary. Regenerate the RDF stores and rerun timing tables before citing new measurements;
+> the historical numbers below have intentionally not been relabelled as reruns.
+
 - **Data.** Official `dbgen` (`tools/tpch-dbgen`) at scale factors 0.01 / 0.1 (/1). The `.tbl`
-  files are directly mapped by [`tbl_to_rdf.py`](tbl_to_rdf.py) exactly as SPARQLprov's
-  `tbl_to_rdf` (see [`README.md`](README.md)):
+  files used for these recorded runs were mapped by the former [`tbl_to_rdf.py`](tbl_to_rdf.py):
   - row → entity IRI `<Table/PK>` (composite keys joined: `<LineItem/1-1>`, `<PartSupp/2-3>`);
   - column → predicate = the bare column name under `BASE <http://example.org/>` (`<c_mktsegment>`);
   - foreign key → object edge to the referenced entity (`<Order/1> <o_custkey> <Customer/370>`);

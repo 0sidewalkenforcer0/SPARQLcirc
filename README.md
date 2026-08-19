@@ -428,7 +428,8 @@ Non-monotone support rests entirely on one ⊖ (monus / anti-join) primitive, **
 | `FILTER EXISTS` / `NOT EXISTS`, and any condition outside the SPARQL 1.1 core | the condition carries a pattern, hence provenance, of its own; a condition the rewriting cannot render back into the group is refused rather than dropped |
 | a `FILTER` referencing a variable its own group does not bind | hoisting it to the enclosing group would change its value |
 | the W3C **filtered left join** | an `OPTIONAL`'s condition spanning *both* operands. A condition over the OPTIONAL's own variables is pushed onto that operand and supported |
-| `BIND`, aggregation, sub-`SELECT`, `VALUES` | out of scope |
+| a `BIND` target used by a later triple pattern | moving it into the reified group's output stage would change join semantics; output-only `BIND` is supported by the flat plan |
+| aggregation, sub-`SELECT`, `VALUES` | out of scope |
 | negated property sets `!(...)` | out of scope |
 
 Engine-side property paths are currently `+`/`*` over a single predicate with an **IRI frontier

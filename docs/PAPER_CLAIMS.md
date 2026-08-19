@@ -3,6 +3,10 @@
 Source: SPARQLcircPaper/Jingcheng_s_VLDB27.pdf. Semantics live in §3 (pp.2-3) and §4 (pp.3-6).
 Each row is an atomic, checkable statement. IDs are used by CONFORMANCE.md.
 
+Implementation note: P1.3 remains the paper's formal boundary. The engine additionally carries
+output-only `BIND` expressions for SPARQLprov TPC-H compatibility; this is an implementation extension,
+not a broadened paper claim.
+
 ## §3 Preliminaries — fragment boundary
 
 | ID | p. | Claim |

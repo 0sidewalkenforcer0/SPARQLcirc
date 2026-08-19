@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.StringJoiner;
 
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -18,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -166,11 +169,63 @@ final class Filters {
             String base = "REGEX(" + render(r.getArg()) + ", " + render(r.getPatternArg());
             return r.getFlagsArg() == null ? base + ")" : base + ", " + render(r.getFlagsArg()) + ")";
         }
+        if (e instanceof ListMemberOperator) {
+            List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
+            if (args.size() < 2) {
+                throw new UnsupportedOperationException(
+                    "Unsupported FILTER expression: IN requires a value and at least one candidate");
+            }
+            StringJoiner candidates = new StringJoiner(", ");
+            for (int i = 1; i < args.size(); i++) candidates.add(render(args.get(i)));
+            return "(" + render(args.get(0)) + " IN (" + candidates + "))";
+        }
+        if (e instanceof FunctionCall) return renderFunction((FunctionCall) e);
         throw new UnsupportedOperationException(
             "Unsupported FILTER expression: " + describe(e) + ". Supported = the SPARQL 1.1 core "
           + "(&& || ! , = != < <= > >= , + - * / , BOUND STR LANG DATATYPE isIRI isLiteral isBlank "
-          + "isNumeric sameTerm langMatches REGEX). EXISTS/NOT EXISTS carry a pattern of their own "
+          + "isNumeric sameTerm langMatches REGEX IN STRDT CONCAT CONTAINS YEAR). "
+          + "EXISTS/NOT EXISTS carry a pattern of their own "
           + "and are outside the fragment. Refusing to emit a circuit for the unfiltered query.");
+    }
+
+    /** Render the standard function calls used by SPARQLprov's TPC-H non-aggregate templates. */
+    private static String renderFunction(FunctionCall function) {
+        String uri = function.getURI();
+        String name = standardFunctionName(uri);
+        List<ValueExpr> args = function.getArgs();
+        if (("STRDT".equals(name) || "CONTAINS".equals(name)) && args.size() != 2) {
+            throw new UnsupportedOperationException(
+                "Unsupported FILTER expression: " + name + " requires exactly two arguments");
+        }
+        if ("YEAR".equals(name) && args.size() != 1) {
+            throw new UnsupportedOperationException(
+                "Unsupported FILTER expression: YEAR requires exactly one argument");
+        }
+        if ("CONCAT".equals(name) && args.isEmpty()) {
+            throw new UnsupportedOperationException(
+                "Unsupported FILTER expression: CONCAT requires at least one argument");
+        }
+
+        StringJoiner rendered = new StringJoiner(", ");
+        for (ValueExpr arg : args) rendered.add(render(arg));
+        return name + "(" + rendered + ")";
+    }
+
+    private static String standardFunctionName(String uri) {
+        String candidate = uri;
+        String xpathNamespace = "http://www.w3.org/2005/xpath-functions#";
+        if (candidate.startsWith(xpathNamespace)) {
+            candidate = candidate.substring(xpathNamespace.length());
+        }
+        candidate = candidate.toUpperCase(Locale.ROOT);
+        if ("YEAR-FROM-DATETIME".equals(candidate)) candidate = "YEAR";
+        if ("STRDT".equals(candidate) || "CONCAT".equals(candidate)
+                || "CONTAINS".equals(candidate) || "YEAR".equals(candidate)) {
+            return candidate;
+        }
+        throw new UnsupportedOperationException(
+            "Unsupported FILTER expression: function call " + uri
+          + ". Only standard STRDT, CONCAT, CONTAINS, and YEAR are supported");
     }
 
     private static String describe(QueryModelNode node) {

@@ -1,2 +1,2 @@
 BASE <http://example.org/>
-SELECT ?line WHERE { ?ps <ps_partkey> ?part . ?ps <ps_suppkey> ?supp . ?line <l_partkey> ?part . ?line <l_suppkey> ?supp . ?line <l_orderkey> ?order . ?supp <s_nationkey> ?nat . }
+SELECT ?line WHERE { ?ps <ps_part> ?part . ?ps <ps_supp> ?supp . ?line <l_part> ?part . ?line <l_supp> ?supp . ?line <l_order> ?order . ?supp <s_nation> ?nat . }

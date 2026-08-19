@@ -3,7 +3,7 @@
 Q3 (G2a) has one 3-token product per answer -> trivial 0.5^3 = 0.125; it tests execution compatibility,
 not shared-circuit WMC. This query projects to ?cust:
 
-    SELECT ?cust WHERE { ?cust <c_mktsegment> "BUILDING" . ?order <o_custkey> ?cust }   (tpch/skeletons/Qrecon.rq)
+    SELECT ?cust WHERE { ?cust <c_mktsegment> "BUILDING" . ?order <o_cust> ?cust }   (tpch/skeletons/Qrecon.rq)
 
 so a building customer with K orders has provenance  (+)_k ( cust (x) order_k )  — the *cust token is
 shared* across all K product terms (reconvergent). Correct P = P(cust AND (OR orders)) = 0.5*(1-0.5^K),

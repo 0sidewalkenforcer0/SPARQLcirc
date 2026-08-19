@@ -316,12 +316,67 @@ public class CircuitFilterTest {
     }
 
     @Test
+    public void outputBindingsExecuteAndKeepQueryIdentity() {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            reifyLiteral(con, "urn:r:n", "urn:s", "urn:n", 1);
+            ValueFactory vf = con.getValueFactory();
+            reifyValue(con, "urn:r:date", "urn:s", "urn:date",
+                    vf.createLiteral("1995-03-18",
+                            vf.createIRI("http://www.w3.org/2001/XMLSchema#date")));
+
+            String plus = "SELECT (?n + 1 AS ?x) WHERE { <urn:s> <urn:n> ?n }";
+            String times = "SELECT (?n * 2 AS ?x) WHERE { <urn:s> <urn:n> ?n }";
+            String year = "SELECT ?year WHERE { <urn:s> <urn:date> ?date "
+                    + "BIND(YEAR(?date) AS ?year) }";
+            CircuitConstructionPlan factored = new CircuitRewriter(
+                    Reification.STANDARD, ConstructionMode.FACTORED, "junit-bind-factored")
+                    .constructionPlan(plus);
+            assertEquals("a BIND needs the flat group in which its expression is evaluated",
+                    ConstructionMode.FLAT, factored.effectiveMode());
+
+            Model plusCircuit = executePlan(con, plus);
+            Model timesCircuit = executePlan(con, times);
+            Model yearCircuit = executePlan(con, year);
+            Value two = vf.createLiteral("2",
+                    vf.createIRI("http://www.w3.org/2001/XMLSchema#integer"));
+            assertEquals(Collections.singleton(two), bindingValues(plusCircuit, "x"));
+            assertEquals(Collections.singleton(two), bindingValues(timesCircuit, "x"));
+            assertEquals(Collections.singleton(vf.createLiteral("1995",
+                            vf.createIRI("http://www.w3.org/2001/XMLSchema#integer"))),
+                    bindingValues(yearCircuit, "year"));
+            assertTrue("different extension expressions must not alias an answer root merely because "
+                            + "this dataset happens to give them the same projected value",
+                    Collections.disjoint(answerRoots(plusCircuit), answerRoots(timesCircuit)));
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    @Test
+    public void bindThatConstrainsALaterTriplePatternIsRejected() {
+        assertRejected("SELECT ?x WHERE { <urn:s> <urn:n> ?n . BIND(?n AS ?x) . "
+                        + "<urn:t> <urn:p> ?x }",
+                "subsequently used by a triple pattern");
+    }
+
+    @Test
     public void everyGeneratedConstructWithAFilterParses() {
         String[] queries = {
             "SELECT ?y WHERE { <urn:s> <urn:p> ?y FILTER(?y != <urn:b>) }",
             "SELECT ?y WHERE { <urn:s> <urn:p> ?y FILTER(REGEX(STR(?y), \"^urn\", \"i\")) }",
             "SELECT ?y WHERE { <urn:s> <urn:p> ?y FILTER(sameTerm(?y, <urn:b>) || isIRI(?y)) }",
             "SELECT ?y WHERE { <urn:s> <urn:p> ?y FILTER(DATATYPE(?y) != <urn:d>) }",
+            "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+                + "SELECT ?d WHERE { <urn:s> <urn:date> ?d "
+                + "FILTER(STRDT(CONCAT(STR(?d), 'T00:00:00'), xsd:dateTime) "
+                + "< '1998-09-24T00:00:00'^^xsd:dateTime) }",
+            "SELECT ?name WHERE { <urn:s> <urn:name> ?name FILTER(CONTAINS(?name, 'thistle')) }",
+            "SELECT ?mode WHERE { <urn:s> <urn:mode> ?mode FILTER(?mode IN ('AIR', 'AIR REG')) }",
+            "SELECT (1 AS ?x) WHERE { <urn:s> <urn:p> ?value }",
+            "SELECT ?alias ?year WHERE { <urn:s> <urn:date> ?date "
+                + "BIND(?date AS ?alias) BIND(YEAR(?date) AS ?year) "
+                + "BIND((2 * (1 - 0.1)) AS ?unused) }",
             "SELECT ?x WHERE { ?x <urn:a> <urn:v> MINUS { ?x <urn:p> ?o FILTER(?o = <urn:hit>) } }",
             "SELECT ?x ?y WHERE { ?x <urn:a> <urn:v> OPTIONAL { ?x <urn:b> ?y FILTER(?y != <urn:s>) } }",
         };
@@ -381,6 +436,19 @@ public class CircuitFilterTest {
     private static Set<Resource> answerRoots(Model model) {
         IRI answer = SimpleValueFactory.getInstance().createIRI(C, "answer");
         return new LinkedHashSet<>(model.filter(null, answer, null).subjects());
+    }
+
+    private static Set<Value> bindingValues(Model model, String variable) {
+        ValueFactory vf = SimpleValueFactory.getInstance();
+        IRI var = vf.createIRI(C, "var");
+        IRI val = vf.createIRI(C, "val");
+        Set<Value> out = new LinkedHashSet<>();
+        for (Resource binding : model.filter(null, var, vf.createLiteral(variable)).subjects()) {
+            for (Statement statement : model.filter(binding, val, null)) {
+                out.add(statement.getObject());
+            }
+        }
+        return out;
     }
 
     /**
@@ -448,11 +516,15 @@ public class CircuitFilterTest {
     }
 
     private static void reifyLiteral(RepositoryConnection con, String token, String s, String p, int o) {
+        reifyValue(con, token, s, p, con.getValueFactory().createLiteral(o));
+    }
+
+    private static void reifyValue(RepositoryConnection con, String token, String s, String p, Value o) {
         ValueFactory vf = con.getValueFactory();
         IRI t = vf.createIRI(token);
         con.add(t, vf.createIRI(RDF.NAMESPACE, "subject"), vf.createIRI(s));
         con.add(t, vf.createIRI(RDF.NAMESPACE, "predicate"), vf.createIRI(p));
-        con.add(t, vf.createIRI(RDF.NAMESPACE, "object"), vf.createLiteral(o));
+        con.add(t, vf.createIRI(RDF.NAMESPACE, "object"), o);
     }
 
     private static void assertRejected(String query, String messagePart) {

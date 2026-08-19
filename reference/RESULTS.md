@@ -30,7 +30,7 @@ both sides.
 - **Reconvergent lineage — parity *definitively* established (R8.3).** Q3's answers are a single
   3-token product, so `0.125` is trivially right and tests execution compatibility rather than
   shared-circuit WMC. `tpch/skeletons/Qrecon.rq` (`SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" .
-  ?order o_custkey ?cust }`) gives each answer `⊕ₖ(cust ⊗ orderₖ)` with the **cust token shared** across
+  ?order o_cust ?cust }`) gives each answer `⊕ₖ(cust ⊗ orderₖ)` with the **cust token shared** across
   all K products, so the truth is `0.5·(1−0.5ᴷ) ∈ [0.375, 0.5]`, varying with K. Keyed by `c_custkey`,
   ours equals ProvSQL (`max_abs_error = 0.0`, `keys_match`) **and** equals the closed form
   (`cf_maxerr = 0.0`), at SF 0.01 and SF 0.1.

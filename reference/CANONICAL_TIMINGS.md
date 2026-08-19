@@ -62,7 +62,7 @@ per-query at this scale — but the contribution is the unforked/broader-fragmen
 
 ## Reconvergent query + SF 0.1 end-to-end (R8.3) — see `RESULTS.md`
 
-`SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_custkey ?cust }` — per-answer provenance
+`SELECT ?cust WHERE { ?cust c_mktsegment "BUILDING" . ?order o_cust ?cust }` — per-answer provenance
 `⊕ₖ(cust⊗orderₖ)` with a **shared** cust token (reconvergent; p ∈ [0.375, 0.5], not Q3's 0.125).
 
 | query | scale | answers | ours total (median [min–max]) | ProvSQL total | faster |
