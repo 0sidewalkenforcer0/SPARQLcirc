@@ -65,8 +65,9 @@ Virtuoso `/sparql`. `engines.json` records each; `run_engine.py` sets the env va
 
 ## Running it
 
-1. Deploy an engine and **bulk-load the reified data** (per-engine doc). Use `reference/watdiv/reify.py`
-   to reify any `.nt`. RDF-star engines can instead load the compact SPARQL\* form (`.ttls`).
+1. Deploy an engine and **bulk-load the mixed data** (per-engine doc). Use
+   `reference/watdiv/reify.py` to retain each asserted triple and add its token
+   record. RDF-star engines can use `--star` for the compact token encoding.
 2. Edit the endpoints in `engines.json` (or pass `--query-endpoint`/`--update-endpoint`).
 3. Run:
    ```bash
@@ -89,10 +90,13 @@ Virtuoso `/sparql`. `engines.json` records each; `run_engine.py` sets the env va
 
 # Per-engine setup
 
-Every engine below is driven the same way: bulk-load reified data (`python3 reference/watdiv/reify.py
-in.nt > data.reified.nt`), then either `engines/run_engine.py --engine <name>` (reads `engines.json`)
+Every engine below is driven the same way: bulk-load mixed data (`python3 reference/watdiv/reify.py
+in.nt data.mixed.nt`), then either `engines/run_engine.py --engine <name>` (reads `engines.json`)
 or `CircuitRun` directly with the env vars above. Only the endpoint conventions and the
 writable/read-only boundary differ.
+
+The ordinary Java scheme names expect mixed data. Historical token-only stores
+must instead be queried with `Standard_Pure` or `SPARQL_Star_Pure`.
 
 ## Fuseki (Apache Jena) — writable · RDF-star · SPARQLprov's engine
 

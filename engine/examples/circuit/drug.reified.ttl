@@ -1,5 +1,12 @@
 @prefix d:   <urn:d:> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+d:Aspirin    d:iw d:Warfarin, d:Ibuprofen .
+d:Warfarin   d:iw d:Metformin, d:Lisinopril .
+d:Metformin  d:iw d:Omeprazole .
+d:Ibuprofen  d:iw d:Metformin .
+d:Lisinopril d:iw d:Clopidogrel .
+d:Clopidogrel d:iw d:Aspirin .
+
 d:p1 rdf:subject d:Aspirin     ; rdf:predicate d:iw ; rdf:object d:Warfarin    .
 d:p2 rdf:subject d:Warfarin    ; rdf:predicate d:iw ; rdf:object d:Metformin   .
 d:p3 rdf:subject d:Metformin   ; rdf:predicate d:iw ; rdf:object d:Omeprazole  .

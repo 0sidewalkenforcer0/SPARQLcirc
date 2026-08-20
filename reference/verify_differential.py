@@ -455,6 +455,7 @@ def _query_text(case: Mapping[str, Any]) -> str:
 def _data_text(case: Mapping[str, Any]) -> str:
     lines = ["@prefix rdf: <%s> ." % RDF]
     for token, subject, predicate, obj in case["facts"]:
+        lines.append("%s %s %s ." % (subject, predicate, obj))
         lines.append(
             "%s rdf:subject %s ; rdf:predicate %s ; rdf:object %s ."
             % (_iri("urn:bgp:token:" + token), subject, predicate, obj))

@@ -3,7 +3,8 @@
 Single-page cross-reference: **research question ↔ experiment ↔ artifact ↔ takeaway**. Doubles as the
 reproduction index. Every scale number is trusted only after the correctness gate: `circuit WMC ==
 possible-world enumeration` on the small checks, and `d4 / ProvSQL / CUDD / oracle WMC == our OBDD` per
-instance. Environment: GraphDB 10.7.6 (WatDiv 10M = 32,749,371 reified triples; 100M = 326,993,142) · d4 v1
+instance. Environment: GraphDB 10.7.6 (historical `Standard_Pure` stores: WatDiv 10M = 32,749,371
+reification triples; 100M = 326,993,142) · d4 v1
 (Linux/x86) · PostgreSQL 18 + ProvSQL 1.11 · zero-dependency ROBDD + WMC.
 
 ## Pre-registered claims (from `watdiv/EXPERIMENTS.md` / `docs/EVALUATION.md`)

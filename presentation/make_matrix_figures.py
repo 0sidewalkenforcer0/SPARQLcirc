@@ -1,8 +1,7 @@
 """Full-dimension construction figures (drafts r9_2 structure), real B/R/N/C matrix.
 
-Reads the R9 construction matrix CSV produced by
-``reference/paper/paper_construction_matrix.py`` (one row per
-engine × scale × class/template × method cell) and renders, PER ENGINE, the drafts'
+Reads a construction matrix CSV (one row per engine × scale ×
+class/template × method cell) and renders, PER ENGINE, the drafts'
 r9_2 layout: two stacked scale panels (10M / 100M), the WatDiv query templates on the
 x-axis, and grouped B/R/N/C bars — exactly the SPARQLprov/NPCS structure, with real data.
 

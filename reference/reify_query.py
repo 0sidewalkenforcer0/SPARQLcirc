@@ -1,18 +1,19 @@
-"""R9.2 — algebra-preserving reification-only rewriter (the "R" control).
+"""Algebra-preserving inline reification rewriter (the default "R" path).
 
-Takes a SPARQL SELECT and rewrites every triple pattern `s p o` into the reification scheme's statement
-lookup, **preserving the SPARQL algebra** (Join / OPTIONAL / UNION / MINUS / projection). This is NOT a
-textual regex hack: we parse the query with rdflib's SPARQL parser into its algebra, then re-serialize.
-The result is a plain SELECT over the reified graph with **no provenance** (no token output, GROUP_CONCAT,
-SHA256, gate IRI, or CONSTRUCT) — the "reification only" alternative in the B/R/N/C decomposition, i.e.
-the control that isolates the reification cost (R-B) from the provenance cost (N-R or C-R).
+Takes a SPARQL SELECT and replaces every triple pattern `s p o` with the
+asserted pattern followed by the selected token lookup, **preserving the SPARQL
+algebra** (Join / OPTIONAL / UNION / MINUS / projection). This is not a textual
+rewrite: the query is parsed into algebra and serialized with each asserted
+pattern in its original scope. The result contains no provenance expression,
+token output, hash, gate IRI, or CONSTRUCT.
 
-Standard reification: `s p o`  ->  `?__tN rdf:subject s . ?__tN rdf:predicate p . ?__tN rdf:object o .`
-RDF-star reification: `s p o`  ->  `<< s p o >> occurrenceOf ?__tN .`
+Standard: `s p o` -> `s p o . ?__tN rdf:subject s ; rdf:predicate p ; rdf:object o .`
+RDF-star: `s p o` -> `s p o . << s p o >> occurrenceOf ?__tN .`
 By construction R returns the SAME answer multiset as the base query B (one statement node per base edge).
 
   python3 reify_query.py <query.rq>                         # Standard (default)
   python3 reify_query.py --scheme SPARQL_Star <query.rq>    # RDF-star
+  python3 reify_query.py --pure <query.rq>                  # historical R-pure
   python3 reify_query.py --selftest                         # focused self-tests
 """
 import argparse
@@ -50,8 +51,9 @@ def term(t):
     raise ValueError(f"unhandled term {type(t).__name__}: {t!r}")
 
 class Reifier:
-    def __init__(self, scheme=STANDARD, variables=()):
+    def __init__(self, scheme=STANDARD, variables=(), pure=False):
         self.scheme = normalize_scheme(scheme)
+        self.pure = pure
         self.n = 0
         self.variables = {str(variable) for variable in variables}
 
@@ -67,6 +69,8 @@ class Reifier:
         out = []
         for s, p, o in triples:
             t = self.fresh_statement_variable()
+            if not self.pure:
+                out.append(f"{ind}{term(s)} {term(p)} {term(o)} .")
             if self.scheme == SPARQL_STAR:
                 out.append(
                     f"{ind}<< {term(s)} {term(p)} {term(o)} >> "
@@ -104,7 +108,7 @@ class Reifier:
             return self.walk(n["p"], ind)
         raise NotImplementedError(f"algebra node not handled: {nm}")
 
-def reify(query_text, scheme=STANDARD):
+def reify(query_text, scheme=STANDARD, pure=False):
     alg = translateQuery(parseQuery(query_text)).algebra          # SelectQuery -> Project -> ...
     if alg.name != "SelectQuery":
         raise NotImplementedError("only SELECT supported")
@@ -114,7 +118,7 @@ def reify(query_text, scheme=STANDARD):
     body_root = proj
     while getattr(body_root, "name", "") in ("Project", "Distinct", "Reduced", "Slice", "ToMultiSet"):
         body_root = body_root["p"]
-    r = Reifier(scheme, alg.get("_vars") or ())
+    r = Reifier(scheme, alg.get("_vars") or (), pure=pure)
     body = r.walk(body_root, "  ")
     proj_str = " ".join("?" + str(v) for v in pv) if pv else "*"
     distinct = "DISTINCT " if _has(proj, "Distinct") else ""
@@ -186,6 +190,7 @@ def _selftest():
         star = reify(q, SPARQL_STAR)
         star_checks = {
             "quoted": "<< " in star and f"<{OCCURRENCE_OF}>" in star,
+            "inline": star.count(" .") >= 2 * star.count("<< "),
             "not-standard": f"<{RS}subject>" not in star,
             "optional": ("OPTIONAL" in star) == ("optional" == name),
             "union": ("UNION" in star) == ("union" == name),
@@ -211,6 +216,11 @@ def main(argv=None):
         help=f"reification scheme: {STANDARD} (default) or {SPARQL_STAR}",
     )
     parser.add_argument("--selftest", action="store_true", help="run focused self-tests")
+    parser.add_argument(
+        "--pure",
+        action="store_true",
+        help="emit the historical reification-only query without asserted triple patterns",
+    )
     parser.add_argument("query", nargs="?", help="SPARQL SELECT query file")
     args = parser.parse_args(argv)
 
@@ -222,7 +232,7 @@ def main(argv=None):
         parser.error("a query file is required")
     try:
         with open(args.query, encoding="utf-8") as handle:
-            rewritten = reify(handle.read(), args.scheme)
+            rewritten = reify(handle.read(), args.scheme, pure=args.pure)
     except ValueError as ex:
         parser.error(str(ex))
     print(rewritten, end="")

@@ -63,7 +63,7 @@ the existing regression and reproduction assets.
 | `engine/src/test`, `reference/tests.py`, and `reference/quick_verify.py` | Semantic regression gates | They cover query rewriting, circuit semantics, and the Maven-to-WMC path independently of the performance protocol. |
 | `reference/paper/queries/watdiv/{10M,100M}` | Historical frozen workloads | Most templates have one `instance=00`; existing result artifacts still refer to these files. |
 | Existing workload manifests and result CSV files | Reproduction records | Their query identities and measurement conventions belong to earlier experiments. |
-| `reference/paper/paper_construction_matrix.py` | Reusable implementation source | Its rewrite and execution code remains useful, while its timing and timeout model differs from the new protocol. |
+| `reference/paper/watdiv10m_runner.py` | Single-cell implementation | It records the current timing boundaries, timeout behavior, circuit artifacts, and offline stages used by this protocol. |
 | New queries, metrics, and results | A separate 281-query batch | Versioned storage keeps query identities, repetition counts, and measurement definitions unambiguous. |
 
 ## Engines and execution matrix
@@ -76,28 +76,32 @@ begins.
 
 A lab-local 1+1 toy preflight has exercised B, R, N, C-flat, C-factored, and
 C-path against all three pinned engine versions. It also checked direct
-candidate-answer equality and private-state cleanup. This is compatibility
-evidence only; its timings are not benchmark results. The external Slurm
-wrappers and their output remain outside the repository.
+candidate-answer equality, private-state cleanup, and the required structured C
+records. Compute-node tests also cover fresh-cell skipping and offline recovery
+from saved response and circuit artifacts. This is compatibility evidence only;
+its timings are not benchmark results. The external Slurm wrappers and their
+output remain outside the repository.
 
-Each executable `query × engine × variant` combination forms one cell. A cell
-contains one warm-up execution followed by five measured executions. Every
-endpoint execution has its own 1,200-second deadline. For C, that deadline
+Each executable `query × engine × variant` combination forms one cell. The
+formal run selects instances `00` through `02` and contains one warm-up
+execution followed by one measured execution. Every endpoint execution has
+its own 600-second deadline. For C, that deadline
 covers the complete construction plan, including all CONSTRUCT requests and
 feedback steps, rather than resetting for each step.
 
 The matrix contains:
 
-- `250 × 3 × 5 = 3,750` non-path cells;
-- `31 × 3 × 2 = 186` property-path cells;
-- `3,936` cells and `23,616` endpoint executions after the six executions per
-  cell are included.
+- `75 × 3 × 5 = 1,125` non-path cells;
+- `10 × 3 × 2 = 60` property-path cells;
+- `1,185` cells and `2,370` endpoint executions after the two executions per
+  cell are included. `P-plus-all` has one fixed query, so the selected workload
+  contains 85 rather than 87 distinct queries.
 
-The five measured values remain available as raw observations. The primary
-summary for a successful cell is the median, accompanied by the mean, standard
-deviation, minimum, maximum, and interquartile range. Warm-up values are stored
-separately. Timeout, memory exhaustion, unsupported features, correctness
-mismatches, and infrastructure failures retain distinct status codes.
+The measured value remains available as a raw observation and is the primary
+result for a successful cell. No within-cell dispersion statistic is claimed
+from a single measurement. Warm-up values are stored separately. Timeout,
+memory exhaustion, unsupported features, correctness mismatches, and
+infrastructure failures retain distinct status codes.
 
 ## Measurement boundaries
 
@@ -107,9 +111,26 @@ drain time, response bytes, decoding, canonicalization, and artifact storage.
 C records the complete `CircuitRun` wall interval, its reported construction
 interval, requested and effective mode, plan size, path-round information,
 final circuit bytes, circuit decoding, answer-reachable structure, and PQE.
-Per-CONSTRUCT and per-feedback time and workspace peaks still require opt-in
-structured instrumentation inside `CircuitRun`; they are not inferred from its
-log text.
+With `CIRCUIT_STRUCTURED_TIMING=1`, `CircuitRun` also emits versioned JSON stage
+records. The cell runner enables this mode, validates the records against the
+logged plan, and stores them as `c-stages.jsonl`; it does not infer step times
+from human-readable log text. A C run without the required records fails the
+measurement protocol.
+
+The C records separate query reading, plan generation, repository setup, data
+readiness, normalization, circuit serialization, optional named-graph
+persistence, and endpoint cleanup. Every ordinary construction step reports
+the endpoint query, result splitting, workspace registration, feedback update,
+client merge, and step wall intervals, together with emitted, circuit, message,
+and workspace triple counts. Closure plans report their top-level wall interval
+and each nested path CONSTRUCT; dedicated property paths additionally report
+source discovery, reachable-subgraph BFS rounds, fixpoint CONSTRUCTs, and
+per-source completion. Workspace cleanup has its own duration and batch count.
+The maximum recorded workspace and circuit counts provide structural peaks;
+per-step server RSS remains the responsibility of the external cgroup sampler.
+Steps in the same parallel schedule level overlap, so their durations are raw
+observations and are never summed to reconstruct wall time. Structured logging
+overhead is measured and retained in the construction-completion record.
 
 `N_request_ms` spans the HTTP request through receipt of the final response
 byte. It combines query processing, server-side serialization, transport, and
@@ -150,7 +171,7 @@ final circuit persistence; circuit decode, validation, shared compilation, WMC,
 and result persistence remain separately observable offline stages.
 
 Each paired offline NPCS or C pipeline has its own query-level deadline,
-independent of the endpoint's 1,200-second budget. Component timers separate
+independent of the endpoint's 600-second budget. Component timers separate
 decode, normalization, structural interning, compilation, WMC, and persistence
 within that pipeline. Process-local CPU and peak RSS are recorded by the
 runner. Remote-engine RSS, cgroup totals, temporary-store peaks, and Slurm job
@@ -212,10 +233,14 @@ leaves existing batches unchanged. The generated workload contains:
   `P-star`, and `P-alt`;
 - one all-pairs instance of `P-plus-all`.
 
-The resulting batch contains 250 non-path queries and 31 path queries. Its
-audit checks the complete query-id set, per-template counts, file presence,
-concrete query uniqueness, byte counts, and line counts. The WatDiv model,
-`saved.txt`, template files, and path-source table are copied into the batch.
+The resulting batch contains 250 non-path query instances and 31 path query
+instances. Its audit checks the complete query-id set, per-template counts,
+file presence, byte counts, line counts, and exact agreement with the frozen
+WatDiv emission transcript. WatDiv may repeat a sampled binding, and templates
+without placeholders necessarily emit identical query text; those instances
+are retained in emission order rather than replaced by a uniqueness filter.
+The WatDiv model, `saved.txt`, template files, and path-source table are copied
+into the batch.
 The generator also verifies that WatDiv did not change `saved.txt` during query
 instantiation. Completed snapshots are made read-only. No experiment-level
 file digest is computed.
@@ -289,14 +314,25 @@ one `query x engine x method` cell. It provides the following boundaries:
   optional shared CUDD or oracle PQE for C;
 - direct, complete-content comparison of measured answer records and repeated
   C circuit artifacts, without experiment-level digests;
+- validated per-step C timing and structural counts in `c-stages.jsonl`;
+- immutable offline/PQE retries from a saved response or circuit through the
+  `resume-offline` command;
 - raw observations plus median, mean, standard deviation, extrema, and IQR for
   the measured executions.
 
-The runner stops a cell after its first failed execution. This prevents later
-samples from using an endpoint that may still contain partial private state.
-The external launcher must restore and verify the private store before any
-retry. Per-step C time/space instrumentation and engine-level resource sampling
-remain separate tasks.
+The runner stops after an endpoint failure or a repeated-run correctness
+mismatch because the endpoint may contain partial private state. An offline or
+PQE failure does not mutate the engine, so later endpoint executions continue
+and retain their immutable inputs. `resume-offline --cell CELL` creates an
+`offline-resume-NNN` directory and reruns only failed or missing offline stages;
+the original run records are unchanged. It then recomputes direct answer parity,
+C circuit parity, and the measured summaries from the effective artifacts. It
+does not resume an endpoint request or a CONSTRUCT in flight.
+
+The lab-local launcher uses this boundary to skip completed cells, retry
+offline work from saved artifacts, or restore a clean engine and start a new
+immutable cell attempt after an endpoint failure. Slurm submission, engine
+lifecycle commands, and cgroup sampling remain outside the repository.
 
 ## Remaining integration work
 
@@ -306,11 +342,8 @@ The timed evaluation still depends on the following components:
   deduplicated WatDiv 10M `friendOf` graph;
 - one real WatDiv 0.6 generation run on a compute node, followed by audit and
   archival of the 281 concrete queries;
-- structured C metrics for individual CONSTRUCT, feedback, cleanup, and
-  workspace-peak intervals beyond the aggregate markers now captured;
-- a lab-local Slurm launcher for preparation, store restore, cell execution,
-  resource sampling, and result merging; this deployment tool is intentionally
-  kept outside the repository;
+- completion of the lab-local Slurm manifests, engine reset commands, resource
+  sampling, and result merging around the external cell/offline resume helper;
 - parser differential tests using responses from all three engines, followed
   by large-answer, truncated-response, timeout, memory, storage, and recovery
   tests;
@@ -328,6 +361,18 @@ python reference/paper/test_npcs_postprocess.py
 python reference/paper/test_watdiv10m_workload.py
 python reference/paper/test_watdiv10m_runner.py
 ```
+
+Failed offline/PQE stages of an otherwise preserved cell can be retried with:
+
+```bash
+python reference/paper/watdiv10m_runner.py resume-offline \
+  --cell /node-local/cells/graphdb/C-factored/L1-00
+```
+
+The command exits successfully only when every configured endpoint artifact and
+effective offline result is present and measured-run answer/circuit parity
+holds. Missing endpoint executions require a fresh cell attempt after restoring
+the engine.
 
 A workload snapshot is generated and audited with:
 
@@ -357,13 +402,17 @@ python reference/paper/watdiv10m_runner.py \
   --out /node-local/cells/graphdb/B/L1-00
 ```
 
-For `N`, add the reified endpoint and JAR, select `--pqe-backend cudd`, and
+For `N`, add the mixed asserted-plus-token endpoint and JAR, select `--pqe-backend cudd`, and
 provide either `--uniform-probability 0.5` or a probability file. For C, use
-`C-flat`, `C-factored`, or `C-path` and add `--reified-data`; factored and path
-cells also require `--update-endpoint`. The defaults are one warm-up, five
-measured executions, the `SPARQL_Star` occurrence scheme, and independent
-1,200-second endpoint and offline deadlines. `--scheme Standard` is available
-only for a store loaded with the three-triple standard-reification encoding.
+`C-flat`, `C-factored`, or `C-path` and add the corresponding mixed file as
+`--reified-data`; factored and path
+cells also require `--update-endpoint`. The defaults are one warm-up, one
+measured execution, the `SPARQL_Star` occurrence scheme, and independent
+600-second endpoint and offline deadlines. Under the default scheme, every
+fact is present once as an asserted triple and once as an RDF-star occurrence
+record. `--scheme Standard` instead expects the asserted triple plus the three
+standard-reification records. The formal runner does not mix these layouts or
+silently fall back to the historical token-only stores.
 
 The path-source input contains ten distinct source rows with this schema:
 

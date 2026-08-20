@@ -4,7 +4,8 @@
 result fixed before running); this document pairs each design with the numbers measured on the server,
 so a surprising value reads as a finding, not a moving target.*
 
-**Environment.** GraphDB 10.7.6 (WatDiv 10M = 32,749,371 reified triples; 100M = 326,993,142) · d4 v1
+**Environment.** GraphDB 10.7.6 (historical `Standard_Pure` stores: WatDiv 10M =
+32,749,371 reification triples; 100M = 326,993,142) · d4 v1
 (Linux/x86, bundled PATOH) · PostgreSQL 18 + ProvSQL 1.11 · our zero-dependency ROBDD + WMC.
 **Correctness gate:** every scale number is trusted only after `circuit WMC == possible-world
 enumeration` on the small checks, and `d4 / ProvSQL WMC == our OBDD` per instance.
@@ -234,8 +235,10 @@ enumeration` on the small checks, and `d4 / ProvSQL WMC == our OBDD` per instanc
 2. **E3 unbound @100M** — exceeds the engine heap; the selective/factored path is what scales.
 3. **E5 WatDiv star (2.9×)** is an in-memory pilot; the synthetic families give the clean unbounded curve.
 4. **E1/E6 are small-scale by design** — PWE ground truth needs `2ⁿ` enumeration, so instances must be tiny.
-5. **Reification blow-up** — Standard reification triples the data (100M → 327M); SPARQL-star is the compact
-   alternative on RDF-star engines.
+5. **Reification blow-up** — the reported 100M result used the historical
+   token-only Standard layout (about three statements per fact). The current
+   mixed default uses four; the two layouts must not be combined in one scale
+   series.
 6. **Serialization vs structure** — compactness is reported *structurally* (gates+edges vs `Σ deriv × arity`),
    not as N-Triples bytes (which are inflated by 64-hex SHA256 gate IRIs).
 

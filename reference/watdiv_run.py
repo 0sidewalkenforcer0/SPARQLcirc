@@ -5,7 +5,8 @@ with the NPCS string query for the sharing comparison.
 Data target (VLDB): WatDiv 100M (pilot/data/watdiv.100M.nt) reified into repo "watdiv",
 queries from pilot/data/official_q_100M via WATDIV_QDIR. base.nt (51K) is a smoke-test only.
 Env: WATDIV_REPO (default "watdiv"); WATDIV_QDIR (dir of *.rq/*.sparql; unset -> built-in
-S/L/F smoke shapes)."""
+S/L/F smoke shapes); WATDIV_SCHEME (default "Standard"; use "Standard_Pure"
+only with a historical token-only store)."""
 import os, sys, time, glob, subprocess, random, urllib.request as U
 sys.setrecursionlimit(1_000_000); sys.path.insert(0, ".")
 import compile_bdd
@@ -15,6 +16,7 @@ random.seed(3)
 GDB = "http://localhost:7200"
 REPO = os.environ.get("WATDIV_REPO", "watdiv")
 JAR = "../engine/target/npcs-rewrite.jar"
+SCHEME = os.environ.get("WATDIV_SCHEME", "Standard")
 RS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 def post(body, ctype, accept):
@@ -25,7 +27,7 @@ def post(body, ctype, accept):
 
 def get_construct(qfile):
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
-                        "Standard", "bench_engine/tiny.ttl", qfile], capture_output=True,
+                        SCHEME, "bench_engine/tiny.ttl", qfile], capture_output=True,
                        text=True, check=True)
     out, p = [], False
     plans = 0
@@ -40,7 +42,7 @@ def get_construct(qfile):
     return "\n".join(out)
 
 def get_npcs(qfile):
-    return subprocess.run(["java", "-jar", JAR, "Standard", "query", open(qfile).read()],
+    return subprocess.run(["java", "-jar", JAR, SCHEME, "query", open(qfile).read()],
                           capture_output=True, text=True).stdout
 
 def _arity(q):

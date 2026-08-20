@@ -44,7 +44,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--query", type=Path, help="SELECT query file (required with --jar)")
     p.add_argument("--probabilities", type=Path, required=True,
                    help="JSON object mapping complete token IRIs to probabilities")
-    p.add_argument("--scheme", default="Standard", choices=("Standard", "SPARQL_Star"))
+    p.add_argument(
+        "--scheme",
+        default="Standard",
+        choices=("Standard", "SPARQL_Star", "Standard_Pure", "SPARQL_Star_Pure"),
+        help="mixed layout by default; *_Pure is the historical token-only compatibility mode",
+    )
     p.add_argument("--endpoint", help="optional remote SPARQL query endpoint")
     p.add_argument("--timeout", type=_positive_seconds, default=float(QUERY_TIMEOUT_S),
                    help=f"hard wall-clock limit for --jar construction (default: {QUERY_TIMEOUT_S}s)")

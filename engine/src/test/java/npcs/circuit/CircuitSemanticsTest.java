@@ -1634,6 +1634,30 @@ public class CircuitSemanticsTest {
     }
 
     /**
+     * The public Standard, RDF-star, and named-graph names now select a mixed
+     * layout.  Each leaf must therefore join the asserted triple with its token
+     * lookup without changing the event denoted by the circuit.
+     */
+    @Test
+    public void defaultMixedLayoutsDenoteTheSameEvent() {
+        List<Shape> shapes = Arrays.asList(
+            new Shape("mixed join",
+                    "SELECT ?x WHERE { ?x <urn:p0> ?v0 . ?x <urn:p1> ?v1 }",
+                    Arrays.asList("x")),
+            new Shape("mixed optional",
+                    "SELECT ?x ?v1 WHERE { ?x <urn:p0> ?v0 OPTIONAL { ?x <urn:p1> ?v1 } }",
+                    Arrays.asList("x", "v1")),
+            new Shape("mixed minus",
+                    "SELECT ?x WHERE { ?x <urn:p0> ?v0 MINUS { ?x <urn:p1> ?v1 } }",
+                    Arrays.asList("x")));
+        for (Reification scheme : new Reification[]{Reification.STANDARD_INLINE,
+                                                    Reification.SPARQL_STAR_INLINE,
+                                                    Reification.NAMED_GRAPH_INLINE}) {
+            checkAgainstOracle(shapes, FACTS, ConstructionMode.values(), scheme);
+        }
+    }
+
+    /**
      * Wikidata's native statement reification, which constrains the query rather than just the data:
      * the predicate must be a constant {@code wdt:} IRI, and a variable or non-{@code wdt:} predicate
      * must be refused rather than encoded wrongly.
@@ -1714,12 +1738,25 @@ public class CircuitSemanticsTest {
             case STANDARD:
                 reify(con, token, s, p, o);
                 return;
+            case STANDARD_INLINE:
+                con.add(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o));
+                reify(con, token, s, p, o);
+                return;
             case SPARQL_STAR:
+                con.add(vf.createTriple(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o)),
+                        vf.createIRI("http://example.org/occurrenceOf"), t);
+                return;
+            case SPARQL_STAR_INLINE:
+                con.add(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o));
                 con.add(vf.createTriple(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o)),
                         vf.createIRI("http://example.org/occurrenceOf"), t);
                 return;
             case NAMED_GRAPH:
                 con.add(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o), t);   // token = graph name
+                return;
+            case NAMED_GRAPH_INLINE:
+                con.add(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o));
+                con.add(vf.createIRI(s), vf.createIRI(p), vf.createIRI(o), t);
                 return;
             case WIKIDATA: {
                 String local = p.substring("http://www.wikidata.org/prop/direct/".length());

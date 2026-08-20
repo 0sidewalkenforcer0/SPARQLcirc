@@ -25,10 +25,9 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(len(queries), 2)
         self.assertTrue(queries[0].startswith("SELECT"))
 
-    def test_split_rejects_duplicates_and_prefix_noise(self) -> None:
+    def test_split_preserves_duplicates_and_rejects_prefix_noise(self) -> None:
         query = "SELECT ?x WHERE { <urn:a> <urn:p> ?x . }\n"
-        with self.assertRaises(workload.WorkloadError):
-            workload.split_generated_queries(query + query, 2)
+        self.assertEqual(workload.split_generated_queries(query + query, 2), [query, query])
         with self.assertRaises(workload.WorkloadError):
             workload.split_generated_queries("warning\n" + query, 1)
 
@@ -77,9 +76,10 @@ class FreezeTest(unittest.TestCase):
     @staticmethod
     def _runner(command: list[str], _cwd: Path) -> tuple[bytes, bytes]:
         template = Path(command[3]).stem
+        indices = [0, 0] + list(range(2, 10)) if template == "L1" else list(range(10))
         text = "".join(
             "SELECT ?x WHERE { <urn:%s:%d> <urn:p> ?x . }\n\n" % (template, index)
-            for index in range(10)
+            for index in indices
         )
         return text.encode("utf-8"), b""
 
@@ -100,6 +100,9 @@ class FreezeTest(unittest.TestCase):
             metadata = json.loads((output / "workload.json").read_text(encoding="utf-8"))
             self.assertFalse(metadata["old_repository_queries_modified"])
             self.assertEqual(metadata["counts"]["queries"], 281)
+            self.assertEqual(metadata["generator"]["duplicate_policy"],
+                             "preserve-emitted-instances-in-order")
+            self.assertEqual(audit["repeated_query_instances"], 1)
             with (output / "query-list.tsv").open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(len(rows), 281)
@@ -114,7 +117,7 @@ class FreezeTest(unittest.TestCase):
                     make_read_only=False,
                 )
 
-    def test_audit_detects_duplicate_concrete_query(self) -> None:
+    def test_audit_detects_divergence_from_generation_transcript(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             inputs = self._inputs(root)
@@ -127,8 +130,8 @@ class FreezeTest(unittest.TestCase):
                 make_read_only=False,
             )
             first = output / "queries" / "nonpath" / "L1" / "00.rq"
-            second = output / "queries" / "nonpath" / "L1" / "01.rq"
-            second.write_bytes(first.read_bytes())
+            third = output / "queries" / "nonpath" / "L1" / "02.rq"
+            third.write_bytes(first.read_bytes())
             with self.assertRaises(workload.WorkloadError):
                 workload.audit_workload(output)
 

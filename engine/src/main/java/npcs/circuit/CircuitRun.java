@@ -7,11 +7,13 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -53,7 +55,84 @@ import npcs.Utf8Text;
  */
 public final class CircuitRun {
 
+    private static final String STAGE_SCHEMA = "sparqlcirc-c-stage-v1";
+    private static final String STAGE_PREFIX = "# sc-stage ";
+    private static final boolean STRUCTURED_TIMING =
+            "1".equals(System.getenv("CIRCUIT_STRUCTURED_TIMING"));
+    private static final AtomicLong STRUCTURED_TIMING_EMIT_NANOS = new AtomicLong();
+
+    private static double milliseconds(long nanos) {
+        return nanos / 1_000_000.0;
+    }
+
+    private static long elapsedNanos(long started) {
+        return System.nanoTime() - started;
+    }
+
+    /** Emit one self-contained JSON record without adding a JSON dependency to the fat JAR. */
+    private static void stage(String event, Object... fields) {
+        if (!STRUCTURED_TIMING) return;
+        long started = System.nanoTime();
+        if ((fields.length & 1) != 0) {
+            throw new IllegalArgumentException("structured timing fields must be key/value pairs");
+        }
+        StringBuilder out = new StringBuilder(256);
+        out.append('{');
+        appendJsonField(out, "schema", STAGE_SCHEMA);
+        out.append(',');
+        appendJsonField(out, "event", event);
+        for (int i = 0; i < fields.length; i += 2) {
+            out.append(',');
+            appendJsonField(out, String.valueOf(fields[i]), fields[i + 1]);
+        }
+        out.append('}');
+        System.err.println(STAGE_PREFIX + out);
+        STRUCTURED_TIMING_EMIT_NANOS.addAndGet(elapsedNanos(started));
+    }
+
+    private static void appendJsonField(StringBuilder out, String key, Object value) {
+        appendJsonString(out, key);
+        out.append(':');
+        if (value == null) {
+            out.append("null");
+        } else if (value instanceof Boolean || value instanceof Integer
+                || value instanceof Long) {
+            out.append(value);
+        } else if (value instanceof Float || value instanceof Double) {
+            double number = ((Number) value).doubleValue();
+            if (!Double.isFinite(number)) throw new IllegalArgumentException("non-finite metric");
+            out.append(String.format(Locale.ROOT, "%.6f", number));
+        } else {
+            appendJsonString(out, String.valueOf(value));
+        }
+    }
+
+    private static void appendJsonString(StringBuilder out, String value) {
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"': out.append("\\\""); break;
+                case '\\': out.append("\\\\"); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if (c < 0x20) out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                    else out.append(c);
+            }
+        }
+        out.append('"');
+    }
+
+    private static int batches(int statements) {
+        return statements == 0 ? 0 : (statements + FEEDBACK_BATCH - 1) / FEEDBACK_BATCH;
+    }
+
     public static void main(String[] args) throws Exception {
+        long mainStartNanos = System.nanoTime();
         ConstructionMode constructionMode = ConstructionMode.FACTORED;
         // Default 1 = sequential, so an existing invocation behaves exactly as before. Parallelism does
         // not change the circuit (it is a set union of the steps' triples) but it does change how much
@@ -108,7 +187,11 @@ public final class CircuitRun {
         }
         Reification scheme = Reification.fromName(positional.get(0));
         File dataFile = new File(positional.get(1));
+        long queryReadStarted = System.nanoTime();
         String query = Utf8Text.read(Paths.get(positional.get(2)));
+        stage("query_read",
+                "duration_ms", milliseconds(elapsedNanos(queryReadStarted)),
+                "query_bytes", query.getBytes(StandardCharsets.UTF_8).length);
         String endpoint = positional.size() == 4 ? positional.get(3) : null;
         String dataPath = positional.get(1);
         RDFFormat fmt = dataPath.endsWith(".ttls") ? RDFFormat.TURTLESTAR
@@ -135,10 +218,22 @@ public final class CircuitRun {
                         ? circuitGraphEnv : "urn:circuit:run:" + sha256hex(query))
                 : null;
 
+        long planStarted = System.nanoTime();
         CircuitRewriter rw = new CircuitRewriter(
                 scheme, constructionMode, UUID.randomUUID().toString());
         CircuitRewriter.PathQuery pathq = rw.pathQuery(query);
         CircuitConstructionPlan constructionPlan = pathq == null ? rw.constructionPlan(query) : null;
+        long planNanos = elapsedNanos(planStarted);
+        stage("plan_generation",
+                "duration_ms", milliseconds(planNanos),
+                "plan_kind", pathq == null ? "construction-plan" : "property-path-dedicated",
+                "requested_mode", pathq == null
+                        ? constructionPlan.requestedMode().cliName() : "property-path-dedicated",
+                "effective_mode", pathq == null
+                        ? constructionPlan.effectiveMode().cliName() : "property-path-dedicated",
+                "plan_steps", pathq == null ? constructionPlan.steps().size() : 0,
+                "requires_feedback", pathq == null
+                        ? constructionPlan.requiresFeedback() : true);
 
         if (readOnly && constructionPlan != null && constructionPlan.requiresFeedback()) {
             System.err.println("# ERROR: factored BGP construction needs a WRITABLE endpoint for its private "
@@ -147,6 +242,7 @@ public final class CircuitRun {
             return;
         }
 
+        long repositoryStarted = System.nanoTime();
         Repository repo;
         if (endpoint != null) {
             // Any SPARQL 1.1 endpoint. The *update* endpoint differs per engine: GraphDB/RDF4J use
@@ -167,8 +263,13 @@ public final class CircuitRun {
         } else {
             repo = new SailRepository(new MemoryStore());
         }
+        stage("repository_init",
+                "duration_ms", milliseconds(elapsedNanos(repositoryStarted)),
+                "remote", endpoint != null,
+                "read_only", readOnly);
         try {
             try (RepositoryConnection con = repo.getConnection()) {
+            long dataReadyStarted = System.nanoTime();
             if (skipLoad) {
                 System.err.println("# CIRCUIT_SKIP_LOAD: assuming the (reified) data is already loaded on the engine");
                 // §4.2 assumes the client skolemized before loading. On this route it did the loading,
@@ -177,7 +278,7 @@ public final class CircuitRun {
                 // that leaves the answer gate unbound and drops the answer with no diagnostic at all.
                 if (!"1".equals(System.getenv("CIRCUIT_SKIP_BNODE_CHECK"))
                         && npcs.rewrite.Skolem.graphHasBlankNodes(
-                                con, scheme == Reification.SPARQL_STAR)) {
+                                con, scheme.isSparqlStar())) {
                     System.err.println("# ERROR: the loaded graph still contains blank nodes. Gate keys "
                         + "hash STR(?term), which has no stable value for a blank node, so the circuit "
                         + "would depend on labels this store invented -- and answers binding one are "
@@ -199,8 +300,14 @@ public final class CircuitRun {
                 }
                 throw e;
             }
+            stage("data_ready",
+                    "duration_ms", milliseconds(elapsedNanos(dataReadyStarted)),
+                    "mode", skipLoad ? "preloaded" : "loaded-by-circuit-run",
+                    "blank_node_probe", skipLoad
+                            && !"1".equals(System.getenv("CIRCUIT_SKIP_BNODE_CHECK")));
             Model circuit = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
             long constructionStartNanos = System.nanoTime();   // on-engine plan execution only (excludes JVM start + data load)
+            long constructionMetricEmitBaseline = STRUCTURED_TIMING_EMIT_NANOS.get();
             if (pathq != null && readOnly) {
                 System.err.println("# ERROR: property-path queries need a WRITABLE endpoint -- the iterative protocol "
                     + "INSERTs each round's reach gates back so the next CONSTRUCT can match them. This engine is "
@@ -232,7 +339,15 @@ public final class CircuitRun {
             if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
                 preNormalizedCircuit = new LinkedHashModel(circuit);
             }
+            long normalizationStarted = System.nanoTime();
             CircuitNormalizer.Result normalized = CircuitNormalizer.normalize(circuit);
+            long normalizationNanos = elapsedNanos(normalizationStarted);
+            stage("normalization",
+                    "duration_ms", milliseconds(normalizationNanos),
+                    "input_triples", normalized.originalTriples,
+                    "output_triples", circuit.size(),
+                    "collapsed_unary_plus", normalized.collapsedUnaryPlus,
+                    "omitted_types", normalized.omittedTypes);
             System.err.println("# ---- circuit encoding: native_ids=128bit, direct_bindings=true, "
                     + "inferred_types=true; final_triples=" + normalized.originalTriples + " -> "
                     + circuit.size() + ", collapsed_unary_plus=" + normalized.collapsedUnaryPlus
@@ -242,13 +357,31 @@ public final class CircuitRun {
             // outside this window. Parsed by the D2 harness (reference/rdfstar_factored.py).
             long constructionMs = (System.nanoTime() - constructionStartNanos) / 1_000_000L;
             System.err.println("# construction_ms: " + constructionMs);
+            stage("construction_complete",
+                    "duration_ms", milliseconds(elapsedNanos(constructionStartNanos)),
+                    "reported_construction_ms", constructionMs,
+                    "structured_log_emit_ms", milliseconds(
+                            STRUCTURED_TIMING_EMIT_NANOS.get() - constructionMetricEmitBaseline),
+                    "circuit_triples", circuit.size());
+            long serializationStarted = System.nanoTime();
             writeCircuit(circuit, System.out);
+            System.out.flush();
+            stage("serialization",
+                    "duration_ms", milliseconds(elapsedNanos(serializationStarted)),
+                    "circuit_triples", circuit.size(),
+                    "format", "N-Triples");
             System.err.println("# circuit triples: " + circuit.size());
+            long namedGraphStarted = System.nanoTime();
             if (persistGraph && endpoint != null && runGraph != null) {
                 con.add(circuit, runGraph);        // materialize the circuit as its own named graph
                 System.err.println("# persisted " + circuit.size()
                         + " circuit triples into named graph <" + runGraph + ">");
             }
+            stage("named_graph_persist",
+                    "duration_ms", milliseconds(elapsedNanos(namedGraphStarted)),
+                    "enabled", persistGraph && endpoint != null && runGraph != null,
+                    "triples", persistGraph && endpoint != null && runGraph != null
+                            ? circuit.size() : 0);
             // Opt-in hygiene for a SCRATCH endpoint used as a one-run workspace: remove THIS run's gates.
             // Best-effort; the loaded data (urn:base:) is untouched (circuit holds only urn:g:*/urn:circuit:*).
             // ⚠ NOT safe when the endpoint is a SHARED / long-lived circuit store: gate IRIs are
@@ -256,22 +389,42 @@ public final class CircuitRun {
             // another query's persisted circuit — con.remove() would delete the shared triples. For a
             // persistent multi-circuit store use per-run named graphs or reference counting, not this flag;
             // and do not enable it alongside concurrent runs that still need this run's reach state.
+            long endpointCleanupStarted = System.nanoTime();
+            String endpointCleanupMode = "disabled";
+            boolean endpointCleanupOk = true;
+            int endpointCleanupTriples = 0;
             if (endpoint != null && "1".equals(System.getenv("CIRCUIT_CLEANUP"))) {
                 try {
                     if (runGraph != null) {
+                        endpointCleanupMode = "named-graph-and-workspace";
+                        endpointCleanupTriples = preNormalizedCircuit == null
+                                ? 0 : preNormalizedCircuit.size();
                         con.clear(runGraph);       // SAFE: drop only THIS run's named graph, never shared gates
                         if (preNormalizedCircuit != null) con.remove(preNormalizedCircuit);
                         System.err.println("# CIRCUIT_CLEANUP: dropped named graph <" + runGraph + ">");
                     } else {
                         Model removal = preNormalizedCircuit == null ? circuit : preNormalizedCircuit;
+                        endpointCleanupMode = "default-graph-circuit";
+                        endpointCleanupTriples = removal.size();
                         con.remove(removal);       // legacy default-graph cleanup (see the warning above)
                         System.err.println("# CIRCUIT_CLEANUP: removed " + removal.size()
                                 + " gate triples from the endpoint");
                     }
                 } catch (RuntimeException e) {
+                    endpointCleanupOk = false;
                     System.err.println("# CIRCUIT_CLEANUP failed (non-fatal, circuit already emitted): " + e.getMessage());
                 }
             }
+            stage("endpoint_cleanup",
+                    "duration_ms", milliseconds(elapsedNanos(endpointCleanupStarted)),
+                    "mode", endpointCleanupMode,
+                    "triples", endpointCleanupTriples,
+                    "success", endpointCleanupOk);
+            stage("run_complete",
+                    "duration_ms", milliseconds(elapsedNanos(mainStartNanos)),
+                    "construction_ms", constructionMs,
+                    "circuit_triples", circuit.size(),
+                    "structured_log_emit_ms", milliseconds(STRUCTURED_TIMING_EMIT_NANOS.get()));
             }
         } finally {
             repo.shutDown();
@@ -375,7 +528,7 @@ public final class CircuitRun {
                 // would be correct but would REORDER the steps (level order is not plan order), and the
                 // "# --- step N ---" headers are a machine boundary the paper harnesses parse.
                 for (int j = 0; j < steps.size(); j++) {
-                    runStep(con, steps.get(j), j, circuit, workspace, logQueries);
+                    runStep(con, steps.get(j), j, circuit, workspace, logQueries, -1);
                 }
                 return;
             }
@@ -393,7 +546,8 @@ public final class CircuitRun {
                 for (int j = 0; j < steps.size(); j++) if (level[j] == current) group.add(j);
                 if (group.isEmpty()) continue;
                 if (group.size() == 1) {
-                    runStep(con, steps.get(group.get(0)), group.get(0), circuit, workspace, false);
+                    runStep(con, steps.get(group.get(0)), group.get(0), circuit, workspace,
+                            false, current);
                 } else {
                     if (pool == null) {
                         // Sized from the WIDEST level in the whole plan, not from this one: sizing it
@@ -401,21 +555,30 @@ public final class CircuitRun {
                         pool = Executors.newFixedThreadPool(Math.min(parallelism, widestLevel(level)));
                     }
                     runLevelConcurrently(repo, steps, group, circuit, workspace, logQueries, pool,
-                            parallelism);
+                            parallelism, current);
                 }
             }
         } finally {
             // shutdown(), not shutdownNow(): every level awaits its futures, so by here the workers are
             // idle and interrupting them only produces spurious "interrupted" noise from the store.
             if (pool != null) pool.shutdown();
+            long cleanupStarted = System.nanoTime();
+            int cleanupTriples = workspace.size();
+            boolean cleanupOk = true;
             if (!workspace.isEmpty()) {
                 try {
                     removeBatched(con, workspace);
                 } catch (RuntimeException cleanupFailure) {
+                    cleanupOk = false;
                     System.err.println("# WARNING: could not remove the private factored workspace ("
                             + workspace.size() + " triples): " + cleanupFailure.getMessage());
                 }
             }
+            stage("workspace_cleanup",
+                    "duration_ms", milliseconds(elapsedNanos(cleanupStarted)),
+                    "triples", cleanupTriples,
+                    "batches", batches(cleanupTriples),
+                    "success", cleanupOk);
         }
     }
 
@@ -464,26 +627,121 @@ public final class CircuitRun {
         return widest;
     }
 
+    private static final class StepEvaluation {
+        final Model gates;
+        final Model messages;
+        final int emittedTriples;
+        final long queryNanos;
+        final long splitNanos;
+
+        StepEvaluation(Model gates, Model messages, int emittedTriples,
+                       long queryNanos, long splitNanos) {
+            this.gates = gates;
+            this.messages = messages;
+            this.emittedTriples = emittedTriples;
+            this.queryNanos = queryNanos;
+            this.splitNanos = splitNanos;
+        }
+    }
+
+    private static final class StepOutcome {
+        final CircuitConstructionPlan.Step step;
+        final int index;
+        final StepEvaluation evaluation;
+        final long workspaceRegisterNanos;
+        final long feedbackNanos;
+        final long executionNanos;
+
+        StepOutcome(CircuitConstructionPlan.Step step, int index,
+                    StepEvaluation evaluation, long workspaceRegisterNanos,
+                    long feedbackNanos, long executionNanos) {
+            this.step = step;
+            this.index = index;
+            this.evaluation = evaluation;
+            this.workspaceRegisterNanos = workspaceRegisterNanos;
+            this.feedbackNanos = feedbackNanos;
+            this.executionNanos = executionNanos;
+        }
+    }
+
+    private static StepOutcome executePlainStep(RepositoryConnection con,
+                                                CircuitConstructionPlan.Step step,
+                                                int index, Model workspace) {
+        long stepStarted = System.nanoTime();
+        StepEvaluation evaluation = evaluate(con, step);
+        long workspaceRegisterNanos = 0;
+        long feedbackNanos = 0;
+        if (!evaluation.messages.isEmpty()) {
+            // Register before the remote write so cleanup remains possible after an uncertain write.
+            long registerStarted = System.nanoTime();
+            synchronized (workspace) { workspace.addAll(evaluation.messages); }
+            workspaceRegisterNanos = elapsedNanos(registerStarted);
+            long feedbackStarted = System.nanoTime();
+            addBatched(con, evaluation.messages);
+            feedbackNanos = elapsedNanos(feedbackStarted);
+        }
+        return new StepOutcome(step, index, evaluation, workspaceRegisterNanos,
+                feedbackNanos, elapsedNanos(stepStarted));
+    }
+
+    private static void mergeAndRecordStep(StepOutcome outcome, Model circuit,
+                                           Model workspace, boolean parallel,
+                                           int scheduleLevel) {
+        long mergeStarted = System.nanoTime();
+        circuit.addAll(outcome.evaluation.gates);
+        long mergeNanos = elapsedNanos(mergeStarted);
+        stage("construct_step",
+                "step_index", outcome.index + 1,
+                "label", outcome.step.label(),
+                "parallel", parallel,
+                "schedule_level", scheduleLevel,
+                "feedback_declared", outcome.step.feedback(),
+                "dependencies_declared", outcome.step.dependenciesDeclared(),
+                "read_relation_count", outcome.step.reads().size(),
+                "write_relation_count", outcome.step.writes().size(),
+                "query_ms", milliseconds(outcome.evaluation.queryNanos),
+                "split_ms", milliseconds(outcome.evaluation.splitNanos),
+                "workspace_register_ms", milliseconds(outcome.workspaceRegisterNanos),
+                "feedback_ms", milliseconds(outcome.feedbackNanos),
+                "merge_ms", milliseconds(mergeNanos),
+                "step_wall_ms", milliseconds(outcome.executionNanos + mergeNanos),
+                "emitted_triples", outcome.evaluation.emittedTriples,
+                "gate_triples", outcome.evaluation.gates.size(),
+                "message_triples", outcome.evaluation.messages.size(),
+                "feedback_batches", batches(outcome.evaluation.messages.size()),
+                "circuit_triples_after", circuit.size(),
+                "workspace_triples_after", workspace.size());
+    }
+
     /** One step, on the given connection: log it, run it, split its output, feed back its rows. */
     private static void runStep(RepositoryConnection con, CircuitConstructionPlan.Step step, int index,
-                                Model circuit, Model workspace, boolean logQueries) {
+                                Model circuit, Model workspace, boolean logQueries,
+                                int scheduleLevel) {
         if (logQueries) logStep(step, index);
         if (step.path() != null) {
             // A closure atom: not one CONSTRUCT but a data-dependent fixpoint. Its gates go to the
             // circuit; its urn:sc: rows are workspace, fed back so the enclosing operators can read
             // them and removed with the rest of the workspace afterwards.
+            int circuitBefore = circuit.size();
+            int workspaceBefore = workspace.size();
+            long stepStarted = System.nanoTime();
             buildPathCircuit(con, step.path(), circuit, workspace);
+            stage("closure_step",
+                    "step_index", index + 1,
+                    "label", step.label(),
+                    "schedule_level", scheduleLevel,
+                    "dependencies_declared", step.dependenciesDeclared(),
+                    "read_relation_count", step.reads().size(),
+                    "write_relation_count", step.writes().size(),
+                    "step_wall_ms", milliseconds(elapsedNanos(stepStarted)),
+                    "circuit_triples_added", circuit.size() - circuitBefore,
+                    "workspace_triples_added", workspace.size() - workspaceBefore,
+                    "circuit_triples_after", circuit.size(),
+                    "workspace_triples_after", workspace.size());
             return;
         }
-        Model messages = new LinkedHashModel();
-        circuit.addAll(evaluate(con, step, messages));
-        if (!messages.isEmpty()) {
-            // Register the intended cleanup set *before* the remote write.  A server may commit an ADD
-            // and then drop the response; recording afterwards would leak that session's rows when
-            // con.add() reports the transport failure.
-            workspace.addAll(messages);
-            addBatched(con, messages);   // batch the UPDATE: a single huge INSERT broken-pipes on GraphDB
-        }
+        mergeAndRecordStep(executePlainStep(con, step, index, workspace),
+                circuit, workspace, false, scheduleLevel);
     }
 
     /**
@@ -495,13 +753,17 @@ public final class CircuitRun {
      * assumption is enforced here rather than trusted; the sequential path used to discard such rows
      * silently, which would have been a wrong circuit with no diagnostic.
      */
-    private static Model evaluate(RepositoryConnection con, CircuitConstructionPlan.Step step,
-                                  Model messages) {
+    private static StepEvaluation evaluate(RepositoryConnection con,
+                                           CircuitConstructionPlan.Step step) {
+        long queryStarted = System.nanoTime();
         Model emitted;
         try (GraphQueryResult result = con.prepareGraphQuery(step.query()).evaluate()) {
             emitted = QueryResults.asModel(result);
         }
+        long queryNanos = elapsedNanos(queryStarted);
+        long splitStarted = System.nanoTime();
         Model gates = new LinkedHashModel();
+        Model messages = new LinkedHashModel();
         Map<Value, Value> cache = new HashMap<>();
         for (Statement statement : emitted) {
             if (statement.getPredicate().stringValue().startsWith(FactoredBgpRewriter.META_NS)) {
@@ -515,7 +777,8 @@ public final class CircuitRun {
                 + " private " + FactoredBgpRewriter.META_NS + " rows but declares no feedback, so they "
                 + "would be dropped and any step reading that relation would see an incomplete one");
         }
-        return gates;
+        return new StepEvaluation(gates, messages, emitted.size(), queryNanos,
+                elapsedNanos(splitStarted));
     }
 
     /**
@@ -611,33 +874,28 @@ public final class CircuitRun {
                                              List<CircuitConstructionPlan.Step> steps,
                                              List<Integer> group, Model circuit, Model workspace,
                                              boolean logQueries, ExecutorService pool,
-                                             int parallelism) {
+                                             int parallelism, int scheduleLevel) {
         if (logQueries) {
             StringBuilder which = new StringBuilder();
             for (int j : group) which.append(which.length() == 0 ? "" : ", ").append(j + 1);
             System.err.println("# ---- steps " + which + " are independent; running up to "
                     + Math.min(parallelism, group.size()) + " concurrently ----");
         }
-        List<Future<Model>> pending = new ArrayList<>(group.size());
+        List<Future<StepOutcome>> pending = new ArrayList<>(group.size());
         for (int j : group) {
+            int stepIndex = j;
             CircuitConstructionPlan.Step step = steps.get(j);
             pending.add(pool.submit(() -> {
                 // A connection per task: RepositoryConnection is not thread-safe, and opening it here
                 // means it sees everything the preceding level committed.
                 try (RepositoryConnection own = repo.getConnection()) {
-                    Model messages = new LinkedHashModel();
-                    Model gates = evaluate(own, step, messages);
-                    if (!messages.isEmpty()) {
-                        synchronized (workspace) { workspace.addAll(messages); }
-                        addBatched(own, messages);
-                    }
-                    return gates;
+                    return executePlainStep(own, step, stepIndex, workspace);
                 }
             }));
         }
         RuntimeException failure = null;
-        List<Model> results = new ArrayList<>(pending.size());
-        for (Future<Model> future : pending) {
+        List<StepOutcome> results = new ArrayList<>(pending.size());
+        for (Future<StepOutcome> future : pending) {
             try {
                 results.add(future.get());
             } catch (InterruptedException interrupted) {
@@ -657,7 +915,9 @@ public final class CircuitRun {
             }
         }
         if (failure != null) throw failure;
-        for (Model result : results) circuit.addAll(result);
+        for (StepOutcome result : results) {
+            mergeAndRecordStep(result, circuit, workspace, true, scheduleLevel);
+        }
     }
 
     /** Batch size for feedback INSERT/DELETE: a single SPARQL UPDATE carrying a whole factored message
@@ -696,7 +956,7 @@ public final class CircuitRun {
     static void buildPathCircuit(RepositoryConnection con, CircuitRewriter.PathQuery pathq,
                                  Model circuit, Model workspace) {
         if (pathq.sourceValuesQuery() == null) {
-            buildFromOneSource(con, pathq, circuit, workspace);
+            buildFromOneSource(con, pathq, circuit, workspace, 1);
             return;
         }
         // §3's bound-source condition: a preceding operand binds the atom's source, so read I_C's
@@ -704,6 +964,7 @@ public final class CircuitRun {
         // run is then single-source and confined to its own reachable subgraph -- which is what
         // Thm. 4.11's O(n(n+|E_s|)) bounds -- and the all-pairs base is never built.
         java.util.List<String> sources = new java.util.ArrayList<>();
+        long sourceValuesStarted = System.nanoTime();
         try (TupleQueryResult r = con.prepareTupleQuery(pathq.sourceValuesQuery()).evaluate()) {
             while (r.hasNext()) {
                 org.eclipse.rdf4j.model.Value value = r.next().getValue(pathq.sourceValuesBinding());
@@ -712,16 +973,21 @@ public final class CircuitRun {
                 }
             }
         }
+        stage("path_source_values",
+                "duration_ms", milliseconds(elapsedNanos(sourceValuesStarted)),
+                "source_count", sources.size());
         System.err.println("# ---- bound-source closure atom: |I_C| = " + sources.size() + " source(s) ----");
-        for (String source : sources) {
+        for (int sourceIndex = 0; sourceIndex < sources.size(); sourceIndex++) {
+            String source = sources.get(sourceIndex);
             pathq.pinSource(source);
-            buildFromOneSource(con, pathq, circuit, workspace);
+            buildFromOneSource(con, pathq, circuit, workspace, sourceIndex + 1);
         }
     }
 
     /** One source: discover its reachable subgraph, run the level-indexed fixpoint, then finish. */
     private static void buildFromOneSource(RepositoryConnection con, CircuitRewriter.PathQuery pathq,
-                                           Model circuit, Model workspace) {
+                                           Model circuit, Model workspace, int sourceIndex) {
+        long sourceStarted = System.nanoTime();
         // property paths: CLIENT-DRIVEN ITERATIVE fixpoint with an EXACT reachable-set round bound. A
         // simple path in the reachable subgraph has <= |V_s|-1 edges, so |V_s|-1 rounds capture every
         // simple path -> exact provenance -- while |V_s| << the global node count keeps it feasible.
@@ -734,7 +1000,10 @@ public final class CircuitRun {
             java.util.Set<Value> frontier = new java.util.LinkedHashSet<>();
             Value source = SimpleValueFactory.getInstance().createIRI(pathq.sourceValue());
             reach.add(source); frontier.add(source);
+            int bfsRound = 0;
             while (!frontier.isEmpty()) {
+                int frontierSize = frontier.size();
+                long bfsStarted = System.nanoTime();
                 java.util.Set<Value> next = new java.util.LinkedHashSet<>();
                 try (TupleQueryResult r = con.prepareTupleQuery(pathq.frontierStepQuery(frontier)).evaluate()) {
                     while (r.hasNext()) {
@@ -743,23 +1012,42 @@ public final class CircuitRun {
                     }
                 }
                 frontier = next;
+                stage("path_bfs_round",
+                        "source_index", sourceIndex,
+                        "round", bfsRound++,
+                        "duration_ms", milliseconds(elapsedNanos(bfsStarted)),
+                        "frontier_nodes", frontierSize,
+                        "new_nodes", next.size(),
+                        "reachable_nodes", reach.size());
             }
             pathq.setReachable(reach);
             cap = Math.max(1, reach.size() - 1);       // |V_s|-1 bounds every simple path in the reachable subgraph
             System.err.println("# ---- G1 reachable-subgraph BFS: |V_s| = " + reach.size() + " ----");
         } else {
             int nGlobal;                               // variable source (all-pairs): fall back to the global bound
+            long nodeCountStarted = System.nanoTime();
             try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
                 nGlobal = ((Literal) r.next().getValue(pathq.nodeCountBinding())).intValue();
             }
+            stage("path_node_count",
+                    "source_index", sourceIndex,
+                    "duration_ms", milliseconds(elapsedNanos(nodeCountStarted)),
+                    "nodes", nGlobal);
             cap = Math.max(1, nGlobal - 1);
         }
         java.util.Set<String> reachNodes = new java.util.HashSet<>();
-        for (String c : pathq.init()) runFeed(con, circuit, workspace, reachNodes, c);
+        int constructIndex = 0;
+        for (String c : pathq.init()) {
+            runFeed(con, circuit, workspace, reachNodes, c, sourceIndex,
+                    ++constructIndex, "init", 0);
+        }
         int k = 0, lastLevel = 0;
         while (k < cap) {
             int produced = 0;
-            for (String c : pathq.step(k)) produced += runFeed(con, circuit, workspace, reachNodes, c);
+            for (String c : pathq.step(k)) {
+                produced += runFeed(con, circuit, workspace, reachNodes, c, sourceIndex,
+                        ++constructIndex, "round", k + 1);
+            }
             // Fixpoint reached: reach^{k+1} is empty, so reach^{k+2} = reach^{k+1} ∘ base is too, and
             // every later level with it. lastLevel deliberately stays on the last NON-empty level.
             // Only ever fires under exact levels -- the cumulative form's carry republishes reach^k at
@@ -772,23 +1060,40 @@ public final class CircuitRun {
             lastLevel = ++k;
             if (k >= reachNodes.size() - 1) break;     // exact reachable-set bound |V_s|-1
         }
-        for (String c : pathq.finish(lastLevel)) runFeed(con, circuit, workspace, reachNodes, c);
+        for (String c : pathq.finish(lastLevel)) {
+            runFeed(con, circuit, workspace, reachNodes, c, sourceIndex,
+                    ++constructIndex, "finish", lastLevel);
+        }
         System.err.println("# ---- property-path plan: reachable-nodes=" + reachNodes.size()
             + ", rounds=" + lastLevel + " (cap=" + cap + "), path fp=" + pathq.fingerprint() + " ----");
         System.err.println("# reach/base gates are fingerprinted (urn:g:r: + c:rpath) so distinct path "
             + "queries on a shared writable endpoint never compose with each other's persisted gates.");
+        stage("path_source_complete",
+                "source_index", sourceIndex,
+                "duration_ms", milliseconds(elapsedNanos(sourceStarted)),
+                "constructs", constructIndex,
+                "reachable_nodes", reachNodes.size(),
+                "rounds", lastLevel,
+                "round_cap", cap);
     }
 
     /** Run one path-round CONSTRUCT, add its triples to the accumulated circuit AND back into the
      *  store (feedback for the next round), and record any reach-gate endpoints (c:rfrom/c:rto) so the
      *  caller can bound the loop by the live reachable-set size |V_s|. */
     private static int runFeed(RepositoryConnection con, Model circuit, Model workspace,
-                               java.util.Set<String> reachNodes, String construct) {
+                               java.util.Set<String> reachNodes, String construct,
+                               int sourceIndex, int constructIndex, String phase, int round) {
+        long stepStarted = System.nanoTime();
         System.err.println("# --- path CONSTRUCT ---\n" + construct);   // emit the plan (stderr)
         Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+        long queryStarted = System.nanoTime();
         try (GraphQueryResult res = con.prepareGraphQuery(construct).evaluate()) {
             m.addAll(QueryResults.asModel(res));
         }
+        long queryNanos = elapsedNanos(queryStarted);
+        int circuitBefore = circuit.size();
+        int workspaceBefore = workspace == null ? 0 : workspace.size();
+        long splitStarted = System.nanoTime();
         Map<Value, Value> cache = new HashMap<>();
         for (Statement st : m) {
             if (workspace != null
@@ -798,9 +1103,13 @@ public final class CircuitRun {
                 addCanonical(circuit, st, cache);          // one term implementation, so it dedups
             }
         }
+        long splitNanos = elapsedNanos(splitStarted);
+        long feedbackStarted = System.nanoTime();
         addBatched(con, m);
+        long feedbackNanos = elapsedNanos(feedbackStarted);
         // reachable-subgraph nodes = endpoints of the reach LEVEL gates (rlvl 0,1,2,...); the base
         // relation (rlvl "base") is all-pairs over the WHOLE graph, so exclude it from the bound.
+        long reachScanStarted = System.nanoTime();
         java.util.Set<String> baseGates = new java.util.HashSet<>();
         for (Statement st : m)
             if (st.getPredicate().stringValue().equals("urn:circuit:rlvl")
@@ -812,6 +1121,24 @@ public final class CircuitRun {
                     && !baseGates.contains(st.getSubject().stringValue()))
                 reachNodes.add(st.getObject().stringValue());
         }
+        long reachScanNanos = elapsedNanos(reachScanStarted);
+        stage("path_construct",
+                "source_index", sourceIndex,
+                "construct_index", constructIndex,
+                "phase", phase,
+                "round", round,
+                "query_ms", milliseconds(queryNanos),
+                "split_ms", milliseconds(splitNanos),
+                "feedback_ms", milliseconds(feedbackNanos),
+                "reach_scan_ms", milliseconds(reachScanNanos),
+                "step_wall_ms", milliseconds(elapsedNanos(stepStarted)),
+                "emitted_triples", m.size(),
+                "feedback_batches", batches(m.size()),
+                "circuit_triples_added", circuit.size() - circuitBefore,
+                "workspace_triples_added", workspace == null
+                        ? 0 : workspace.size() - workspaceBefore,
+                "circuit_triples_after", circuit.size(),
+                "reachable_nodes_after", reachNodes.size());
         return m.size();
     }
 }

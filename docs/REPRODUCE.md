@@ -70,13 +70,18 @@ All commands run from `reference/`.
 
 ```bash
 cd reference
-# a) reify a WatDiv N-Triples file into statement form
-python3 watdiv/reify.py /path/to/base.nt watdiv/base.reified.nt
-# b) start GraphDB on localhost:7200, create a repo "watdiv", load watdiv/base.reified.nt
+# a) retain the asserted triples and add Standard token records
+python3 watdiv/reify.py /path/to/base.nt watdiv/base.mixed.nt
+# b) start GraphDB on localhost:7200, create a repo "watdiv", load watdiv/base.mixed.nt
 #    (see watdiv/repo.ttl for the repository config)
 # c) run the star / path / snowflake shapes through the full pipeline
 python3 watdiv_run.py                  # -> build_ms, wmc_ms, sizes per shape
 ```
+
+The ordinary `Standard` and `SPARQL_Star` engine scheme names expect this mixed
+layout and inline each asserted triple pattern with its token lookup. Use
+`reify.py --pure` together with `Standard_Pure` or `SPARQL_Star_Pure` only when
+reproducing a historical token-only run.
 
 See `watdiv/RESULTS.md` for the expected numbers and their interpretation.
 

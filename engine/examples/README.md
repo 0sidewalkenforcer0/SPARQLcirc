@@ -18,14 +18,16 @@ To make UNION / MINUS / OPTIONAL return non-trivial answers, two more
 individuals are added: **Bob** likes pasta (u4) but has no known country, and
 **Carol** lives in Italy (u5) but has no known food.
 
-The data is provided in both reification encodings NPCS supports:
+The data is provided in the current mixed layout under both token encodings:
 
 | File | Encoding | Statement → token link |
 |---|---|---|
-| `data/example.standard.ttl` | RDF standard reification | `uK rdf:subject/predicate/object …` |
-| `data/example.star.ttls`    | SPARQL-star / RDF-star   | `<< s p o >> <http://example.org/occurrenceOf> uK` |
+| `data/example.standard.ttl` | asserted triples + RDF standard reification | `s p o` and `uK rdf:subject/predicate/object …` |
+| `data/example.star.ttls`    | asserted triples + SPARQL-star / RDF-star | `s p o` and `<< s p o >> <http://example.org/occurrenceOf> uK` |
 
 The `uK` statement nodes are the provenance tokens (`?fprov` binds to them).
+Use the `_Pure` Java scheme aliases only with older fixtures that omit the
+asserted triples.
 
 ## Queries
 

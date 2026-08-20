@@ -197,6 +197,7 @@ def _write_data(workdir, tokens, filename):
     lines = ["@prefix d: <urn:d:> .",
              "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ."]
     for name, (s, p, o) in tokens.items():
+        lines.append(f"d:{s} d:{p} d:{o} .")
         lines.append(f"d:{name} rdf:subject d:{s} ; rdf:predicate d:{p} ; rdf:object d:{o} .")
     (workdir / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
 

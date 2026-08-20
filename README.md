@@ -61,8 +61,8 @@ flowchart LR
 - **The circuit is a property of the rewriting, not of one engine.** GraphDB, Oxigraph, QLever and
   MillenniumDB — Java, Rust and two C++ codebases — emit the **byte-identical** content-addressed
   circuit, at both 10M and 100M.
-- **It runs at knowledge-graph scale on stock software.** A circuit over reified WatDiv 100M
-  (327M triples), and a property path over a **2.13-billion-triple** Wikidata graph with a 161 MB
+- **It runs at knowledge-graph scale on stock software.** A circuit over the historical
+  token-only Standard WatDiv 100M store (327M reification triples), and a property path over a **2.13-billion-triple** Wikidata graph with a 161 MB
   client footprint, because the client only ever sees the reachable subgraph.
 - **Against the closest baseline, the same probabilities without forking the database.** Exact parity
   with ProvSQL (a modified PostgreSQL) on TPC-H. The shared circuit's size and compile advantage over
@@ -212,16 +212,22 @@ only against itself.
 The whole point of the approach is that the *engine* builds the circuit. To exercise that path, point
 the CLI at a live endpoint instead of the bundled in-memory RDF4J store.
 
-### 1. Start the Store and Load Reified Data
+### 1. Start the Store and Load Mixed Reification Data
 
-Start GraphDB (or any SPARQL 1.1 endpoint) and create a repository, then load a **reified** dataset:
+Start GraphDB (or any SPARQL 1.1 endpoint), create a repository, and load the
+default **mixed** dataset. It contains both the asserted triples and their token
+records:
 
 ```bash
 cd reference
-python3 watdiv/reify.py /path/to/base.nt watdiv/base.reified.nt
+python3 watdiv/reify.py /path/to/base.nt watdiv/base.mixed.nt
 # create a repo named "watdiv" (see watdiv/repo.ttl for the repository config),
-# then load watdiv/base.reified.nt into it
+# then load watdiv/base.mixed.nt into it
 ```
+
+Use `--star` for RDF-star occurrence records. The historical token-only layout
+is still available with `--pure`, but it must be paired with a `_Pure` Java
+scheme name or `reference/reify_query.py --pure`.
 
 **Endpoint URLs (GraphDB defaults):**
 | Endpoint | URL |
@@ -348,15 +354,17 @@ cd engine
 
 | Command | Description |
 |---------|-------------|
-| `circuit <Standard\|SPARQL_Star> <data.ttl> <query.rq> [endpoint]` | **Main contribution.** Make the engine materialize the shared RDF event circuit. Defaults to `--construction=factored` |
+| `circuit <Standard\|SPARQL_Star> <data.ttl> <query.rq> [endpoint]` | **Main contribution.** Make the engine materialize the shared RDF event circuit. The ordinary scheme names use mixed data and inline asserted patterns. Defaults to `--construction=factored` |
 | `circuit --construction=factored ...` | Production default: deterministic min-scope variable-elimination plan, run as several standard SPARQL 1.1 `CONSTRUCT` passes. Needs a writable endpoint |
 | `circuit --construction=flat ...` | Ablation and read-only-endpoint route: one product per full derivation |
 | `rewrite <Standard\|SPARQL_Star> query "<sparql text>"` | NPCS-compatible provenance-**string** baseline (clean-room reimplementation) |
 | `rewrite <Standard\|SPARQL_Star> path <query.sparql>` | Same baseline, reading the query from a file |
 | `<Standard\|SPARQL_Star> query\|path <arg>` | Historical three-argument baseline form, still accepted |
 
-`Standard` uses RDF reification; `SPARQL_Star` uses quoted triples. See
-[docs/REIFICATION.md](docs/REIFICATION.md) for the trade-off.
+`Standard` uses an asserted triple plus RDF reification; `SPARQL_Star` uses an
+asserted triple plus a quoted-triple occurrence record. `Standard_Pure` and
+`SPARQL_Star_Pure` explicitly select the historical token-only query shape.
+See [docs/REIFICATION.md](docs/REIFICATION.md) for the layouts and trade-offs.
 
 ### `pqe.py` Options
 
@@ -450,19 +458,23 @@ Boolean WMC, where repeated event operands are idempotent, and is documented in
 
 ### Input: Reified Probabilistic ABox
 
-Each base triple is reified so that its statement IRI can carry a probability. That statement IRI is
-the provenance **token** and becomes a leaf of the circuit:
+Each base triple remains asserted and is also linked to a statement IRI that can
+carry a probability. That statement IRI is the provenance **token** and becomes
+a leaf of the circuit:
 
 ```turtle
 @prefix d:   <urn:d:> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 
+d:Aspirin  d:iw d:Warfarin .
+d:Warfarin d:iw d:Metformin .
 d:p1 rdf:subject d:Aspirin  ; rdf:predicate d:iw ; rdf:object d:Warfarin  .
 d:p2 rdf:subject d:Warfarin ; rdf:predicate d:iw ; rdf:object d:Metformin .
 ```
 
-`reference/watdiv/reify.py` converts a plain N-Triples file into this form. With
-`--star` the same information is carried by quoted triples instead.
+`reference/watdiv/reify.py` converts a plain N-Triples file into this mixed form.
+With `--star`, the token lookup uses quoted triples instead. `--pure` is only
+for reproducing experiments that used the earlier reification-only layout.
 
 ### Probability Assignment
 
@@ -540,8 +552,9 @@ The implementation status and run protocol for the planned WatDiv 10M B/R/N/C
 and NPCS post-processing/PQE evaluation are documented in
 **[docs/WATDIV_10M_BRNC_PQE_EXPERIMENT.md](docs/WATDIV_10M_BRNC_PQE_EXPERIMENT.md)**.
 The page covers the workload freezer, NPCS post-processing, the single-cell
-runner (`reference/paper/watdiv10m_runner.py`), and remaining preflight work;
-it does not contain benchmark results.
+runner (`reference/paper/watdiv10m_runner.py`), structured per-step C metrics,
+immutable offline-stage recovery, and remaining preflight work; it does not
+contain benchmark results.
 
 ### 1. No External Services
 
@@ -564,7 +577,7 @@ path is:
 
 ```bash
 cd reference
-python3 watdiv/reify.py /path/to/base.nt watdiv/base.reified.nt   # reify a WatDiv N-Triples file
+python3 watdiv/reify.py /path/to/base.nt watdiv/base.mixed.nt   # asserted triples plus token records
 # start GraphDB on localhost:7200, create a repo "watdiv" (watdiv/repo.ttl), load the reified file
 python3 watdiv_run.py                    # star / path / snowflake shapes, end to end
 ```
@@ -589,7 +602,7 @@ offline. Everything at scale is obtained and prepared by the reader:
 
 | Dataset | Where it comes from | Prepare it with | More |
 |---|---|---|---|
-| **WatDiv** | the [WatDiv generator](http://dsg.uwaterloo.ca/watdiv/) | `python3 reference/watdiv/reify.py base.nt base.reified.nt` — Standard reification; `--star` and `--namedgraph` produce the other two schemes | [reference/watdiv/EXPERIMENTS.md](reference/watdiv/EXPERIMENTS.md) |
+| **WatDiv** | the [WatDiv generator](http://dsg.uwaterloo.ca/watdiv/) | `python3 reference/watdiv/reify.py base.nt base.mixed.nt` — asserted triples plus Standard token records; `--star` and `--namedgraph` select other token encodings, while `--pure` reproduces the old token-only files | [reference/watdiv/EXPERIMENTS.md](reference/watdiv/EXPERIMENTS.md) |
 | **TPC-H** | the official [`dbgen`](https://www.tpc.org/tpch/), at SPARQLprov's scale factors `10^(i/4-2)` | `python3 reference/tpch/tbl_to_rdf.py <tbl-dir> tpch.nt` — direct mapping, deliberately left **unreified**: provenance is per *row* through the engine's `naryrel` scheme, matching ProvSQL's per-tuple granularity | [reference/tpch/README.md](reference/tpch/README.md), [provsql/README.md](provsql/README.md) |
 | **Wikidata** | a [truthy dump](https://dumps.wikimedia.org/wikidatawiki/entities/), or the [WDBench](https://github.com/MillenniumDB/WDBench) graph to match NPCS | `python3 reference/wikidata/reify_wikidata.py truthy.nt wd.statements.nt` — native statement form, queried by the engine's `Wikidata` scheme | [reference/wikidata/README.md](reference/wikidata/README.md) |
 

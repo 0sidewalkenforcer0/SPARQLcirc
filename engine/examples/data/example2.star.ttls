@@ -1,5 +1,9 @@
 @prefix ex:  <http://example.org/paper#> .
 @prefix occ: <http://example.org/> .
+ex:A ex:p ex:B, ex:D, ex:F ; ex:r ex:E .
+ex:B ex:q ex:C .
+ex:D ex:q ex:C .
+
 << ex:A ex:p ex:B >> occ:occurrenceOf ex:t1 .
 << ex:A ex:p ex:B >> occ:occurrenceOf ex:t2 .
 << ex:B ex:q ex:C >> occ:occurrenceOf ex:t3 .

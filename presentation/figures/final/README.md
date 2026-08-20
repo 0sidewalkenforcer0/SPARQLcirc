@@ -27,7 +27,7 @@ Regenerate: `cd presentation && python3 make_matrix_figures.py && python3 make_r
 ## Real construction matrix (GraphDB) — the flagship
 
 `result_r9_2_construction_graphdb` is **real data**: the flat B/R/N/C construction-time matrix
-built by `reference/paper/paper_construction_matrix.py` (`PCM_FORCE_FLAT=1`, warmup + 5 runs,
+stored in the committed `reference/paper/construction_matrix_*.csv` inputs (warmup + 5 runs,
 **300 s** cap). Coverage **10M 114/120, 100M 110/120** (C column 27/30, 24/30). The ~10 ▼ are
 genuinely too-large even at 300 s — chiefly C3 (4.24M answers at 100M). `result_r9_3_storage_graphdb`
 and `result_r9_2c_data_scale_graphdb` derive from the same matrix. QLever and Oxigraph have real

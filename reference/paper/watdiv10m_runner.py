@@ -2,7 +2,7 @@
 """Run one measured WatDiv B/R/N/C cell and preserve its raw artifacts.
 
 A cell is one ``query x engine x method`` combination.  The default protocol is
-one warm-up followed by five measured executions.  Every endpoint execution is
+one warm-up followed by one measured execution.  Every endpoint execution is
 placed in its own process group and receives an independent hard deadline.
 Offline response processing and PQE have a separate deadline.
 
@@ -43,11 +43,14 @@ SCHEMA = "watdiv-brnc-cell-v1"
 RUN_SCHEMA = "watdiv-brnc-run-v1"
 ENDPOINT_SCHEMA = "watdiv-brnc-endpoint-v1"
 OFFLINE_SCHEMA = "watdiv-brnc-offline-v1"
+C_STAGE_SCHEMA = "sparqlcirc-c-stage-v1"
+C_STAGE_PREFIX = "# sc-stage "
+OFFLINE_RESUME_SCHEMA = "watdiv-brnc-offline-resume-v1"
 METHODS = ("B", "R", "N", "C-flat", "C-factored", "C-path")
 JSON_RESULTS = "application/sparql-results+json"
 NT_RESULTS = "application/n-triples"
-DEFAULT_ENDPOINT_TIMEOUT_S = 1200.0
-DEFAULT_OFFLINE_TIMEOUT_S = 1200.0
+DEFAULT_ENDPOINT_TIMEOUT_S = 600.0
+DEFAULT_OFFLINE_TIMEOUT_S = 600.0
 DEFAULT_TOKEN_REGEX = r"^urn:t:[0-9]+$"
 CHUNK_BYTES = 64 * 1024
 _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -434,6 +437,98 @@ def _stream_query_response(
     }
 
 
+def _parse_c_stage_records(text: str, method: str, plan_steps: int,
+                           path_construct_requests: int) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if not line.startswith(C_STAGE_PREFIX):
+            continue
+        try:
+            record = json.loads(line[len(C_STAGE_PREFIX):])
+        except json.JSONDecodeError as exc:
+            raise StageError(
+                "c-protocol-error",
+                "invalid structured C timing record on stderr line %d: %s"
+                % (line_number, exc),
+            ) from exc
+        if not isinstance(record, dict):
+            raise StageError(
+                "c-protocol-error",
+                "structured C timing record on stderr line %d is not an object"
+                % line_number,
+            )
+        if record.get("schema") != C_STAGE_SCHEMA:
+            raise StageError(
+                "c-protocol-error",
+                "unexpected structured C timing schema on stderr line %d" % line_number,
+            )
+        if not isinstance(record.get("event"), str) or not record["event"]:
+            raise StageError(
+                "c-protocol-error",
+                "structured C timing record on stderr line %d has no event" % line_number,
+            )
+        for key, value in record.items():
+            if key == "duration_ms" or key.endswith("_ms"):
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or float(value) < 0
+                ):
+                    raise StageError(
+                        "c-protocol-error",
+                        "structured C timing field %s on stderr line %d is not a "
+                        "non-negative finite number" % (key, line_number),
+                    )
+        _assert_no_digest_fields(record)
+        records.append(record)
+
+    counts = Counter(str(record["event"]) for record in records)
+    common = (
+        "query_read",
+        "plan_generation",
+        "repository_init",
+        "data_ready",
+        "normalization",
+        "construction_complete",
+        "serialization",
+        "named_graph_persist",
+        "endpoint_cleanup",
+        "run_complete",
+    )
+    bad_common = [event for event in common if counts[event] != 1]
+    if bad_common:
+        raise StageError(
+            "c-protocol-error",
+            "structured C timing has non-unique required event(s): %s"
+            % ", ".join(bad_common),
+        )
+    if method == "C-path":
+        if counts["path_construct"] != path_construct_requests:
+            raise StageError(
+                "c-protocol-error",
+                "structured path step count %d does not match %d logged CONSTRUCT requests"
+                % (counts["path_construct"], path_construct_requests),
+            )
+        if counts["path_source_complete"] < 1:
+            raise StageError(
+                "c-protocol-error", "structured path timing has no completed source"
+            )
+    else:
+        if counts["workspace_cleanup"] != 1:
+            raise StageError(
+                "c-protocol-error",
+                "structured non-path timing has no unique workspace cleanup event",
+            )
+        if counts["construct_step"] + counts["closure_step"] != plan_steps:
+            raise StageError(
+                "c-protocol-error",
+                "structured top-level step count %d does not match the %d-step plan"
+                % (counts["construct_step"] + counts["closure_step"], plan_steps),
+            )
+    return records
+
+
 def _parse_c_stderr(text: str, method: str) -> Dict[str, Any]:
     construction = re.findall(r"(?m)^# construction_ms:\s*([0-9]+(?:\.[0-9]+)?)\s*$", text)
     if len(construction) != 1:
@@ -464,15 +559,17 @@ def _parse_c_stderr(text: str, method: str) -> Dict[str, Any]:
                 "strict C mode was not honored: requested=%s effective=%s fallback=%s"
                 % (requested, effective, fallback[0] if fallback else None),
             )
+    plan_steps = len(re.findall(r"(?m)^# --- step [0-9]+ ---\s*$", text))
+    path_construct_requests = len(
+        re.findall(r"(?m)^# --- path CONSTRUCT ---\s*$", text)
+    )
     result: Dict[str, Any] = {
         "requested_mode": requested,
         "effective_mode": effective,
         "fallback_reason": fallback[0] if fallback else None,
         "construction_ms": _round_ms(float(construction[0])),
-        "plan_steps": len(re.findall(r"(?m)^# --- step [0-9]+ ---\s*$", text)),
-        "path_construct_requests": len(
-            re.findall(r"(?m)^# --- path CONSTRUCT ---\s*$", text)
-        ),
+        "plan_steps": plan_steps,
+        "path_construct_requests": path_construct_requests,
     }
     if encoding:
         before, after, collapsed, omitted = encoding[-1]
@@ -493,6 +590,21 @@ def _parse_c_stderr(text: str, method: str) -> Dict[str, Any]:
             "rounds": int(rounds),
             "round_cap": int(cap),
         }
+    records = _parse_c_stage_records(
+        text, method, plan_steps, path_construct_requests
+    )
+    counts = Counter(str(record["event"]) for record in records)
+    result["structured_timing"] = {
+        "schema": C_STAGE_SCHEMA,
+        "artifact": "c-stages.jsonl",
+        "record_count": len(records),
+        "event_counts": dict(sorted(counts.items())),
+        "complete": True,
+        "aggregation_note": (
+            "parallel step durations may overlap and must not be summed as wall time"
+        ),
+    }
+    result["_structured_timing_records"] = records
     return result
 
 
@@ -518,6 +630,7 @@ def _run_c(config: Mapping[str, Any], run_dir: Path, deadline: float) -> Dict[st
     environment["CIRCUIT_SKIP_LOAD"] = "1"
     environment["CIRCUIT_CLEANUP"] = "1"
     environment["CIRCUIT_PARALLELISM"] = str(config["c_parallelism"])
+    environment["CIRCUIT_STRUCTURED_TIMING"] = "1"
     if config.get("update_endpoint"):
         environment["CIRCUIT_UPDATE_ENDPOINT"] = str(config["update_endpoint"])
     if config.get("c_read_only"):
@@ -563,6 +676,8 @@ def _run_c(config: Mapping[str, Any], run_dir: Path, deadline: float) -> Dict[st
     persisted_at = time.perf_counter()
     stderr_text = stderr_target.read_text(encoding="utf-8", errors="replace")
     protocol = _parse_c_stderr(stderr_text, method)
+    stage_records = protocol.pop("_structured_timing_records")
+    _atomic_json_lines(run_dir / "c-stages.jsonl", stage_records)
     endpoint_e2e_ms = (persisted_at - started) * 1000.0
     protocol["process_ms"] = _round_ms(process_ms)
     protocol["endpoint_e2e_ms"] = _round_ms(endpoint_e2e_ms)
@@ -1017,29 +1132,32 @@ def _persist_npcs_answer_records(pp: Path) -> Dict[str, Any]:
     }
 
 
-def _run_offline(config: Mapping[str, Any], run_dir: Path, run_id: str) -> Dict[str, Any]:
+def _run_offline(config: Mapping[str, Any], source_run_dir: Path, run_id: str,
+                 artifact_run_dir: Optional[Path] = None) -> Dict[str, Any]:
+    if artifact_run_dir is None:
+        artifact_run_dir = source_run_dir
     method = str(config["method"])
     timeout_s = float(config["offline_timeout_s"])
-    stdout_path = run_dir / "offline.stdout"
-    stderr_path = run_dir / "offline.stderr"
+    stdout_path = artifact_run_dir / "offline.stdout"
+    stderr_path = artifact_run_dir / "offline.stderr"
     if method in ("B", "R"):
-        output = run_dir / "offline"
+        output = artifact_run_dir / "offline"
         command = [
             sys.executable,
             str(Path(__file__).resolve()),
             "_offline",
             "response",
             "--input",
-            str(run_dir / "raw-response.json"),
+            str(source_run_dir / "raw-response.json"),
             "--out",
             str(output),
         ]
     elif method == "N":
-        output = run_dir / "pp"
+        output = artifact_run_dir / "pp"
         command = [
             sys.executable,
             str(REFERENCE / "npcs_postprocess.py"),
-            str(run_dir / "raw-response.json"),
+            str(source_run_dir / "raw-response.json"),
             "--out",
             str(output),
             "--query-id",
@@ -1058,14 +1176,14 @@ def _run_offline(config: Mapping[str, Any], run_dir: Path, run_id: str) -> Dict[
         elif config.get("uniform_probability") is not None:
             command.extend(("--uniform-probability", str(config["uniform_probability"])))
     else:
-        output = run_dir / "offline"
+        output = artifact_run_dir / "offline"
         command = [
             sys.executable,
             str(Path(__file__).resolve()),
             "_offline",
             "circuit",
             "--input",
-            str(run_dir / "circuit.nt"),
+            str(source_run_dir / "circuit.nt"),
             "--out",
             str(output),
             "--backend",
@@ -1324,7 +1442,13 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
             _assert_no_digest_fields(record)
             _atomic_json(run_dir / "run.json", record)
             runs.append(record)
-            if record["status"] != "ok":
+            # A failed endpoint execution can leave a writable C workspace in an
+            # uncertain state, and a correctness mismatch invalidates the cell.
+            # Offline work reads immutable response/circuit files, so its failure
+            # must not discard the remaining independent endpoint measurements.
+            if endpoint.get("status") != "ok" or record["status"] in (
+                "answer-mismatch", "circuit-mismatch"
+            ):
                 stop = True
         if stop:
             break
@@ -1353,7 +1477,10 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
             "measured_runs": config["runs"],
             "endpoint_timeout_s_per_execution": config["endpoint_timeout_s"],
             "offline_timeout_s_per_execution": config["offline_timeout_s"],
-            "failure_policy": "stop the cell after the first failed execution",
+            "failure_policy": (
+                "stop after an endpoint failure or correctness mismatch; continue "
+                "endpoint executions after an offline failure"
+            ),
             "artifact_policy": "new immutable directory per execution",
         },
         "runs": runs,
@@ -1368,6 +1495,279 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
     }
     _assert_no_digest_fields(result)
     _atomic_json(output / "cell.json", result)
+    return result
+
+
+def _expected_run_ids(config: Mapping[str, Any]) -> List[str]:
+    return [
+        "%s-%02d" % (phase, index)
+        for phase, count in (
+            ("warmup", int(config["warmups"])),
+            ("measured", int(config["runs"])),
+        )
+        for index in range(1, count + 1)
+    ]
+
+
+def _offline_input_path(method: str, source_run_dir: Path) -> Path:
+    return (
+        source_run_dir / "circuit.nt"
+        if method.startswith("C-")
+        else source_run_dir / "raw-response.json"
+    )
+
+
+def _usable_offline_result(method: str, result: Any,
+                           artifact_run_dir: Path) -> bool:
+    output = artifact_run_dir / ("pp" if method == "N" else "offline")
+    return (
+        isinstance(result, Mapping)
+        and result.get("schema") == OFFLINE_SCHEMA
+        and result.get("status") == "ok"
+        and (output / "metrics.json").is_file()
+        and _answer_records_path(method, artifact_run_dir).is_file()
+    )
+
+
+def _effective_offline_result(cell: Path, method: str, run_id: str,
+                              source_record: Mapping[str, Any]
+                              ) -> Optional[Tuple[Dict[str, Any], Path, str]]:
+    source_run_dir = cell / run_id
+    original = source_record.get("offline")
+    if _usable_offline_result(method, original, source_run_dir):
+        return dict(original), source_run_dir, "original"
+    for attempt in sorted(cell.glob("offline-resume-[0-9][0-9][0-9]")):
+        artifact_run_dir = attempt / run_id
+        result_path = artifact_run_dir / "offline-result.json"
+        if not result_path.is_file():
+            continue
+        try:
+            candidate = _read_json(result_path)
+        except (OSError, ValueError):
+            continue
+        if _usable_offline_result(method, candidate, artifact_run_dir):
+            return dict(candidate), artifact_run_dir, attempt.name
+    return None
+
+
+def _relative_artifact(cell: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(cell))
+    except ValueError:
+        return str(path)
+
+
+def _evaluate_resumed_cell(cell: Path, config: Mapping[str, Any],
+                           source_cell: Mapping[str, Any]) -> Dict[str, Any]:
+    method = str(config["method"])
+    source_runs = {
+        str(item.get("run_id")): item
+        for item in source_cell.get("runs", [])
+        if isinstance(item, Mapping) and item.get("run_id") is not None
+    }
+    effective_runs: List[Dict[str, Any]] = []
+    endpoints_complete = True
+    offline_complete = True
+    for run_id in _expected_run_ids(config):
+        source_record = source_runs.get(run_id)
+        endpoint = source_record.get("endpoint") if source_record else None
+        endpoint_ok = isinstance(endpoint, Mapping) and endpoint.get("status") == "ok"
+        endpoints_complete = endpoints_complete and endpoint_ok
+        effective = (
+            _effective_offline_result(cell, method, run_id, source_record)
+            if endpoint_ok and source_record is not None
+            else None
+        )
+        offline_complete = offline_complete and effective is not None
+        item: Dict[str, Any] = {
+            "run_id": run_id,
+            "phase": "warmup" if run_id.startswith("warmup-") else "measured",
+            "endpoint_status": endpoint.get("status") if isinstance(endpoint, Mapping) else "missing",
+            "offline_status": "missing",
+            "offline_source": None,
+            "offline_artifact_run": None,
+            "component_method_e2e_ms": None,
+        }
+        if effective is not None:
+            offline, artifact_run_dir, origin = effective
+            item.update({
+                "offline_status": offline.get("status"),
+                "offline_source": origin,
+                "offline_artifact_run": _relative_artifact(cell, artifact_run_dir),
+                "component_method_e2e_ms": _component_method_e2e(endpoint, offline),
+            })
+        effective_runs.append(item)
+
+    answer_parity: Optional[bool] = None
+    circuit_parity: Optional[bool] = None
+    if endpoints_complete and offline_complete:
+        measured = [item for item in effective_runs if item["phase"] == "measured"]
+        answer_paths = [
+            _answer_records_path(
+                method, cell / str(item["offline_artifact_run"])
+            )
+            for item in measured
+        ]
+        answer_parity = all(
+            _same_file_content(answer_paths[0], path) for path in answer_paths[1:]
+        )
+        if method.startswith("C-"):
+            circuit_paths = [cell / str(item["run_id"]) / "circuit.nt" for item in measured]
+            circuit_parity = all(
+                path.is_file() and _same_file_content(circuit_paths[0], path)
+                for path in circuit_paths[1:]
+            ) and circuit_paths[0].is_file()
+
+    if not endpoints_complete or not offline_complete:
+        status = "incomplete"
+    elif answer_parity is False:
+        status = "answer-mismatch"
+    elif circuit_parity is False:
+        status = "circuit-mismatch"
+    else:
+        status = "ok"
+    measured_complete = [
+        item for item in effective_runs
+        if item["phase"] == "measured" and item["offline_status"] == "ok"
+    ]
+    endpoint_values = []
+    method_values = []
+    for item in measured_complete:
+        source_record = source_runs[item["run_id"]]
+        endpoint_values.append(
+            float(source_record["endpoint"]["endpoint"]["endpoint_e2e_ms"])
+        )
+        if item["component_method_e2e_ms"] is not None:
+            method_values.append(float(item["component_method_e2e_ms"]))
+    return {
+        "status": status,
+        "endpoint_runs_complete": endpoints_complete,
+        "offline_runs_complete": offline_complete,
+        "answer_records_equal_across_measured_runs": answer_parity,
+        "circuits_equal_across_measured_runs": circuit_parity,
+        "runs": effective_runs,
+        "summary": {
+            "measured_successes": len(measured_complete),
+            "endpoint_e2e_ms": _summary(endpoint_values),
+            "component_method_e2e_ms": _summary(method_values),
+            "primary_statistic": "median of the configured measured executions",
+            "warmups_excluded": True,
+        },
+    }
+
+
+def _new_offline_resume_directory(cell: Path) -> Path:
+    for index in range(1, 1000):
+        candidate = cell / ("offline-resume-%03d" % index)
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            continue
+    raise RunnerError("cell has exhausted offline-resume-001 through -999")
+
+
+def _resume_offline_cell(cell: Path) -> Dict[str, Any]:
+    cell = cell.resolve()
+    config_path = cell / "cell-config.json"
+    source_cell_path = cell / "cell.json"
+    if not config_path.is_file() or not source_cell_path.is_file():
+        raise RunnerError("resume requires cell-config.json and cell.json in %s" % cell)
+    config = _read_json(config_path)
+    source_cell = _read_json(source_cell_path)
+    if config.get("schema") != SCHEMA or source_cell.get("schema") != SCHEMA:
+        raise RunnerError("unsupported cell schema in %s" % cell)
+    method = str(config.get("method"))
+    if method not in METHODS:
+        raise RunnerError("unknown method in saved cell: %s" % method)
+    source_runs = {
+        str(item.get("run_id")): item
+        for item in source_cell.get("runs", [])
+        if isinstance(item, Mapping) and item.get("run_id") is not None
+    }
+    pending: List[Tuple[str, Mapping[str, Any]]] = []
+    for run_id in _expected_run_ids(config):
+        source_record = source_runs.get(run_id)
+        endpoint = source_record.get("endpoint") if source_record else None
+        if not isinstance(endpoint, Mapping) or endpoint.get("status") != "ok":
+            continue
+        if _effective_offline_result(cell, method, run_id, source_record) is None:
+            pending.append((run_id, source_record))
+
+    attempt: Optional[Path] = None
+    attempted_run_ids: List[str] = []
+    if pending:
+        attempt = _new_offline_resume_directory(cell)
+        for run_id, _source_record in pending:
+            attempted_run_ids.append(run_id)
+            source_run_dir = cell / run_id
+            artifact_run_dir = attempt / run_id
+            artifact_run_dir.mkdir()
+            input_path = _offline_input_path(method, source_run_dir)
+            if not input_path.is_file():
+                offline: Dict[str, Any] = {
+                    "schema": OFFLINE_SCHEMA,
+                    "status": "offline-error",
+                    "offline_timeout_s": config["offline_timeout_s"],
+                    "detail": "saved endpoint artifact is missing: %s" % input_path,
+                }
+            else:
+                try:
+                    offline = _run_offline(
+                        config, source_run_dir, run_id, artifact_run_dir
+                    )
+                except (OSError, RunnerError, ValueError) as exc:
+                    offline = {
+                        "schema": OFFLINE_SCHEMA,
+                        "status": "offline-error",
+                        "offline_timeout_s": config["offline_timeout_s"],
+                        "detail": "%s: %s" % (type(exc).__name__, exc),
+                    }
+            _atomic_json(artifact_run_dir / "offline-result.json", offline)
+
+    evaluated = _evaluate_resumed_cell(cell, config, source_cell)
+    has_complete_manifest = False
+    for prior in sorted(cell.glob("offline-resume-[0-9][0-9][0-9]")):
+        manifest = prior / "resume.json"
+        if not manifest.is_file():
+            continue
+        try:
+            prior_result = _read_json(manifest)
+        except (OSError, ValueError):
+            continue
+        if (
+            prior_result.get("schema") == OFFLINE_RESUME_SCHEMA
+            and prior_result.get("status") == "ok"
+        ):
+            has_complete_manifest = True
+            break
+    # A process may have finished the final per-run offline artifact and died
+    # before writing resume.json.  Consolidate that already-complete state into
+    # a new immutable manifest so a deployment wrapper can recognize it later.
+    if (
+        attempt is None
+        and evaluated["status"] == "ok"
+        and source_cell.get("status") != "ok"
+        and not has_complete_manifest
+    ):
+        attempt = _new_offline_resume_directory(cell)
+    result: Dict[str, Any] = {
+        "schema": OFFLINE_RESUME_SCHEMA,
+        "status": evaluated["status"],
+        "source_cell": str(cell),
+        "attempt": attempt.name if attempt is not None else None,
+        "attempted_run_ids": attempted_run_ids,
+        "scope": (
+            "offline stages only; saved endpoint responses and circuits are reused, "
+            "and no endpoint query or CONSTRUCT is resumed"
+        ),
+        **evaluated,
+    }
+    if attempt is not None:
+        result["manifest"] = str(attempt / "resume.json")
+    _assert_no_digest_fields(result)
+    if attempt is not None:
+        _atomic_json(attempt / "resume.json", result)
     return result
 
 
@@ -1393,7 +1793,7 @@ def _run_parser() -> argparse.ArgumentParser:
     parser.add_argument("--java", default="java")
     parser.add_argument("--reified-data", type=Path)
     parser.add_argument("--warmups", type=_nonnegative_integer, default=1)
-    parser.add_argument("--runs", type=_positive_integer, default=5)
+    parser.add_argument("--runs", type=_positive_integer, default=1)
     parser.add_argument(
         "--endpoint-timeout",
         type=_positive_seconds,
@@ -1418,6 +1818,15 @@ def _run_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip CircuitRun's store probe only after the loaded data is independently known to be ground",
     )
+    return parser
+
+
+def _resume_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Resume failed or missing offline/PQE stages from immutable cell artifacts."
+    )
+    parser.add_argument("resume_offline", choices=("resume-offline",))
+    parser.add_argument("--cell", required=True, type=Path)
     return parser
 
 
@@ -1475,6 +1884,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.internal_command == "_endpoint":
             return _endpoint_worker_main(args.config, args.run_dir)
         return _offline_worker_main(args)
+    if arguments and arguments[0] == "resume-offline":
+        parser = _resume_parser()
+        args = parser.parse_args(arguments)
+        try:
+            result = _resume_offline_cell(args.cell)
+        except (OSError, RunnerError, ValueError) as exc:
+            parser.exit(1, "watdiv10m_runner: error: %s\n" % exc)
+        print(json.dumps({
+            "status": result["status"],
+            "cell": result["source_cell"],
+            "attempt": result["attempt"],
+            "manifest": result.get("manifest"),
+        }, ensure_ascii=False, sort_keys=True))
+        return 0 if result["status"] == "ok" else 1
     parser = _run_parser()
     args = parser.parse_args(arguments)
     try:

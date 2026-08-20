@@ -86,10 +86,14 @@ deduplicates shared gates automatically.
 Each base triple is given an identity (**token**) via a reification scheme so a triple pattern can
 bind the matching statement's id to a fresh variable `?fprovN`:
 
-- **Standard** (default): `t rdf:subject s ; rdf:predicate p ; rdf:object o .` — the token `t` is
-  the statement node. Cost: **3×** triple blow-up.
-- **SPARQL-star**: `<< s p o >> :occurrenceOf t .` — compact alternative on RDF-star-native engines.
+- **Standard** (default): `s p o . t rdf:subject s ; rdf:predicate p ; rdf:object o .` — the token `t` is
+  the statement node. The mixed layout has four physical statements per fact.
+- **SPARQL-star**: `s p o . << s p o >> :occurrenceOf t .` — two physical statements per fact on RDF-star-native engines.
   (`:occurrenceOf` is a placeholder predicate; it must match the data's convention.)
+
+The asserted pattern and token lookup are emitted together at the leaf's
+original algebra position. `Standard_Pure` and `SPARQL_Star_Pure` preserve the
+earlier token-only layout for historical reproduction, but are not defaults.
 
 A token is the unit of uncertainty: one independent Boolean variable with probability `p(t)`.
 
@@ -485,8 +489,9 @@ probability-independent (correctness/size), so random weights suffice; E6/E7 use
 
 ## 13. Limitations and honest caveats (put these in the paper's scope/threats)
 
-1. **Reification blow-up** — Standard reification triples the data (100M → ~300M); report it, and
-   note SPARQL-star as the compact alternative on RDF-star engines.
+1. **Reification blow-up** — the historical token-only Standard layout triples
+   the data; the current mixed default retains the original data and therefore
+   uses four statements per fact. Report the selected layout explicitly.
 2. **Serialization vs structure** — the circuit's N-Triples bytes are inflated by 64-hex SHA256 gate
    IRIs (7–15× vs a string CSV on shallow queries). This is a *serialization* artifact (removable by
    relabeling gates with short local ids after construction), **not** the structural compactness

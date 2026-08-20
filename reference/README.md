@@ -59,6 +59,10 @@ cd ../reference && python3 pqe.py --circuit /tmp/drug.circuit.nt \
      --probabilities data/drug.probabilities.json
 ```
 
+The bundled drug file uses the current mixed layout: it contains the asserted
+edges and their Standard token records. `Standard_Pure` is reserved for older
+token-only fixtures.
+
 Reproduces Fig. 2 (p1, p3 shared across gates) and both answer probabilities match PWE.
 
 ## Engine-native non-monotone (MINUS / OPTIONAL) — done ✅

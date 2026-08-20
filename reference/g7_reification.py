@@ -1,7 +1,7 @@
-"""G7 — Standard vs SPARQL-star reification size (bytes + triples/fact), on real data.
+"""Historical G7 token-only Standard vs SPARQL-star size comparison.
 
-Standard: 1 fact `s p o` -> 3 triples (t rdf:subject s ; rdf:predicate p ; rdf:object o).
-SPARQL-star: 1 fact -> 1 quoted triple `<< s p o >> occ:occurrenceOf t`.
+These are the pre-mixed, token-only layouts retained as `*_Pure`; current
+defaults retain the asserted triple and add one physical statement per fact.
 Circuit-equivalence (the emitted RDF CIRCUIT is byte-identical under both schemes) is verified separately
 by `verify_g7_circuit_equiv.py`, which runs the full CircuitRun pipeline (not the NpcsRewriter string) and
 canonical-diffs the circuits. See RESULTS.md.

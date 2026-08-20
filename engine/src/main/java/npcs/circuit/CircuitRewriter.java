@@ -617,7 +617,7 @@ public class CircuitRewriter {
      * — the terms-in-graph reading. Both endpoints bind to {@code u}; a constant endpoint filters it.
      */
     private String zeroLengthPlan(ZeroLengthPath zlp, List<String> W) {
-        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+        if (!scheme.isStandard() && !scheme.isSparqlStar())
             throw new UnsupportedOperationException(
                     "Zero-length paths (:p?) support Standard and SPARQL_Star reification only.");
         Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
@@ -657,7 +657,7 @@ public class CircuitRewriter {
     /** Match one token witnessing that the zero-length endpoint occurs in the graph. */
     private String zeroLengthWhere(ZeroLengthPath zlp, String u, String tok) {
         StringBuilder where = new StringBuilder();
-        if (scheme == Reification.STANDARD) {
+        if (scheme.isStandard()) {
             where.append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
                  .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u)
                  .append(" . }\n");
@@ -1971,7 +1971,7 @@ public class CircuitRewriter {
         if (found[0] == null) return null;                       // not a path query (let plan() handle it)
         rejectSequenceModifiers(te);                             // same fail-fast as plan(): LIMIT/OFFSET/ORDER BY
                                                                  // (a Slice can wrap the Projection above the path)
-        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+        if (!scheme.isStandard() && !scheme.isSparqlStar())
             throw new UnsupportedOperationException(
                     "Property paths support Standard and SPARQL_Star reification only.");
         if (!(outerProjection(te).getArg() instanceof ArbitraryLengthPath)) {
@@ -1999,7 +1999,7 @@ public class CircuitRewriter {
      *     answer roots, which is the aliasing θ exists to prevent.
      */
     private PathQuery pathPlan(ArbitraryLengthPath alp, List<String> W, boolean wholePattern) {
-        if (scheme != Reification.STANDARD && scheme != Reification.SPARQL_STAR)
+        if (!scheme.isStandard() && !scheme.isSparqlStar())
             throw new UnsupportedOperationException(
                     "Property paths support Standard and SPARQL_Star reification only.");
         Var s = alp.getSubjectVar(), o = alp.getObjectVar();
@@ -2232,7 +2232,7 @@ public class CircuitRewriter {
                  + activeNodePattern(t, n, "n") + "}\n";
         }
         private String activeNodePattern(String token, String node, String suffix) {
-            if (scheme == Reification.STANDARD) {
+            if (scheme.isStandard()) {
                 return "  { " + token + " <" + RDF_S + "> " + node + " . } UNION { "
                      + token + " <" + RDF_O + "> " + node + " . }\n";
             }

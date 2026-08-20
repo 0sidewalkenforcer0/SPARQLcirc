@@ -109,7 +109,7 @@ GeneratorRunner = Callable[[Sequence[str], Path], Tuple[bytes, bytes]]
 
 
 def split_generated_queries(text: str, expected: int) -> List[str]:
-    """Split the plain sequence emitted by WatDiv 0.6's ``-q`` command."""
+    """Split and preserve the plain sequence emitted by WatDiv 0.6 ``-q``."""
     matches = list(SELECT_START.finditer(text))
     if not matches:
         raise WorkloadError("WatDiv output contains no top-level SELECT query")
@@ -126,8 +126,6 @@ def split_generated_queries(text: str, expected: int) -> List[str]:
         raise WorkloadError(
             "WatDiv emitted %d queries; expected exactly %d" % (len(queries), expected)
         )
-    if len(set(queries)) != len(queries):
-        raise WorkloadError("WatDiv emitted duplicate concrete queries for one template")
     return queries
 
 
@@ -293,6 +291,13 @@ def audit_workload(batch: Path) -> Dict[str, Any]:
     generator = metadata.get("generator")
     if not isinstance(generator, dict) or generator.get("version") != "0.6":
         raise WorkloadError("workload metadata does not freeze WatDiv 0.6")
+    if (
+        generator.get("query_count_per_non_path_template") != 10
+        or generator.get("recurrence_factor") != 1
+        or generator.get("duplicate_policy")
+        != "preserve-emitted-instances-in-order"
+    ):
+        raise WorkloadError("workload metadata does not describe the generation protocol")
     if not isinstance(metadata.get("dataset_id"), str) or not metadata["dataset_id"]:
         raise WorkloadError("workload metadata has no dataset identifier")
     if len(rows) != EXPECTED_TOTAL:
@@ -311,7 +316,15 @@ def audit_workload(batch: Path) -> Dict[str, Any]:
     ids = [row["query_id"] for row in rows]
     if len(set(ids)) != len(ids) or set(ids) != expected_ids:
         raise WorkloadError("query IDs are duplicated, missing, or unexpected")
-    query_texts: Dict[str, str] = {}
+    generated_by_template: Dict[str, List[str]] = {}
+    for template in NON_PATH_TEMPLATES:
+        transcript = batch / "generation" / (template + ".generated.rq")
+        if not transcript.is_file():
+            raise WorkloadError("generation transcript is missing: %s" % transcript)
+        generated_by_template[template] = split_generated_queries(
+            transcript.read_text(encoding="utf-8"), 10
+        )
+    query_text_counts: Dict[str, int] = {}
     counts: Dict[str, int] = {}
     source_file = batch / "inputs" / "path-sources.tsv"
     sources = read_path_sources(source_file)
@@ -358,12 +371,7 @@ def audit_workload(batch: Path) -> Dict[str, Any]:
             raise WorkloadError("query is not a SELECT query: %s" % row["query_id"])
         if "%v" in text or "__SOURCE_IRI__" in text:
             raise WorkloadError("query still contains an uninstantiated placeholder: %s" % row["query_id"])
-        previous = query_texts.get(text)
-        if previous is not None:
-            raise WorkloadError(
-                "concrete query text is duplicated by %s and %s" % (previous, row["query_id"])
-            )
-        query_texts[text] = row["query_id"]
+        query_text_counts[text] = query_text_counts.get(text, 0) + 1
         counts[row["template"]] = counts.get(row["template"], 0) + 1
         if row["query_id"] != row["template"] + "-" + row["instance"]:
             raise WorkloadError("query ID does not match template and instance columns")
@@ -416,6 +424,11 @@ def audit_workload(batch: Path) -> Dict[str, Any]:
                 or row["recurrence_factor"] != "1"
             ):
                 raise WorkloadError("non-path query has inconsistent generator columns")
+            expected_query = generated_by_template[row["template"]][int(row["instance"])]
+            if text != expected_query:
+                raise WorkloadError(
+                    "query differs from its frozen WatDiv emission: %s" % row["query_id"]
+                )
         elif row["source_iri"]:
             raise WorkloadError("non-bound-path query unexpectedly records a source IRI")
     expected_counts = {template: 10 for template in NON_PATH_TEMPLATES + BOUND_PATH_TEMPLATES}
@@ -432,6 +445,8 @@ def audit_workload(batch: Path) -> Dict[str, Any]:
         "non_path_query_count": EXPECTED_NON_PATH,
         "path_query_count": EXPECTED_PATH,
         "template_count": len(counts),
+        "distinct_query_texts": len(query_text_counts),
+        "repeated_query_instances": len(rows) - len(query_text_counts),
     }
 
 
@@ -590,6 +605,7 @@ def freeze_workload(
             "version": generator_version,
             "query_count_per_non_path_template": 10,
             "recurrence_factor": 1,
+            "duplicate_policy": "preserve-emitted-instances-in-order",
             "seed": NO_EXPOSED_SEED,
             "executable_or_wrapper": str(watdiv),
         },

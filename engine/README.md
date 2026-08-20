@@ -38,6 +38,12 @@ java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> query "<sparql text>"
 java -jar target/npcs-rewrite.jar <Standard|SPARQL_Star> path  path/to/query.sparql
 ```
 
+`Standard` and `SPARQL_Star` are the normal mixed layouts: every rewritten leaf
+matches the asserted triple and its token record in the same algebra scope.
+`Standard_Pure` and `SPARQL_Star_Pure` retain the earlier token-only rewrite for
+reproducing old runs. Data produced by `reference/watdiv/reify.py` is mixed by
+default; its `--pure` option must be used with a `_Pure` scheme name.
+
 ### Circuit construction modes
 
 `circuit` defaults to the production `factored` mode. For a pure BGP it runs a
@@ -67,6 +73,7 @@ Conceptual NPCS output (generated variables are shortened here for readability):
 ```
 SELECT ?v0 ?v1 (CONCAT("⊕(", GROUP_CONCAT(?fjoin0), ")") AS ?finalprovennacevariable)
 WHERE {
+    ?v0 <http://purl.org/goodrelations/includes> ?v1 .
     ?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject>   ?v0 .
     ?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://purl.org/goodrelations/includes> .
     ?fprov0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object>    ?v1 .
@@ -90,8 +97,12 @@ the provenance is **not** computed in Java, the endpoint evaluates it:
 Each triple pattern `s p o` is bound to a fresh statement id `?fprovN` via the
 selected **reification scheme** (leaf `Reify`):
 
-- **Standard** — `?fprovN rdf:subject s ; rdf:predicate p ; rdf:object o .`
-- **SPARQL_Star** — `<< s p o >> <http://example.org/occurrenceOf> ?fprovN .`
+- **Standard** — `s p o . ?fprovN rdf:subject s ; rdf:predicate p ; rdf:object o .`
+- **SPARQL_Star** — `s p o . << s p o >> <http://example.org/occurrenceOf> ?fprovN .`
+
+The asserted pattern is emitted by the leaf rewriter itself, so a pattern under
+`OPTIONAL`, `UNION`, or `MINUS` remains inside that operator. It is not appended
+to the outer query after rewriting.
 
 For a basic graph pattern this yields the optimized single-`GROUP BY` form of
 Definition 4.6: one `BIND(ProvProd(?fprov0,…,?fprovn) AS ?fjoin0)` and an outer
@@ -100,7 +111,8 @@ variables.
 
 ## Consistency with the original NPCS
 
-`verify/diff_harness.py` runs both this JAR and the original
+`verify/diff_harness.py` runs this JAR in explicit `_Pure` compatibility mode
+and the original
 `ReifySparqlByte.jar` over the WatDiv query set and compares the rewritten
 queries **up to semantic equivalence** — i.e. after (a) renaming provenance
 gensyms (`?fprovN`, `?fjoinN`, …) by order of first appearance and (b) sorting

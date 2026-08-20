@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 
 HERE = Path(__file__).resolve().parent
@@ -142,7 +143,7 @@ def _forbidden_result_key(value):
 
 
 class RunnerUnitTest(unittest.TestCase):
-    def test_cli_defaults_to_sparql_star(self):
+    def test_cli_defaults_match_formal_protocol(self):
         args = runner._run_parser().parse_args([
             "--query", "query.rq",
             "--query-id", "L1-00",
@@ -152,6 +153,10 @@ class RunnerUnitTest(unittest.TestCase):
             "--out", "cell",
         ])
         self.assertEqual("SPARQL_Star", args.scheme)
+        self.assertEqual(1, args.warmups)
+        self.assertEqual(1, args.runs)
+        self.assertEqual(600.0, args.endpoint_timeout)
+        self.assertEqual(600.0, args.offline_timeout)
 
     def test_term_aware_response_records_keep_bag_multiplicity(self):
         records, metrics = runner._canonical_response_records(RESULT)
@@ -171,6 +176,16 @@ class RunnerUnitTest(unittest.TestCase):
 """
         with self.assertRaises(runner.StageError):
             runner._parse_c_stderr(text, "C-factored")
+
+    def test_c_protocol_requires_structured_stage_records(self):
+        text = """# ---- construction mode: requested=flat, effective=flat ----
+# ---- circuit construction plan: 1 CONSTRUCT(s) ----
+# --- step 1 ---
+# ---- circuit encoding: native_ids=128bit, direct_bindings=true, inferred_types=true; final_triples=4 -> 3, collapsed_unary_plus=1, omitted_types=0 ----
+# construction_ms: 12
+"""
+        with self.assertRaises(runner.StageError):
+            runner._parse_c_stderr(text, "C-flat")
 
     def test_digest_fields_are_rejected(self):
         with self.assertRaises(runner.RunnerError):
@@ -213,6 +228,102 @@ class RunnerCellSmokeTest(unittest.TestCase):
             self.assertTrue(measured["answer_records_equal_first_measured"])
             self.assertEqual(2, measured["offline"]["metrics"]["distinct_binding_count"])
 
+    def test_offline_failure_keeps_endpoint_runs_and_resumes_without_requerying(self):
+        with tempfile.TemporaryDirectory() as temporary, _Endpoint() as endpoint:
+            root = Path(temporary)
+            query = root / "query.rq"
+            query.write_text("SELECT ?x WHERE { ?x <urn:p> <urn:o> }\n", encoding="utf-8")
+            config = _config(query, endpoint.url)
+            config.update({"warmups": 0, "runs": 2})
+            failed = {
+                "schema": runner.OFFLINE_SCHEMA,
+                "status": "offline-timeout",
+                "offline_timeout_s": config["offline_timeout_s"],
+                "detail": "injected test failure",
+            }
+            with mock.patch.object(runner, "_run_offline", return_value=failed):
+                initial = runner._run_cell(config, root / "cell")
+            self.assertEqual("incomplete", initial["status"])
+            self.assertEqual(2, len(initial["runs"]))
+            self.assertEqual(2, endpoint.requests)
+
+            resumed = runner._resume_offline_cell(root / "cell")
+            self.assertEqual("ok", resumed["status"])
+            self.assertEqual("offline-resume-001", resumed["attempt"])
+            self.assertTrue(resumed["answer_records_equal_across_measured_runs"])
+            self.assertEqual(2, endpoint.requests)
+            for run_id in ("measured-01", "measured-02"):
+                resumed_run = root / "cell" / "offline-resume-001" / run_id
+                self.assertTrue((resumed_run / "offline-result.json").is_file())
+                self.assertTrue((resumed_run / "offline" / "answer-records.jsonl").is_file())
+                original = runner._read_json(root / "cell" / run_id / "run.json")
+                self.assertEqual("offline-timeout", original["offline"]["status"])
+
+            already_complete = runner._resume_offline_cell(root / "cell")
+            self.assertEqual("ok", already_complete["status"])
+            self.assertIsNone(already_complete["attempt"])
+            self.assertFalse((root / "cell" / "offline-resume-002").exists())
+
+    def test_circuit_offline_resume_reuses_the_saved_circuit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cell = Path(temporary) / "cell"
+            run_dir = cell / "measured-01"
+            run_dir.mkdir(parents=True)
+            (run_dir / "circuit.nt").write_text(
+                """<urn:g:t> <urn:circuit:in> <urn:t:1> .
+<urn:g:t> <urn:circuit:feeds> <urn:g:a> .
+<urn:g:a> <urn:circuit:answerRoot> "vars:78" .
+<urn:g:a> <urn:circuit:bind:78> <urn:value:a> .
+""",
+                encoding="utf-8",
+            )
+            config = {
+                "schema": runner.SCHEMA,
+                "method": "C-flat",
+                "query_id": "resume-circuit",
+                "engine": "saved-artifact-test",
+                "warmups": 0,
+                "runs": 1,
+                "offline_timeout_s": 5.0,
+                "pqe_backend": "oracle",
+                "probabilities": None,
+                "uniform_probability": 0.5,
+            }
+            failed = {
+                "schema": runner.OFFLINE_SCHEMA,
+                "status": "offline-timeout",
+                "offline_timeout_s": 5.0,
+                "detail": "injected",
+            }
+            source_run = {
+                "schema": runner.RUN_SCHEMA,
+                "run_id": "measured-01",
+                "phase": "measured",
+                "index": 1,
+                "status": "offline-timeout",
+                "endpoint": {
+                    "schema": runner.ENDPOINT_SCHEMA,
+                    "status": "ok",
+                    "endpoint": {"endpoint_e2e_ms": 7.0},
+                },
+                "offline": failed,
+            }
+            runner._atomic_json(cell / "cell-config.json", config)
+            runner._atomic_json(cell / "cell.json", {
+                "schema": runner.SCHEMA,
+                "status": "incomplete",
+                "runs": [source_run],
+            })
+
+            resumed = runner._resume_offline_cell(cell)
+            self.assertEqual("ok", resumed["status"])
+            self.assertTrue(resumed["circuits_equal_across_measured_runs"])
+            artifact = cell / "offline-resume-001" / "measured-01"
+            self.assertTrue((artifact / "offline" / "metrics.json").is_file())
+            self.assertTrue((artifact / "offline" / "answer-records.jsonl").is_file())
+            persisted = runner._read_json(cell / "offline-resume-001" / "resume.json")
+            self.assertEqual(str(cell / "offline-resume-001" / "resume.json"), persisted["manifest"])
+
     def test_hard_timeout_stops_the_cell_before_measured_runs(self):
         with tempfile.TemporaryDirectory() as temporary, _Endpoint(delay_s=1.0) as endpoint:
             root = Path(temporary)
@@ -245,6 +356,7 @@ class RunnerCellSmokeTest(unittest.TestCase):
             fake_java = root / "fake-java"
             fake_java.write_text(
                 """#!/usr/bin/env python3
+import json
 import sys
 if "SPARQL_Star" not in sys.argv:
     raise SystemExit(9)
@@ -261,6 +373,15 @@ sys.stderr.write('''# ---- construction mode: requested=flat, effective=flat ---
 # construction_ms: 3
 # circuit triples: 4
 ''')
+events = [
+    "query_read", "plan_generation", "repository_init", "data_ready",
+    "construct_step", "workspace_cleanup", "normalization",
+    "construction_complete", "serialization", "named_graph_persist",
+    "endpoint_cleanup", "run_complete",
+]
+for event in events:
+    record = {"schema": "sparqlcirc-c-stage-v1", "event": event, "duration_ms": 0.1}
+    sys.stderr.write("# sc-stage " + json.dumps(record, separators=(",", ":")) + "\\n")
 """,
                 encoding="utf-8",
             )
@@ -286,6 +407,11 @@ sys.stderr.write('''# ---- construction mode: requested=flat, effective=flat ---
                 key: structure[key] for key in ("nodes", "edges", "total")
             })
             self.assertEqual("flat", second["endpoint"]["endpoint"]["effective_mode"])
+            timing = second["endpoint"]["endpoint"]["structured_timing"]
+            self.assertTrue(timing["complete"])
+            self.assertEqual(1, timing["event_counts"]["construct_step"])
+            stage_file = root / "cell" / "measured-02" / "c-stages.jsonl"
+            self.assertEqual(12, len(stage_file.read_text(encoding="utf-8").splitlines()))
             self.assertEqual(
                 "oracle", second["offline"]["metrics"]["compiler"]["backend"]
             )

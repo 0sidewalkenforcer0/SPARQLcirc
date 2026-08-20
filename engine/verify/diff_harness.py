@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Consistency harness: diff clean-room NPCS JAR vs original ReifySparqlByte.jar
-on the WatDiv query set, per reification scheme, normalizing whitespace."""
+"""Diff the explicit pure-compatibility rewrite against the original NPCS JAR."""
 import subprocess, sys, re, os, glob
 
 # ORIG + QDIR reference the ORIGINAL NPCS artifact (Asma et al., WWW'24) — NOT
@@ -14,6 +13,12 @@ def run(jar, scheme, query):
     p = subprocess.run(["java","-jar",jar,scheme,"query",query],
                        capture_output=True, timeout=120)
     return p.stdout.decode("utf-8","replace"), p.stderr.decode("utf-8","replace")
+
+def compatibility_scheme(scheme):
+    """Map an original NPCS scheme name to this JAR's token-only layout."""
+    if scheme in ("Standard", "SPARQL_Star", "NamedGraph"):
+        return scheme + "_Pure"
+    return scheme
 
 def decode_orig(out):
     m = re.search(r'Byte Array:\s*\[([-0-9,\s]*)\]', out)
@@ -57,7 +62,7 @@ def main():
             q = open(f).read()
             try:
                 o_raw,o_err = run(ORIG, scheme, q)
-                m_raw,m_err = run(MINE, scheme, q)
+                m_raw,m_err = run(MINE, compatibility_scheme(scheme), q)
             except subprocess.TimeoutExpired:
                 err+=1; bad.append((f,"TIMEOUT")); continue
             o = decode_orig(o_raw)

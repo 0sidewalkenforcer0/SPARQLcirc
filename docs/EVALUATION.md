@@ -183,20 +183,21 @@ query instances in `official_q/` and `official_q_100M/`. Generator: `pilot/tools
 
 ```bash
 # 1. (1B tier only) generate with the WatDiv generator; 10M/100M already present
-# 2. reify: <s> <p> <o> .  ->  <t> rdf:subject <s> ; rdf:predicate <p> ; rdf:object <o> .
-python3 reference/watdiv/reify.py pilot/data/watdiv.100M.nt watdiv.100M.reified.nt
+# 2. Reproduce the published token-only Standard layout.
+python3 reference/watdiv/reify.py pilot/data/watdiv.100M.nt watdiv.100M.reified.nt --pure
 # 3. bulk-load into a triplestore, create repo "watdiv", POST the reified N-Triples
 # 4. run the pipeline (engine builds the circuit via our CONSTRUCT):
-WATDIV_QDIR=pilot/data/official_q_100M python3 reference/watdiv_run.py
+WATDIV_SCHEME=Standard_Pure WATDIV_QDIR=pilot/data/official_q_100M python3 reference/watdiv_run.py
 ```
 
 **Engine by tier:** GraphDB for ≤ 100M; for **1B** use a lighter-footprint store
 (Virtuoso, Jena TDB2, or RDFox) — the circuit CONSTRUCT uses only standard SPARQL 1.1, so
 it is engine-portable (already shown identical on RDF4J + GraphDB).
 
-**Reification blow-up (a real cost to report):** each triple → 3 statement triples, so 100M
-→ 300M reified ≈ 30–45 GB on disk, plus index. Report it, and note the `SPARQL_Star`
-reification scheme as the compact alternative on RDF-star-native engines.
+**Historical reification blow-up (a real cost to report):** the published run
+used `--pure`, so each triple became 3 statement triples: 100M became about
+300M reification statements. The current mixed default adds the asserted
+triple as a fourth statement and must be reported as a separate layout.
 
 > ⚠️ **Feasibility on this workstation:** ~25 GB free — 100M reified (~30–45 GB) does **not
 > fit** here. The scripts are pointed at the 100M assets, but the 100M/1B reify+load+run is a

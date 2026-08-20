@@ -72,6 +72,7 @@ def _check_skolem_roundtrip() -> None:
         data.write_text(
             "@prefix d: <urn:d:> .\n"
             "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+            "d:a d:p _:x .\n"
             "d:t1 rdf:subject d:a ; rdf:predicate d:p ; rdf:object _:x .\n", encoding="utf-8")
         query = Path(tmp) / "q.sparql"
         query.write_text("SELECT ?y WHERE { <urn:d:a> <urn:d:p> ?y }\n", encoding="utf-8")

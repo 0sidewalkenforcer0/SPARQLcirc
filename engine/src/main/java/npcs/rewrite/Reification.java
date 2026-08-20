@@ -1,127 +1,188 @@
 package npcs.rewrite;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
- * A reification scheme = how a single triple pattern (s,p,o) is encoded so that
- * the statement itself is bound to a fresh provenance variable {@code ?fprovN}
- * (the triple identifier). This is the {@code Reify} function of Definition 4.2.
+ * The physical encoding used to bind one matched triple to a provenance token.
  *
- * The upper-level spm-semiring combination (⊗/⊕/⊖) is identical across schemes;
- * only this leaf encoding differs.
+ * <p>The ordinary {@code Standard}, {@code SPARQL_Star}, and {@code NamedGraph}
+ * CLI names use the mixed layout: the asserted triple is matched inline with
+ * its token encoding. The corresponding {@code *_Pure} names retain the old
+ * reification-only layout for reproducing earlier measurements.
  */
 public enum Reification {
 
-    /** RDF standard reification: three triples on the statement node ?fprovN. */
-    STANDARD {
-        @Override
-        public String reify(StatementPattern sp, String provVar) {
-            String s = Terms.render(sp.getSubjectVar());
-            String p = Terms.render(sp.getPredicateVar());
-            String o = Terms.render(sp.getObjectVar());
-            return "\t?" + provVar + " <" + RDF_SUBJECT + "> " + s + " . \n"
-                 + "\t?" + provVar + " <" + RDF_PREDICATE + "> " + p + " . \n"
-                 + "\t?" + provVar + " <" + RDF_OBJECT + "> " + o + " . \n";
-        }
-    },
+    /** Historical RDF standard statement-node lookup without the asserted triple. */
+    STANDARD(Kind.STANDARD, false),
 
-    /** SPARQL-star: quoted triple << s p o >> occurrenceOf ?fprovN. */
-    SPARQL_STAR {
-        @Override
-        public String reify(StatementPattern sp, String provVar) {
-            String s = Terms.render(sp.getSubjectVar());
-            String p = Terms.render(sp.getPredicateVar());
-            String o = Terms.render(sp.getObjectVar());
-            return "\t<< " + s + " " + p + " " + o + " >> <" + OCCURRENCE_OF + "> ?" + provVar + " . \n";
-        }
-    },
+    /** Default CLI layout: asserted triple plus RDF standard statement-node lookup. */
+    STANDARD_INLINE(Kind.STANDARD, true),
 
-    /**
-     * Wikidata's native statement reification (matches NPCS's "Wikidatareal"): a direct triple
-     * {@code s wdt:P o} is encoded as {@code s p:P ?prov . ?prov ps:P o}, so the STATEMENT NODE is
-     * the provenance token. The predicate must be a constant {@code wdt:} (prop/direct) IRI; the
-     * data must be reified into the same p:/ps: form (see reference/wikidata/reify_wikidata.py).
-     */
-    WIKIDATA {
-        @Override
-        public String reify(StatementPattern sp, String provVar) {
-            String s = Terms.render(sp.getSubjectVar());
-            String o = Terms.render(sp.getObjectVar());
-            org.eclipse.rdf4j.model.Value pv = sp.getPredicateVar().getValue();
-            if (pv == null || !pv.stringValue().startsWith(WDT_DIRECT)) {
-                throw new UnsupportedOperationException(
-                    "Wikidata reification needs a constant wdt: (prop/direct) predicate; got: "
-                    + (pv == null ? "a variable" : pv.stringValue()));
-            }
-            String local = pv.stringValue().substring(WDT_DIRECT.length());   // e.g. "P35"
-            return "\t" + s + " <" + WD_PROP + local + "> ?" + provVar + " . \n"
-                 + "\t?" + provVar + " <" + WD_STATEMENT + local + "> " + o + " . \n";
-        }
-    },
+    /** Historical RDF-star occurrence lookup without the asserted triple. */
+    SPARQL_STAR(Kind.SPARQL_STAR, false),
 
-    /**
-     * n-ary-relationship reification (matches SPARQLprov's "naryrel" + ProvSQL's granularity): the
-     * provenance token is the SUBJECT (the row entity), not a reified triple. The data stays PLAIN
-     * (no reification) -- every triple about a row shares that row's token, so provenance is PER-ROW.
-     * Intended for relational-derived RDF (the TPC-H direct mapping) where a row's attributes are ONE
-     * uncertain unit; write skeletons with one pattern per row so each row contributes one token.
-     * Unlike the other schemes, the predicate may be a variable (the token is the subject regardless).
-     */
-    NARYREL {
-        @Override
-        public String reify(StatementPattern sp, String provVar) {
-            String s = Terms.render(sp.getSubjectVar());
-            String p = Terms.render(sp.getPredicateVar());
-            String o = Terms.render(sp.getObjectVar());
-            return "\t" + s + " " + p + " " + o + " . \n"
-                 + "\tBIND(" + s + " AS ?" + provVar + ") \n";
-        }
-    },
+    /** Default CLI layout: asserted triple plus the RDF-star occurrence lookup used by NPCS. */
+    SPARQL_STAR_INLINE(Kind.SPARQL_STAR, true),
 
-    /**
-     * Named-graph reification (NPCS's "namedgraph"): each base triple lives in its OWN named graph,
-     * and the graph name IS the provenance token, so {@code GRAPH ?prov { s p o }} binds {@code ?prov}
-     * to that token. Uses only standard SPARQL 1.1 (a GRAPH block), so it is engine-agnostic on any
-     * store with named-graph support. The data must be loaded as QUADS (each triple in its own
-     * {@code urn:t:N} graph — see reference/watdiv/reify.py --namedgraph). Like the other non-standard
-     * schemes, this is a leaf-encoding change only; the upper-level ⊗/⊕/⊖ combination is unchanged.
-     */
-    NAMED_GRAPH {
-        @Override
-        public String reify(StatementPattern sp, String provVar) {
-            String s = Terms.render(sp.getSubjectVar());
-            String p = Terms.render(sp.getPredicateVar());
-            String o = Terms.render(sp.getObjectVar());
-            return "\tGRAPH ?" + provVar + " { " + s + " " + p + " " + o + " } \n";
-        }
-    };
+    /** Wikidata's native p:/ps: statement encoding. */
+    WIKIDATA(Kind.WIKIDATA, false),
+
+    /** Per-row token: the data is already plain and the subject is the token. */
+    NARYREL(Kind.NARYREL, false),
+
+    /** Historical token-named graph lookup without an asserted default-graph triple. */
+    NAMED_GRAPH(Kind.NAMED_GRAPH, false),
+
+    /** Default CLI layout: asserted default-graph triple plus the token-named graph lookup. */
+    NAMED_GRAPH_INLINE(Kind.NAMED_GRAPH, true);
+
+    private enum Kind {
+        STANDARD,
+        SPARQL_STAR,
+        WIKIDATA,
+        NARYREL,
+        NAMED_GRAPH
+    }
 
     static final String RDF_SUBJECT   = "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject";
     static final String RDF_PREDICATE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate";
     static final String RDF_OBJECT    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
-    // Placeholder predicate for the SPARQL-star occurrence link; must match the reified data's convention.
     static final String OCCURRENCE_OF = "http://example.org/occurrenceOf";
-    // Wikidata statement-reification namespaces: wdt:P (direct) -> p:P (claim) + ps:P (statement value).
-    static final String WDT_DIRECT   = "http://www.wikidata.org/prop/direct/";
-    static final String WD_PROP      = "http://www.wikidata.org/prop/";
-    static final String WD_STATEMENT = "http://www.wikidata.org/prop/statement/";
+    static final String WDT_DIRECT    = "http://www.wikidata.org/prop/direct/";
+    static final String WD_PROP       = "http://www.wikidata.org/prop/";
+    static final String WD_STATEMENT  = "http://www.wikidata.org/prop/statement/";
 
-    /** Encode one triple pattern, binding the statement to {@code ?provVar}. */
-    public abstract String reify(StatementPattern sp, String provVar);
+    private final Kind kind;
+    private final boolean includeAssertedTriple;
 
-    /** Parse the CLI scheme name used by the original NPCS ("Standard", "SPARQL_Star"). */
+    Reification(Kind kind, boolean includeAssertedTriple) {
+        this.kind = kind;
+        this.includeAssertedTriple = includeAssertedTriple;
+    }
+
+    /**
+     * Match one triple pattern and bind its token to {@code ?provVar}.
+     *
+     * <p>For the default mixed layouts the ordinary triple pattern is emitted
+     * immediately before its reification pattern. Callers invoke this method in
+     * the algebra node's own scope, so OPTIONAL, UNION, and MINUS keep their
+     * original semantics.
+     */
+    public String reify(StatementPattern sp, String provVar) {
+        String encoded;
+        switch (kind) {
+            case STANDARD:
+                encoded = standard(sp, provVar);
+                break;
+            case SPARQL_STAR:
+                encoded = sparqlStar(sp, provVar);
+                break;
+            case WIKIDATA:
+                encoded = wikidata(sp, provVar);
+                break;
+            case NARYREL:
+                encoded = naryRelation(sp, provVar);
+                break;
+            case NAMED_GRAPH:
+                encoded = namedGraph(sp, provVar);
+                break;
+            default:
+                throw new AssertionError(kind);
+        }
+        return includeAssertedTriple ? asserted(sp) + encoded : encoded;
+    }
+
+    /** True for both mixed and historical-pure Standard variants. */
+    public boolean isStandard() {
+        return kind == Kind.STANDARD;
+    }
+
+    /** True for both mixed and historical-pure RDF-star variants. */
+    public boolean isSparqlStar() {
+        return kind == Kind.SPARQL_STAR;
+    }
+
+    private static String asserted(StatementPattern sp) {
+        return "\t" + Terms.render(sp.getSubjectVar()) + " "
+             + Terms.render(sp.getPredicateVar()) + " "
+             + Terms.render(sp.getObjectVar()) + " . \n";
+    }
+
+    private static String standard(StatementPattern sp, String provVar) {
+        String s = Terms.render(sp.getSubjectVar());
+        String p = Terms.render(sp.getPredicateVar());
+        String o = Terms.render(sp.getObjectVar());
+        return "\t?" + provVar + " <" + RDF_SUBJECT + "> " + s + " . \n"
+             + "\t?" + provVar + " <" + RDF_PREDICATE + "> " + p + " . \n"
+             + "\t?" + provVar + " <" + RDF_OBJECT + "> " + o + " . \n";
+    }
+
+    private static String sparqlStar(StatementPattern sp, String provVar) {
+        String s = Terms.render(sp.getSubjectVar());
+        String p = Terms.render(sp.getPredicateVar());
+        String o = Terms.render(sp.getObjectVar());
+        return "\t<< " + s + " " + p + " " + o + " >> <" + OCCURRENCE_OF
+             + "> ?" + provVar + " . \n";
+    }
+
+    private static String wikidata(StatementPattern sp, String provVar) {
+        String s = Terms.render(sp.getSubjectVar());
+        String o = Terms.render(sp.getObjectVar());
+        Value predicate = sp.getPredicateVar().getValue();
+        if (predicate == null || !predicate.stringValue().startsWith(WDT_DIRECT)) {
+            throw new UnsupportedOperationException(
+                    "Wikidata reification needs a constant wdt: (prop/direct) predicate; got: "
+                    + (predicate == null ? "a variable" : predicate.stringValue()));
+        }
+        String local = predicate.stringValue().substring(WDT_DIRECT.length());
+        return "\t" + s + " <" + WD_PROP + local + "> ?" + provVar + " . \n"
+             + "\t?" + provVar + " <" + WD_STATEMENT + local + "> " + o + " . \n";
+    }
+
+    private static String naryRelation(StatementPattern sp, String provVar) {
+        String s = Terms.render(sp.getSubjectVar());
+        String p = Terms.render(sp.getPredicateVar());
+        String o = Terms.render(sp.getObjectVar());
+        return "\t" + s + " " + p + " " + o + " . \n"
+             + "\tBIND(" + s + " AS ?" + provVar + ") \n";
+    }
+
+    private static String namedGraph(StatementPattern sp, String provVar) {
+        String s = Terms.render(sp.getSubjectVar());
+        String p = Terms.render(sp.getPredicateVar());
+        String o = Terms.render(sp.getObjectVar());
+        return "\tGRAPH ?" + provVar + " { " + s + " " + p + " " + o + " } \n";
+    }
+
+    /** Parse a public CLI name. Mixed layouts are the default; pure layouts are explicit. */
     public static Reification fromName(String name) {
         switch (name) {
-            case "Standard":    return STANDARD;
-            case "SPARQL_Star": return SPARQL_STAR;
-            case "Wikidata":    return WIKIDATA;
-            case "naryrel":     return NARYREL;
+            case "Standard":
+                return STANDARD_INLINE;
+            case "Standard_Pure":
+            case "StandardPure":
+                return STANDARD;
+            case "SPARQL_Star":
+                return SPARQL_STAR_INLINE;
+            case "SPARQL_Star_Pure":
+            case "SPARQLStarPure":
+                return SPARQL_STAR;
+            case "Wikidata":
+                return WIKIDATA;
+            case "naryrel":
+                return NARYREL;
             case "NamedGraph":
-            case "namedgraph":  return NAMED_GRAPH;
+            case "namedgraph":
+                return NAMED_GRAPH_INLINE;
+            case "NamedGraph_Pure":
+            case "namedgraph-pure":
+                return NAMED_GRAPH;
             default:
                 throw new IllegalArgumentException(
-                    "Unsupported reification scheme: " + name
-                    + " (supported: Standard, SPARQL_Star, Wikidata, naryrel, NamedGraph)");
+                        "Unsupported reification scheme: " + name
+                        + " (supported: Standard, SPARQL_Star, Wikidata, naryrel, NamedGraph; "
+                        + "append _Pure to Standard, SPARQL_Star, or NamedGraph for the historical layout)");
         }
     }
 }

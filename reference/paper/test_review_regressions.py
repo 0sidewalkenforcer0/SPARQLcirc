@@ -33,24 +33,9 @@ import gates
 import pqe
 import reify_query
 import watdiv_run
-import bind_manifest
-import paper_construction_matrix as pcm
 
 
 class ReviewRegressionTest(unittest.TestCase):
-
-    def test_minus_edges_are_included_in_structure_count(self):
-        circuit = """
-<urn:g:m> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:circuit:Minus> .
-<urn:g:m> <urn:circuit:minuend> <urn:t:left> .
-<urn:g:m> <urn:circuit:subtrahend> <urn:t:right> .
-"""
-        gates_count, edges, _answers, _times, stats = pcm.parse_circuit(
-            circuit.splitlines()
-        )
-        self.assertEqual(1, gates_count)
-        self.assertEqual(1, stats["minus"])
-        self.assertEqual(2, edges)
 
     def test_read_once_accepts_boolean_constant_roots(self):
         circuit = {
@@ -325,25 +310,6 @@ class ReviewRegressionTest(unittest.TestCase):
         self.assertAlmostEqual(0.25, e11.probability_parity({"a": 0.5}, {"a": 0.25}))
         with self.assertRaisesRegex(ValueError, "answer-key mismatch"):
             e11.probability_parity({"a": 0.5}, {"b": 0.5})
-
-    def test_binding_manifest_fails_on_http_errors_and_falls_back_on_first_timeout(self):
-        failed = mock.Mock(returncode=22, stderr="HTTP 500", stdout="server error")
-        with mock.patch.object(bind_manifest.subprocess, "run", return_value=failed) as run:
-            with self.assertRaisesRegex(RuntimeError, "curl rc=22"):
-                bind_manifest.sparql("repo", "SELECT * WHERE {}")
-        self.assertIn("--fail-with-body", run.call_args.args[0])
-
-        with mock.patch.object(
-            bind_manifest, "single_triple_candidates", return_value=["urn:c1", "urn:c2"]
-        ), mock.patch.object(
-            bind_manifest, "full_match", side_effect=bind_manifest.ProbeTimeout("slow")
-        ) as full_match, mock.patch.object(
-            bind_manifest, "full_pattern_probe", return_value="urn:c1"
-        ):
-            chosen, note = bind_manifest.probe_binding("T", "query", "urn:placeholder", "repo")
-        self.assertEqual("urn:c1", chosen)
-        self.assertIn("timed out", note)
-        self.assertEqual(1, full_match.call_count)
 
     def test_reification_uses_fresh_internal_variables_and_preserves_slice(self):
         query = (

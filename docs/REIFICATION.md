@@ -6,20 +6,20 @@ baselines and to the incoming RDF 1.2 standard. Companion to `EVALUATION.md` / `
 ## TL;DR (the decision)
 
 `γ` is **parameterized by the reification scheme** (`Reify`, `engine/.../rewrite/Reification.java`).
-Because the emitted circuit is **byte-identical across schemes** (G7), reification is a pure
-*data-encoding* choice — it affects storage/transfer, **never the circuit or the probabilities**.
-So we pick per experiment to match each baseline, and keep a portable default:
+Because the emitted circuit is **byte-identical across schemes** (G7), the
+physical layout and its matching leaf query affect storage and query planning,
+but not the circuit event or its probabilities. Data preparation and query
+rewriting must select the same layout.
 
 | experiment | scheme | why / matches |
 |---|---|---|
-| WatDiv (E3, E10, G10) | **Standard** | lowest common denominator — loads on *every* SPARQL 1.1 store; this is what lets the identical circuit build on all four engines in E10, incl. **QLever** and **MillenniumDB**, which have **no RDF-star support** |
-| WatDiv, compact variant | **SPARQL_Star** (RDF-star) on GraphDB | 1 triple/fact vs 3 → **1.9× fewer bytes, identical circuit** (G7); matches **NPCS**'s RDF-star setup |
+| WatDiv (E3, E10, G10) | **Standard** | lowest common denominator — the mixed layout is ordinary RDF and loads on every SPARQL 1.1 store |
+| WatDiv, compact variant | **SPARQL_Star** (RDF-star) | 2 physical statements/fact instead of Standard's 4 in the current mixed layout; matches NPCS's token encoding |
 | TPC-H (E9, G4, R8.3) | **naryrel** (per-row token) | matches **SPARQLprov**'s Direct-Mapping n-ary + **ProvSQL**'s per-tuple granularity |
 | Wikidata (E8, G8, paths) | **Wikidata** (`p:`/`ps:` statement) | matches **NPCS**'s "Wikidatareal" scheme |
 
 **Do not switch everything to RDF-star.** Standard is doing real work: it is the only scheme
-that (a) all four E10 engines accept and (b) the property-path construction currently supports
-(SPARQL-star-for-paths is unimplemented — future work). Dropping Standard would shrink E10's
+that all four E10 engines accept. Dropping Standard would shrink E10's
 "4 independent codebases incl. C++" claim to ~2 engines and break the path experiments. The
 right posture is **Standard as portable default + RDF-star on GraphDB for the NPCS-comparable,
 compact run** — free, because the circuit is scheme-invariant.
@@ -43,12 +43,34 @@ SPARQLprov → named graphs). Neither's primary is standard reification.
 
 | scheme | leaf encoding of `(s,p,o)` → token `?t` | token is | matches |
 |---|---|---|---|
-| `Standard` | `?t rdf:subject s ; rdf:predicate p ; rdf:object o` (3 triples) | the statement node | RDF 1.0 reification |
-| `SPARQL_Star` | `<< s p o >> :occurrenceOf ?t` (1 quoted triple) | the linked token | NPCS (RDF-star) |
+| `Standard` | `s p o . ?t rdf:subject s ; rdf:predicate p ; rdf:object o` (4 statements) | the statement node | asserted data plus RDF 1.0 reification |
+| `SPARQL_Star` | `s p o . << s p o >> :occurrenceOf ?t` (2 statements) | the linked token | asserted data plus NPCS-style RDF-star occurrence link |
+| `NamedGraph` | `s p o . GRAPH ?t { s p o }` (default graph plus one named-graph quad) | the graph name | asserted data plus named-graph token |
 | `Wikidata` | `s p:P ?t . ?t ps:P o` | the statement node | NPCS "Wikidatareal" |
 | `naryrel` | `s p o . BIND(s AS ?t)` (data stays plain) | the subject/row | SPARQLprov, ProvSQL |
 
-The upper spm-semiring layer (⊗/⊕/⊖) is **identical** across all four; only this leaf differs.
+The upper spm-semiring layer (⊗/⊕/⊖) is identical across layouts; only the leaf match differs.
+
+## Default and historical layouts
+
+The ordinary Java scheme names (`Standard`, `SPARQL_Star`, and `NamedGraph`)
+select the mixed layout shown above. The asserted triple is emitted immediately
+next to its token lookup in the leaf rewriter. This preserves the algebra scope
+of BGP, OPTIONAL, UNION, and MINUS patterns and gives the endpoint an ordinary
+triple pattern on which to apply its normal indexes and join planning.
+
+`reference/watdiv/reify.py` also writes mixed data by default. The old
+reification-only layout remains available solely for controlled reproduction:
+
+| mixed default | historical query name | data-generator option |
+|---|---|---|
+| `Standard` | `Standard_Pure` | `--pure` |
+| `SPARQL_Star` | `SPARQL_Star_Pure` | `--star --pure` |
+| `NamedGraph` | `NamedGraph_Pure` | `--namedgraph --pure` |
+
+`reference/reify_query.py --pure` provides the same explicit R-control variant.
+Mixed and pure data/query layouts must not be crossed: a mixed query against a
+pure store has no asserted triples to match.
 
 ## Engine support (why Standard is the portable default)
 

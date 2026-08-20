@@ -33,10 +33,7 @@ This log records every working-tree change made in response to the whole-reposit
 ### R9-MINUS-EDGE-COUNT (P1) — count both directed Minus inputs
 
 - Source: Python review, “把 Minus 的两个有向边计入 R9 结构统计”.
-- Files: `reference/paper/paper_construction_matrix.py`, `reference/paper/test_review_regressions.py`.
-- Resolution: add the minuend and subtrahend edges for every parsed Minus gate.
-- Regression: a one-Minus fixture reports two edges.
-- Status: verified by Slurm job 47042.
+- Status: retired with the legacy R9 construction harness.
 
 ### PORTFOLIO-CONSTANT-ROOT (P2) — evaluate Boolean constants
 
@@ -174,10 +171,7 @@ This log records every working-tree change made in response to the whole-reposit
 ### BIND-MANIFEST-HTTP-AND-TIMEOUT (P2) — fail on HTTP errors and preserve minimum-candidate determinism
 
 - Source: Python review, “将绑定探测的 HTTP 错误视为失败” and “超时后不要跳过更小的绑定候选”.
-- Files: `reference/paper/bind_manifest.py`, `reference/paper/test_review_regressions.py`.
-- Resolution: curl uses `--fail-with-body`; if the first candidate with an unknown result times out, selection immediately switches to the exhaustive full-pattern fallback instead of accepting a later, larger IRI.
-- Regression: HTTP 500 is propagated and a `c1` timeout followed by a hypothetical `c2` match still resolves through fallback to `c1`.
-- Status: verified by Slurm job 47048.
+- Status: retired with the legacy workload-binding harness.
 
 ## Review findings implemented in the fourth pass
 
