@@ -534,7 +534,9 @@ sys.stdout.write('SELECT ?x ?finalprovennacevariable WHERE { ?x <urn:p> <urn:o> 
             run = result["runs"][0]
             self.assertEqual(3, run["offline"]["metrics"]["tree_nodes"])
             self.assertEqual(2, run["offline"]["metrics"]["tree_edges"])
-            self.assertEqual(1, run["offline"]["metrics"]["hc_nodes"])
+            self.assertEqual(2, run["offline"]["metrics"]["hc_nodes"])
+            self.assertEqual(1, run["offline"]["metrics"]["hc_expression_nodes"])
+            self.assertEqual(1, run["offline"]["metrics"]["answer_root_nodes"])
             self.assertEqual("oracle", run["offline"]["metrics"]["compiler"]["backend"])
             pp = root / "cell" / "measured-01" / "pp"
             self.assertTrue((pp / "answer-records.jsonl").is_file())

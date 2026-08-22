@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import random
 import sys
 import tempfile
 import unittest
@@ -55,8 +56,12 @@ class ParserTest(unittest.TestCase):
             normalized, root = pp.normalize_boolean(raw, raw_root)
             roots[name] = dag.add_answer(name, normalized, root)
         dag.validate()
-        self.assertEqual(dag.nodes[roots["empty-minus"]], pp.DagNode("leaf", "t2"))
-        self.assertNotEqual(roots["matched"], roots["minus"])
+        expression_root = dag.children(roots["empty-minus"])[0]
+        self.assertEqual(dag.nodes[expression_root], pp.DagNode("leaf", "t2"))
+        self.assertNotEqual(
+            dag.children(roots["matched"]),
+            dag.children(roots["minus"]),
+        )
 
     def test_empty_sum_product_and_idempotence(self) -> None:
         cases = {
@@ -120,12 +125,91 @@ class GlobalHashConsTest(unittest.TestCase):
             (metrics["normalized_tree_nodes"], metrics["normalized_tree_edges"]),
             (10, 8),
         )
-        self.assertEqual((metrics["hc_nodes"], metrics["hc_edges"]), (6, 6))
+        self.assertEqual((metrics["hc_nodes"], metrics["hc_edges"]), (8, 8))
+        self.assertEqual(
+            (metrics["hc_expression_nodes"], metrics["hc_expression_edges"]),
+            (6, 6),
+        )
+        self.assertEqual(
+            (metrics["answer_root_nodes"], metrics["answer_root_edges"]),
+            (2, 2),
+        )
         self.assertEqual(metrics["root_count"], 2)
         self.assertEqual(metrics["factor_status"], "not_implemented")
         self.assertIsNone(metrics["factor_ms"])
+        roots = {
+            json.loads(key)[0][1][1].split(":")[-1]: root
+            for key, root in result.dag.roots.items()
+        }
+        a1_expression = result.dag.children(roots["a1"])[0]
+        a2_expression = result.dag.children(roots["a2"])[0]
+        self.assertIn(a2_expression, result.dag.children(a1_expression))
+
+    def test_equal_provenance_keeps_distinct_answer_roots(self) -> None:
+        result = pp.process_response_bytes(_response([
+            ("a1", "⊕(urn:t:1)"),
+            ("a2", "⊕(urn:t:1)"),
+        ]))
+        result.dag.validate()
         roots = list(result.dag.roots.values())
-        self.assertIn(2, roots)  # the complete t1&t2 subtree is a root and shared by a1
+        self.assertEqual(len(set(roots)), 2)
+        self.assertEqual(result.dag.children(roots[0]), result.dag.children(roots[1]))
+        self.assertEqual(
+            (
+                result.metrics["hc_expression_nodes"],
+                result.metrics["hc_expression_edges"],
+                result.metrics["answer_root_nodes"],
+                result.metrics["answer_root_edges"],
+                result.metrics["hc_nodes"],
+                result.metrics["hc_edges"],
+            ),
+            (1, 0, 2, 2, 3, 2),
+        )
+
+    def test_seeded_operator_mix_preserves_every_boolean_function(self) -> None:
+        generator = random.Random(20260822)
+        tokens = ["urn:t:%d" % index for index in range(1, 9)]
+
+        def expression(depth: int) -> str:
+            if depth == 0 or generator.random() < 0.25:
+                return generator.choice(tokens)
+            operation = generator.choice(("plus", "times", "minus"))
+            if operation == "plus":
+                children = [expression(depth - 1) for _ in range(generator.randint(1, 3))]
+                return "⊕(" + " ".join(children) + ")"
+            if operation == "times":
+                children = [expression(depth - 1) for _ in range(generator.randint(1, 3))]
+                return "(⊗" + ",".join(children) + ",)"
+            return "(⊖" + expression(depth - 1) + "," + expression(depth - 1) + ",)"
+
+        rows = [
+            ("random-%02d" % index, "⊕(" + expression(3) + ")")
+            for index in range(32)
+        ]
+        result = pp.process_response_bytes(
+            _response(rows), token_regex=r"^urn:t:[0-9]+$"
+        )
+        weights = {token: 0.1 + generator.random() * 0.8 for token in result.dag.tokens()}
+        wrapped, _metrics = pp.compile_and_wmc(result, "oracle", weights)
+
+        import compiler
+
+        expression_roots = {
+            key: result.dag.children(root)[0]
+            for key, root in result.dag.roots.items()
+        }
+        compiled = compiler.compile_many(
+            result.dag.compiler_circuit(),
+            expression_roots,
+            mode="shared",
+            backend="oracle",
+            order=result.dag.tokens(),
+            record_order_fingerprint=False,
+        )
+        unwrapped = compiled.wmc_many(weights)
+        self.assertEqual(wrapped.keys(), unwrapped.keys())
+        for answer_key in wrapped:
+            self.assertAlmostEqual(wrapped[answer_key], unwrapped[answer_key])
 
     def test_response_row_order_does_not_change_canonical_dag(self) -> None:
         first = pp.process_response_bytes(_response(self.ROWS))
@@ -208,7 +292,7 @@ class GlobalHashConsTest(unittest.TestCase):
             ).splitlines()
             self.assertEqual(len(answer_metrics), 2)
             document = json.loads((output / "npcs-hc-dag.json").read_text(encoding="utf-8"))
-            self.assertEqual(document["schema"], "npcs-pp-hc-dag-v1")
+            self.assertEqual(document["schema"], "npcs-pp-hc-dag-v2")
             expected = result.dag.document()
             expected["context"] = {}
             self.assertEqual(document, expected)

@@ -3,15 +3,21 @@
 
 The NPCS rewriter returns one spm-semiring provenance string per answer.  This
 module turns one complete SPARQL Results JSON response into a query-global,
-multi-root Boolean DAG:
+multi-root Boolean circuit DAG:
 
-    response -> expression trees -> Boolean normalization -> hash-consed DAG
+    response -> expression trees -> Boolean normalization
+             -> hash-consed expression DAG -> explicit answer roots
 
 Every textual occurrence is counted in the pre-hash-consing tree metrics.  A
 single exact structural-interning table is then shared by every answer of the
 query.  Equal tuple tokens remain one Boolean variable.  Structural identity is
 established by complete Python tuple/string equality; no cryptographic digest is
 computed or stored.
+
+Each answer receives one non-interned unary ``or`` root after expression
+hash-consing.  This is the Boolean counterpart of SPARQLcirc's per-answer
+``Plus`` gate: it preserves answer identity and bindings even when distinct
+answers have the same provenance expression.
 
 The optional algebraic-factorization track is intentionally not implemented
 here.  Hash-consing merges equal subtrees; it does not rewrite
@@ -342,12 +348,13 @@ class DagNode:
 
 
 class MultiRootDag:
-    """Exact query-global structural interning over all answer roots."""
+    """Intern expressions globally and retain one explicit root per answer."""
 
     def __init__(self) -> None:
         self.nodes: List[DagNode] = []
         self.roots: Dict[str, int] = {}
         self._lookup: Dict[Tuple[str, Any], int] = {}
+        self._answer_root_ids: set[int] = set()
 
     def _intern(self, op: str, payload: Any) -> int:
         key = (op, payload)
@@ -375,9 +382,12 @@ class MultiRootDag:
             else:
                 raise ProvenanceFormatError("unknown normalized operation: %s" % node.op)
             local_to_global[local_id] = self._intern(node.op, payload)
-        global_root = local_to_global[root]
-        self.roots[answer_key] = global_root
-        return global_root
+        expression_root = local_to_global[root]
+        answer_root = len(self.nodes)
+        self.nodes.append(DagNode("or", (expression_root,)))
+        self._answer_root_ids.add(answer_root)
+        self.roots[answer_key] = answer_root
+        return answer_root
 
     def children(self, node_id: int) -> Tuple[int, ...]:
         node = self.nodes[node_id]
@@ -390,8 +400,12 @@ class MultiRootDag:
         raise ProvenanceFormatError("unknown DAG operation: %s" % node.op)
 
     def validate(self) -> None:
-        if len(self._lookup) != len(self.nodes):
-            raise ProvenanceFormatError("DAG interning table and node array disagree")
+        if len(self._lookup) + len(self._answer_root_ids) != len(self.nodes):
+            raise ProvenanceFormatError(
+                "expression interning table, answer roots, and node array disagree"
+            )
+        if set(self.roots.values()) != self._answer_root_ids:
+            raise ProvenanceFormatError("answer root index and root mapping disagree")
         for node_id in range(len(self.nodes)):
             for child in self.children(node_id):
                 if child < 0 or child >= node_id:
@@ -401,9 +415,28 @@ class MultiRootDag:
         for answer_key, root in self.roots.items():
             if root < 0 or root >= len(self.nodes):
                 raise ProvenanceFormatError("invalid root for answer %s" % answer_key)
+            node = self.nodes[root]
+            if node.op != "or" or len(node.payload) != 1:
+                raise ProvenanceFormatError(
+                    "answer %s does not reference a unary or root" % answer_key
+                )
 
     def stats(self) -> Tuple[int, int]:
         return len(self.nodes), sum(len(self.children(node_id)) for node_id in range(len(self.nodes)))
+
+    def expression_stats(self) -> Tuple[int, int]:
+        nodes = len(self.nodes) - len(self._answer_root_ids)
+        edges = sum(
+            len(self.children(node_id))
+            for node_id in range(len(self.nodes))
+            if node_id not in self._answer_root_ids
+        )
+        return nodes, edges
+
+    def answer_root_stats(self) -> Tuple[int, int]:
+        nodes = len(self._answer_root_ids)
+        edges = sum(len(self.children(node_id)) for node_id in self._answer_root_ids)
+        return nodes, edges
 
     def tokens(self) -> Tuple[str, ...]:
         return tuple(sorted(str(node.payload) for node in self.nodes if node.op == "leaf"))
@@ -435,7 +468,7 @@ class MultiRootDag:
 
     def document(self) -> Dict[str, Any]:
         return {
-            "schema": "npcs-pp-hc-dag-v1",
+            "schema": "npcs-pp-hc-dag-v2",
             "nodes": [self.node_document(node_id) for node_id in range(len(self.nodes))],
             "roots": list(self.root_documents()),
         }
@@ -649,6 +682,8 @@ def build_global_dag(
         added_edges = sum(
             len(dag.children(node_id)) for node_id in range(before_nodes, len(dag.nodes))
         )
+        if added_nodes < 1 or added_edges < 1:
+            raise ProvenanceFormatError("answer root materialization is incomplete")
         answer_metrics.append({
             "answer_key": answer.answer_key,
             "provenance_utf8_bytes": len(answer.provenance.encode("utf-8")),
@@ -661,6 +696,11 @@ def build_global_dag(
             "normalized_tree_total": normalized_answer_nodes + normalized_answer_edges,
             "hc_nodes_added": added_nodes,
             "hc_edges_added": added_edges,
+            "hc_expression_nodes_added": added_nodes - 1,
+            "hc_expression_edges_added": added_edges - 1,
+            "answer_root_nodes_added": 1,
+            "answer_root_edges_added": 1,
+            "expression_root": dag.children(global_root)[0],
             "root": global_root,
             "parse_ms": answer_parse_ms,
             "boolean_normalize_ms": answer_normalize_ms,
@@ -675,8 +715,10 @@ def build_global_dag(
     dag.validate()
     dag_validate_ms = _milliseconds(validate_started)
     hc_nodes, hc_edges = dag.stats()
+    hc_expression_nodes, hc_expression_edges = dag.expression_stats()
+    answer_root_nodes, answer_root_edges = dag.answer_root_stats()
     metrics: Dict[str, Any] = {
-        "schema": "npcs-pp-hc-metrics-v1",
+        "schema": "npcs-pp-hc-metrics-v2",
         "answer_count": len(extracted.answers),
         "root_count": len(dag.roots),
         "provenance_variable": extracted.provenance_variable,
@@ -691,10 +733,20 @@ def build_global_dag(
         "hc_nodes": hc_nodes,
         "hc_edges": hc_edges,
         "hc_total": hc_nodes + hc_edges,
+        "hc_expression_nodes": hc_expression_nodes,
+        "hc_expression_edges": hc_expression_edges,
+        "hc_expression_total": hc_expression_nodes + hc_expression_edges,
+        "answer_root_nodes": answer_root_nodes,
+        "answer_root_edges": answer_root_edges,
+        "answer_root_total": answer_root_nodes + answer_root_edges,
         "leaf_token_count": len(dag.tokens()),
         "tree_over_hc_ratio": (
             (tree_nodes + tree_edges) / (hc_nodes + hc_edges)
             if hc_nodes + hc_edges else None
+        ),
+        "tree_over_expression_hc_ratio": (
+            (tree_nodes + tree_edges) / (hc_expression_nodes + hc_expression_edges)
+            if hc_expression_nodes + hc_expression_edges else None
         ),
         "parse_ms": parse_ms,
         "boolean_normalize_ms": normalize_ms,
@@ -807,7 +859,7 @@ def _atomic_dag_json(
             handle.write(json.dumps(
                 root, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             ).encode("utf-8"))
-        handle.write(b'],"schema":"npcs-pp-hc-dag-v1"}\n')
+        handle.write(b'],"schema":"npcs-pp-hc-dag-v2"}\n')
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, path)
