@@ -419,6 +419,78 @@ for event in events:
             self.assertIsNone(_forbidden_result_key(result))
 
     @unittest.skipUnless(os.name == "posix", "fake Java executable uses a POSIX shebang")
+    def test_c_flat_cell_accepts_an_empty_answer_circuit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            query = root / "query.rq"
+            query.write_text("SELECT ?x WHERE { ?x <urn:p> <urn:o> }\n", encoding="utf-8")
+            jar = root / "runner.jar"
+            jar.write_bytes(b"test placeholder")
+            data = root / "data.nt"
+            data.write_text("<urn:s> <urn:p> <urn:o> .\n", encoding="utf-8")
+            fake_java = root / "fake-java"
+            fake_java.write_text(
+                """#!/usr/bin/env python3
+import json
+import sys
+if "SPARQL_Star" not in sys.argv:
+    raise SystemExit(9)
+sys.stderr.write('''# ---- construction mode: requested=flat, effective=flat ----
+# ---- circuit construction plan: 1 CONSTRUCT(s) ----
+# --- step 1 ---
+# step label: flat
+# ---- circuit encoding: native_ids=128bit, direct_bindings=true, inferred_types=true; final_triples=0 -> 0, collapsed_unary_plus=0, omitted_types=0 ----
+# construction_ms: 3
+# circuit triples: 0
+''')
+events = [
+    "query_read", "plan_generation", "repository_init", "data_ready",
+    "construct_step", "workspace_cleanup", "normalization",
+    "construction_complete", "serialization", "named_graph_persist",
+    "endpoint_cleanup", "run_complete",
+]
+for event in events:
+    record = {"schema": "sparqlcirc-c-stage-v1", "event": event, "duration_ms": 0.1}
+    sys.stderr.write("# sc-stage " + json.dumps(record, separators=(",", ":")) + "\\n")
+""",
+                encoding="utf-8",
+            )
+            fake_java.chmod(0o755)
+            config = _config(query, "http://unused.invalid/query", method="C-flat")
+            config.update({
+                "jar": str(jar),
+                "java": str(fake_java),
+                "reified_data": str(data),
+                "warmups": 1,
+                "runs": 1,
+                "c_read_only": True,
+                "pqe_backend": "oracle",
+                "uniform_probability": 0.5,
+            })
+            result = runner._run_cell(config, root / "cell")
+            self.assertEqual("ok", result["status"])
+            self.assertEqual(1, result["summary"]["measured_successes"])
+            measured = result["runs"][1]
+            self.assertTrue(measured["endpoint"]["endpoint"]["empty_circuit"])
+            self.assertEqual(0, measured["endpoint"]["endpoint"]["circuit_bytes"])
+            self.assertEqual(0, measured["offline"]["metrics"]["answer_count"])
+            self.assertEqual(
+                {"nodes": 0, "edges": 0, "total": 0},
+                {
+                    key: measured["offline"]["metrics"]["answer_reachable_circuit"][key]
+                    for key in ("nodes", "edges", "total")
+                },
+            )
+            self.assertEqual(0, (root / "cell" / "measured-01" / "circuit.nt").stat().st_size)
+            self.assertEqual(
+                "",
+                (root / "cell" / "measured-01" / "offline" / "answer-records.jsonl").read_text(
+                    encoding="utf-8"
+                ),
+            )
+            self.assertIsNone(_forbidden_result_key(result))
+
+    @unittest.skipUnless(os.name == "posix", "fake Java executable uses a POSIX shebang")
     def test_n_cell_pairs_each_response_with_one_postprocess_and_pqe(self):
         payload = json.dumps({
             "head": {"vars": ["x", "finalprovennacevariable"]},

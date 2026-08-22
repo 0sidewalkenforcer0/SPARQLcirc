@@ -28,11 +28,25 @@ needed for claims about asymptotic scaling.
 | Variant | Input | Operation | Primary output |
 |---|---|---|---|
 | B | Deduplicated WatDiv RDF | Original SELECT query | Answer-binding multiset |
-| R | RDF-star occurrence graph | Triple-pattern rewrite without provenance aggregation | Answer-binding multiset |
-| N | RDF-star occurrence graph | `NpcsRewriter` with per-answer provenance-string aggregation | Answer bindings and provenance strings |
-| C-flat | RDF-star occurrence graph | Flat circuit construction | One shared RDF circuit |
-| C-factored | RDF-star occurrence graph | Factored circuit construction | One shared RDF circuit |
-| C-path | RDF-star occurrence graph | Iterative property-path construction | One shared path circuit |
+| R | Mixed asserted-plus-occurrence graph | Match each asserted triple inline with its occurrence token, without provenance aggregation | Answer-binding multiset |
+| N | Mixed asserted-plus-occurrence graph | Use the same inline leaf matches, then aggregate a per-answer provenance string with `NpcsRewriter` | Answer bindings and provenance strings |
+| C-flat | Mixed asserted-plus-occurrence graph | Use the same inline leaf matches for flat circuit construction | One shared RDF circuit |
+| C-factored | Mixed asserted-plus-occurrence graph | Use the same inline leaf matches for factored circuit construction | One shared RDF circuit |
+| C-path | Mixed asserted-plus-occurrence graph | Iterative property-path construction over asserted edges and occurrence tokens | One shared path circuit |
+
+B runs on the asserted-only base store. R, N, C-flat, C-factored, and C-path
+run on the same mixed store, which contains every asserted triple together with
+its RDF-star occurrence record. At an ordinary leaf, R, N, and C therefore use
+the same adjacent pair of patterns:
+
+```sparql
+?s ?p ?o .
+<< ?s ?p ?o >> <http://example.org/occurrenceOf> ?token .
+```
+
+The asserted pattern remains inside the original OPTIONAL, UNION, or MINUS
+scope. The historical occurrence-only data and `SPARQL_Star_Pure` rewrite are
+reserved for explicitly labelled reproduction or ablation runs.
 
 The NPCS extensions begin only after N has returned a complete response. They
 are reported separately from the N endpoint method:

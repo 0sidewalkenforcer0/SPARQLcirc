@@ -670,8 +670,6 @@ def _run_c(config: Mapping[str, Any], run_dir: Path, deadline: float) -> Dict[st
         os.replace(circuit_partial, failed)
         detail = stderr_target.read_text(encoding="utf-8", errors="replace")[-2000:]
         raise StageError("c-execution-error", "CircuitRun failed: %s" % detail.strip())
-    if circuit_partial.stat().st_size == 0:
-        raise StageError("c-protocol-error", "CircuitRun emitted an empty circuit")
     os.replace(circuit_partial, circuit)
     persisted_at = time.perf_counter()
     stderr_text = stderr_target.read_text(encoding="utf-8", errors="replace")
@@ -685,6 +683,7 @@ def _run_c(config: Mapping[str, Any], run_dir: Path, deadline: float) -> Dict[st
         max(0.0, endpoint_e2e_ms - float(protocol["construction_ms"]))
     )
     protocol["circuit_bytes"] = circuit.stat().st_size
+    protocol["empty_circuit"] = protocol["circuit_bytes"] == 0
     protocol["stderr_bytes"] = stderr_target.stat().st_size
     protocol["timing_scope"] = (
         "CircuitRun process start through atomic circuit persistence; construction_ms is the "
