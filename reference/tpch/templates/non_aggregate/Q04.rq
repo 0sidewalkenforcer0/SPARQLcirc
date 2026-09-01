@@ -1,0 +1,20 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?order
+  ?o_orderpriority
+WHERE {
+  ?order    <o_orderdate>     ?o_orderdate ;
+            <o_orderpriority> ?o_orderpriority .
+  ?lineitem <l_order>         ?order ;
+            <l_commitdate>    ?l_commitdate ;
+            <l_receiptdate>   ?l_receiptdate .
+  FILTER (
+    strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime)
+      >= "1993-07-01T00:00:00"^^xsd:dateTime &&
+    strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime)
+      < "1993-10-01T00:00:00"^^xsd:dateTime &&
+    strdt(concat(str(?l_commitdate), 'T00:00:00'), xsd:dateTime)
+      < strdt(concat(str(?l_receiptdate), 'T00:00:00'), xsd:dateTime)
+  )
+}

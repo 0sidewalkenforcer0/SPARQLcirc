@@ -1,0 +1,32 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?supp_nation
+  ?cust_nation
+  ?l_year
+WHERE {
+  {
+    ?supplier <s_nation>        ?n2 .
+    ?lineitem <l_supp>          ?supplier ;
+	      <l_order>         ?order ;
+              <l_shipdate>      ?l_shipdate ;
+              <l_discount>      ?l_discount ;
+              <l_extendedprice> ?l_extendedprice .
+    ?order    <o_cust>          ?customer .
+    ?customer <c_nation>        ?n1 .
+    ?n1       <n_name>          ?n1_n_name .
+    ?n2       <n_name>          ?n2_n_name .
+  }
+  FILTER (
+    (
+      (?n1_n_name = 'MOZAMBIQUE' && ?n2_n_name = 'UNITED KINGDOM') ||
+      (?n1_n_name = 'UNITED KINGDOM' && ?n2_n_name = 'MOZAMBIQUE')
+    ) &&
+    strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime) >= "1995-01-01T00:00:00"^^xsd:dateTime &&
+    strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime) <= "1996-12-31T00:00:00"^^xsd:dateTime
+  )
+  BIND(?n1_n_name AS ?supp_nation)
+  BIND(?n2_n_name AS ?cust_nation)
+  BIND(year(?l_shipdate) AS ?l_year)
+  BIND(?l_extendedprice * (1 - ?l_discount) AS ?volume)
+}

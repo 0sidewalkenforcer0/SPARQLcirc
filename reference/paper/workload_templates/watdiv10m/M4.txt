@@ -1,0 +1,6 @@
+SELECT ?v0 ?v1 WHERE {
+	?v0	wsdbm:makesPurchase	?v1 .
+	MINUS {
+		?v0	wsdbm:friendOf	?f .
+	}
+}

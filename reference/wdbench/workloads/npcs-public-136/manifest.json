@@ -1,0 +1,1526 @@
+{
+  "counts": {
+    "multiple": 37,
+    "optional": 50,
+    "single": 49,
+    "total": 136
+  },
+  "entries": [
+    {
+      "bytes": 112,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/01.sparql",
+      "query_id": "single-01",
+      "shard": 0,
+      "source_number": 1
+    },
+    {
+      "bytes": 112,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/02.sparql",
+      "query_id": "single-02",
+      "shard": 1,
+      "source_number": 2
+    },
+    {
+      "bytes": 115,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/03.sparql",
+      "query_id": "single-03",
+      "shard": 2,
+      "source_number": 3
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/04.sparql",
+      "query_id": "single-04",
+      "shard": 0,
+      "source_number": 4
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/05.sparql",
+      "query_id": "single-05",
+      "shard": 1,
+      "source_number": 5
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/06.sparql",
+      "query_id": "single-06",
+      "shard": 2,
+      "source_number": 6
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/07.sparql",
+      "query_id": "single-07",
+      "shard": 0,
+      "source_number": 7
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/08.sparql",
+      "query_id": "single-08",
+      "shard": 1,
+      "source_number": 8
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/09.sparql",
+      "query_id": "single-09",
+      "shard": 2,
+      "source_number": 9
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/10.sparql",
+      "query_id": "single-10",
+      "shard": 0,
+      "source_number": 10
+    },
+    {
+      "bytes": 110,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/11.sparql",
+      "query_id": "single-11",
+      "shard": 1,
+      "source_number": 11
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/single/12.sparql",
+      "query_id": "single-12",
+      "shard": 2,
+      "source_number": 12
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/13.sparql",
+      "query_id": "single-13",
+      "shard": 0,
+      "source_number": 13
+    },
+    {
+      "bytes": 112,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/14.sparql",
+      "query_id": "single-14",
+      "shard": 1,
+      "source_number": 14
+    },
+    {
+      "bytes": 111,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/15.sparql",
+      "query_id": "single-15",
+      "shard": 2,
+      "source_number": 15
+    },
+    {
+      "bytes": 112,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/16.sparql",
+      "query_id": "single-16",
+      "shard": 0,
+      "source_number": 16
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/17.sparql",
+      "query_id": "single-17",
+      "shard": 1,
+      "source_number": 17
+    },
+    {
+      "bytes": 116,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/18.sparql",
+      "query_id": "single-18",
+      "shard": 2,
+      "source_number": 18
+    },
+    {
+      "bytes": 112,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/19.sparql",
+      "query_id": "single-19",
+      "shard": 0,
+      "source_number": 19
+    },
+    {
+      "bytes": 79,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/20.sparql",
+      "query_id": "single-20",
+      "shard": 1,
+      "source_number": 20
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/21.sparql",
+      "query_id": "single-21",
+      "shard": 2,
+      "source_number": 21
+    },
+    {
+      "bytes": 117,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/22.sparql",
+      "query_id": "single-22",
+      "shard": 0,
+      "source_number": 22
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/23.sparql",
+      "query_id": "single-23",
+      "shard": 1,
+      "source_number": 23
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/24.sparql",
+      "query_id": "single-24",
+      "shard": 2,
+      "source_number": 24
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/25.sparql",
+      "query_id": "single-25",
+      "shard": 0,
+      "source_number": 25
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/26.sparql",
+      "query_id": "single-26",
+      "shard": 1,
+      "source_number": 26
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/27.sparql",
+      "query_id": "single-27",
+      "shard": 2,
+      "source_number": 27
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/28.sparql",
+      "query_id": "single-28",
+      "shard": 0,
+      "source_number": 28
+    },
+    {
+      "bytes": 111,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/29.sparql",
+      "query_id": "single-29",
+      "shard": 1,
+      "source_number": 29
+    },
+    {
+      "bytes": 79,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/30.sparql",
+      "query_id": "single-30",
+      "shard": 2,
+      "source_number": 30
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/31.sparql",
+      "query_id": "single-31",
+      "shard": 0,
+      "source_number": 31
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/32.sparql",
+      "query_id": "single-32",
+      "shard": 1,
+      "source_number": 32
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/33.sparql",
+      "query_id": "single-33",
+      "shard": 2,
+      "source_number": 33
+    },
+    {
+      "bytes": 111,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/34.sparql",
+      "query_id": "single-34",
+      "shard": 0,
+      "source_number": 34
+    },
+    {
+      "bytes": 115,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/35.sparql",
+      "query_id": "single-35",
+      "shard": 1,
+      "source_number": 35
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/36.sparql",
+      "query_id": "single-36",
+      "shard": 2,
+      "source_number": 36
+    },
+    {
+      "bytes": 114,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/37.sparql",
+      "query_id": "single-37",
+      "shard": 0,
+      "source_number": 37
+    },
+    {
+      "bytes": 109,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/38.sparql",
+      "query_id": "single-38",
+      "shard": 1,
+      "source_number": 38
+    },
+    {
+      "bytes": 110,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/39.sparql",
+      "query_id": "single-39",
+      "shard": 2,
+      "source_number": 39
+    },
+    {
+      "bytes": 78,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/40.sparql",
+      "query_id": "single-40",
+      "shard": 0,
+      "source_number": 40
+    },
+    {
+      "bytes": 79,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/41.sparql",
+      "query_id": "single-41",
+      "shard": 1,
+      "source_number": 41
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/42.sparql",
+      "query_id": "single-42",
+      "shard": 2,
+      "source_number": 42
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/43.sparql",
+      "query_id": "single-43",
+      "shard": 0,
+      "source_number": 43
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/single/44.sparql",
+      "query_id": "single-44",
+      "shard": 1,
+      "source_number": 44
+    },
+    {
+      "bytes": 79,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/45.sparql",
+      "query_id": "single-45",
+      "shard": 2,
+      "source_number": 45
+    },
+    {
+      "bytes": 79,
+      "category": "single",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/single/46.sparql",
+      "query_id": "single-46",
+      "shard": 0,
+      "source_number": 46
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/47.sparql",
+      "query_id": "single-47",
+      "shard": 1,
+      "source_number": 47
+    },
+    {
+      "bytes": 80,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/48.sparql",
+      "query_id": "single-48",
+      "shard": 2,
+      "source_number": 48
+    },
+    {
+      "bytes": 113,
+      "category": "single",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/single/49.sparql",
+      "query_id": "single-49",
+      "shard": 0,
+      "source_number": 49
+    },
+    {
+      "bytes": 167,
+      "category": "multiple",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/multiple/01.sparql",
+      "query_id": "multiple-01",
+      "shard": 1,
+      "source_number": 1
+    },
+    {
+      "bytes": 201,
+      "category": "multiple",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/multiple/02.sparql",
+      "query_id": "multiple-02",
+      "shard": 2,
+      "source_number": 2
+    },
+    {
+      "bytes": 204,
+      "category": "multiple",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/multiple/03.sparql",
+      "query_id": "multiple-03",
+      "shard": 0,
+      "source_number": 3
+    },
+    {
+      "bytes": 278,
+      "category": "multiple",
+      "projected_variables": [
+        "?var4"
+      ],
+      "query": "queries/multiple/04.sparql",
+      "query_id": "multiple-04",
+      "shard": 1,
+      "source_number": 4
+    },
+    {
+      "bytes": 136,
+      "category": "multiple",
+      "projected_variables": [
+        "?var4"
+      ],
+      "query": "queries/multiple/05.sparql",
+      "query_id": "multiple-05",
+      "shard": 2,
+      "source_number": 5
+    },
+    {
+      "bytes": 263,
+      "category": "multiple",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/multiple/07.sparql",
+      "query_id": "multiple-07",
+      "shard": 0,
+      "source_number": 7
+    },
+    {
+      "bytes": 170,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/08.sparql",
+      "query_id": "multiple-08",
+      "shard": 1,
+      "source_number": 8
+    },
+    {
+      "bytes": 285,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/09.sparql",
+      "query_id": "multiple-09",
+      "shard": 2,
+      "source_number": 9
+    },
+    {
+      "bytes": 206,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/10.sparql",
+      "query_id": "multiple-10",
+      "shard": 0,
+      "source_number": 10
+    },
+    {
+      "bytes": 225,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/11.sparql",
+      "query_id": "multiple-11",
+      "shard": 1,
+      "source_number": 11
+    },
+    {
+      "bytes": 293,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/12.sparql",
+      "query_id": "multiple-12",
+      "shard": 2,
+      "source_number": 12
+    },
+    {
+      "bytes": 226,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/13.sparql",
+      "query_id": "multiple-13",
+      "shard": 0,
+      "source_number": 13
+    },
+    {
+      "bytes": 294,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/15.sparql",
+      "query_id": "multiple-15",
+      "shard": 1,
+      "source_number": 15
+    },
+    {
+      "bytes": 204,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/20.sparql",
+      "query_id": "multiple-20",
+      "shard": 2,
+      "source_number": 20
+    },
+    {
+      "bytes": 204,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/21.sparql",
+      "query_id": "multiple-21",
+      "shard": 0,
+      "source_number": 21
+    },
+    {
+      "bytes": 204,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/22.sparql",
+      "query_id": "multiple-22",
+      "shard": 1,
+      "source_number": 22
+    },
+    {
+      "bytes": 225,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/24.sparql",
+      "query_id": "multiple-24",
+      "shard": 2,
+      "source_number": 24
+    },
+    {
+      "bytes": 205,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/25.sparql",
+      "query_id": "multiple-25",
+      "shard": 0,
+      "source_number": 25
+    },
+    {
+      "bytes": 170,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/26.sparql",
+      "query_id": "multiple-26",
+      "shard": 1,
+      "source_number": 26
+    },
+    {
+      "bytes": 200,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/27.sparql",
+      "query_id": "multiple-27",
+      "shard": 2,
+      "source_number": 27
+    },
+    {
+      "bytes": 135,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/31.sparql",
+      "query_id": "multiple-31",
+      "shard": 0,
+      "source_number": 31
+    },
+    {
+      "bytes": 337,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/32.sparql",
+      "query_id": "multiple-32",
+      "shard": 1,
+      "source_number": 32
+    },
+    {
+      "bytes": 223,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/33.sparql",
+      "query_id": "multiple-33",
+      "shard": 2,
+      "source_number": 33
+    },
+    {
+      "bytes": 137,
+      "category": "multiple",
+      "projected_variables": [
+        "?var4"
+      ],
+      "query": "queries/multiple/34.sparql",
+      "query_id": "multiple-34",
+      "shard": 0,
+      "source_number": 34
+    },
+    {
+      "bytes": 136,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/35.sparql",
+      "query_id": "multiple-35",
+      "shard": 1,
+      "source_number": 35
+    },
+    {
+      "bytes": 226,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/36.sparql",
+      "query_id": "multiple-36",
+      "shard": 2,
+      "source_number": 36
+    },
+    {
+      "bytes": 193,
+      "category": "multiple",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/multiple/38.sparql",
+      "query_id": "multiple-38",
+      "shard": 0,
+      "source_number": 38
+    },
+    {
+      "bytes": 299,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/39.sparql",
+      "query_id": "multiple-39",
+      "shard": 1,
+      "source_number": 39
+    },
+    {
+      "bytes": 258,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/40.sparql",
+      "query_id": "multiple-40",
+      "shard": 2,
+      "source_number": 40
+    },
+    {
+      "bytes": 171,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/41.sparql",
+      "query_id": "multiple-41",
+      "shard": 0,
+      "source_number": 41
+    },
+    {
+      "bytes": 205,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/42.sparql",
+      "query_id": "multiple-42",
+      "shard": 1,
+      "source_number": 42
+    },
+    {
+      "bytes": 201,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/43.sparql",
+      "query_id": "multiple-43",
+      "shard": 2,
+      "source_number": 43
+    },
+    {
+      "bytes": 136,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/45.sparql",
+      "query_id": "multiple-45",
+      "shard": 0,
+      "source_number": 45
+    },
+    {
+      "bytes": 201,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/47.sparql",
+      "query_id": "multiple-47",
+      "shard": 1,
+      "source_number": 47
+    },
+    {
+      "bytes": 384,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/48.sparql",
+      "query_id": "multiple-48",
+      "shard": 2,
+      "source_number": 48
+    },
+    {
+      "bytes": 138,
+      "category": "multiple",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/multiple/49.sparql",
+      "query_id": "multiple-49",
+      "shard": 0,
+      "source_number": 49
+    },
+    {
+      "bytes": 232,
+      "category": "multiple",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/multiple/50.sparql",
+      "query_id": "multiple-50",
+      "shard": 1,
+      "source_number": 50
+    },
+    {
+      "bytes": 147,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/01.sparql",
+      "query_id": "optional-01",
+      "shard": 2,
+      "source_number": 1
+    },
+    {
+      "bytes": 183,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/02.sparql",
+      "query_id": "optional-02",
+      "shard": 0,
+      "source_number": 2
+    },
+    {
+      "bytes": 184,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/03.sparql",
+      "query_id": "optional-03",
+      "shard": 1,
+      "source_number": 3
+    },
+    {
+      "bytes": 273,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/04.sparql",
+      "query_id": "optional-04",
+      "shard": 2,
+      "source_number": 4
+    },
+    {
+      "bytes": 253,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/05.sparql",
+      "query_id": "optional-05",
+      "shard": 0,
+      "source_number": 5
+    },
+    {
+      "bytes": 183,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/06.sparql",
+      "query_id": "optional-06",
+      "shard": 1,
+      "source_number": 6
+    },
+    {
+      "bytes": 251,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/07.sparql",
+      "query_id": "optional-07",
+      "shard": 2,
+      "source_number": 7
+    },
+    {
+      "bytes": 183,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/08.sparql",
+      "query_id": "optional-08",
+      "shard": 0,
+      "source_number": 8
+    },
+    {
+      "bytes": 148,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/09.sparql",
+      "query_id": "optional-09",
+      "shard": 1,
+      "source_number": 9
+    },
+    {
+      "bytes": 151,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/10.sparql",
+      "query_id": "optional-10",
+      "shard": 2,
+      "source_number": 10
+    },
+    {
+      "bytes": 254,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/11.sparql",
+      "query_id": "optional-11",
+      "shard": 0,
+      "source_number": 11
+    },
+    {
+      "bytes": 186,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/12.sparql",
+      "query_id": "optional-12",
+      "shard": 1,
+      "source_number": 12
+    },
+    {
+      "bytes": 206,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/13.sparql",
+      "query_id": "optional-13",
+      "shard": 2,
+      "source_number": 13
+    },
+    {
+      "bytes": 257,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/14.sparql",
+      "query_id": "optional-14",
+      "shard": 0,
+      "source_number": 14
+    },
+    {
+      "bytes": 187,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/15.sparql",
+      "query_id": "optional-15",
+      "shard": 1,
+      "source_number": 15
+    },
+    {
+      "bytes": 238,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/16.sparql",
+      "query_id": "optional-16",
+      "shard": 2,
+      "source_number": 16
+    },
+    {
+      "bytes": 184,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/17.sparql",
+      "query_id": "optional-17",
+      "shard": 0,
+      "source_number": 17
+    },
+    {
+      "bytes": 184,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/18.sparql",
+      "query_id": "optional-18",
+      "shard": 1,
+      "source_number": 18
+    },
+    {
+      "bytes": 184,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/19.sparql",
+      "query_id": "optional-19",
+      "shard": 2,
+      "source_number": 19
+    },
+    {
+      "bytes": 220,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/20.sparql",
+      "query_id": "optional-20",
+      "shard": 0,
+      "source_number": 20
+    },
+    {
+      "bytes": 219,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/21.sparql",
+      "query_id": "optional-21",
+      "shard": 1,
+      "source_number": 21
+    },
+    {
+      "bytes": 149,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/22.sparql",
+      "query_id": "optional-22",
+      "shard": 2,
+      "source_number": 22
+    },
+    {
+      "bytes": 217,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/23.sparql",
+      "query_id": "optional-23",
+      "shard": 0,
+      "source_number": 23
+    },
+    {
+      "bytes": 185,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/24.sparql",
+      "query_id": "optional-24",
+      "shard": 1,
+      "source_number": 24
+    },
+    {
+      "bytes": 184,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/25.sparql",
+      "query_id": "optional-25",
+      "shard": 2,
+      "source_number": 25
+    },
+    {
+      "bytes": 185,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/26.sparql",
+      "query_id": "optional-26",
+      "shard": 0,
+      "source_number": 26
+    },
+    {
+      "bytes": 270,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/27.sparql",
+      "query_id": "optional-27",
+      "shard": 1,
+      "source_number": 27
+    },
+    {
+      "bytes": 252,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/28.sparql",
+      "query_id": "optional-28",
+      "shard": 2,
+      "source_number": 28
+    },
+    {
+      "bytes": 240,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/29.sparql",
+      "query_id": "optional-29",
+      "shard": 0,
+      "source_number": 29
+    },
+    {
+      "bytes": 218,
+      "category": "optional",
+      "projected_variables": [
+        "?var5"
+      ],
+      "query": "queries/optional/30.sparql",
+      "query_id": "optional-30",
+      "shard": 1,
+      "source_number": 30
+    },
+    {
+      "bytes": 483,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/31.sparql",
+      "query_id": "optional-31",
+      "shard": 2,
+      "source_number": 31
+    },
+    {
+      "bytes": 622,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/32.sparql",
+      "query_id": "optional-32",
+      "shard": 0,
+      "source_number": 32
+    },
+    {
+      "bytes": 622,
+      "category": "optional",
+      "projected_variables": [
+        "?var7"
+      ],
+      "query": "queries/optional/33.sparql",
+      "query_id": "optional-33",
+      "shard": 1,
+      "source_number": 33
+    },
+    {
+      "bytes": 692,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/34.sparql",
+      "query_id": "optional-34",
+      "shard": 2,
+      "source_number": 34
+    },
+    {
+      "bytes": 693,
+      "category": "optional",
+      "projected_variables": [
+        "?var3"
+      ],
+      "query": "queries/optional/35.sparql",
+      "query_id": "optional-35",
+      "shard": 0,
+      "source_number": 35
+    },
+    {
+      "bytes": 1055,
+      "category": "optional",
+      "projected_variables": [
+        "?var12"
+      ],
+      "query": "queries/optional/36.sparql",
+      "query_id": "optional-36",
+      "shard": 1,
+      "source_number": 36
+    },
+    {
+      "bytes": 1054,
+      "category": "optional",
+      "projected_variables": [
+        "?var8"
+      ],
+      "query": "queries/optional/37.sparql",
+      "query_id": "optional-37",
+      "shard": 2,
+      "source_number": 37
+    },
+    {
+      "bytes": 519,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/38.sparql",
+      "query_id": "optional-38",
+      "shard": 0,
+      "source_number": 38
+    },
+    {
+      "bytes": 377,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/39.sparql",
+      "query_id": "optional-39",
+      "shard": 1,
+      "source_number": 39
+    },
+    {
+      "bytes": 588,
+      "category": "optional",
+      "projected_variables": [
+        "?var8"
+      ],
+      "query": "queries/optional/40.sparql",
+      "query_id": "optional-40",
+      "shard": 2,
+      "source_number": 40
+    },
+    {
+      "bytes": 378,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/41.sparql",
+      "query_id": "optional-41",
+      "shard": 0,
+      "source_number": 41
+    },
+    {
+      "bytes": 182,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/42.sparql",
+      "query_id": "optional-42",
+      "shard": 1,
+      "source_number": 42
+    },
+    {
+      "bytes": 1384,
+      "category": "optional",
+      "projected_variables": [
+        "?var14"
+      ],
+      "query": "queries/optional/43.sparql",
+      "query_id": "optional-43",
+      "shard": 2,
+      "source_number": 43
+    },
+    {
+      "bytes": 182,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/44.sparql",
+      "query_id": "optional-44",
+      "shard": 0,
+      "source_number": 44
+    },
+    {
+      "bytes": 323,
+      "category": "optional",
+      "projected_variables": [
+        "?var4"
+      ],
+      "query": "queries/optional/45.sparql",
+      "query_id": "optional-45",
+      "shard": 1,
+      "source_number": 45
+    },
+    {
+      "bytes": 183,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/46.sparql",
+      "query_id": "optional-46",
+      "shard": 2,
+      "source_number": 46
+    },
+    {
+      "bytes": 183,
+      "category": "optional",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query": "queries/optional/47.sparql",
+      "query_id": "optional-47",
+      "shard": 0,
+      "source_number": 47
+    },
+    {
+      "bytes": 462,
+      "category": "optional",
+      "projected_variables": [
+        "?var6"
+      ],
+      "query": "queries/optional/48.sparql",
+      "query_id": "optional-48",
+      "shard": 1,
+      "source_number": 48
+    },
+    {
+      "bytes": 181,
+      "category": "optional",
+      "projected_variables": [
+        "?var2"
+      ],
+      "query": "queries/optional/49.sparql",
+      "query_id": "optional-49",
+      "shard": 2,
+      "source_number": 49
+    },
+    {
+      "bytes": 600,
+      "category": "optional",
+      "projected_variables": [
+        "?var4"
+      ],
+      "query": "queries/optional/50.sparql",
+      "query_id": "optional-50",
+      "shard": 0,
+      "source_number": 50
+    }
+  ],
+  "query_contract": {
+    "input": "unaltered public Basic query text",
+    "limit": null,
+    "projection": "exactly one public SELECT variable"
+  },
+  "schema": "npcs-public-136-workload-v1",
+  "sharding": {
+    "algorithm": "within-category round-robin with offsets single=0, multiple=1, optional=2",
+    "counts": [
+      46,
+      45,
+      45
+    ],
+    "shards": 3
+  },
+  "source": {
+    "path": "queries/Basic/wikidata",
+    "repository": "https://github.com/ZubariaForthAcc/NPCS.git"
+  },
+  "workload_id": "NPCS-public-136"
+}

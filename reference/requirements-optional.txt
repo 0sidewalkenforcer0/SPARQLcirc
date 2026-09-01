@@ -1,0 +1,9 @@
+# The core tests and the ROBDD/WMC implementation use only Python's standard
+# library.  quick_verify.py additionally needs rdflib, the only oracle for the
+# FILTER cases of the composition differential.  Install this file for rdflib and
+# for the extended/oracle experiments:
+#
+#   python -m pip install -r reference/requirements-optional.txt
+
+rdflib>=6.3,<8
+tqdm>=4.66,<5

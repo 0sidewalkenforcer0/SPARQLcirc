@@ -1,0 +1,7 @@
+# MONOTONIC — conjunction (Example 3.2's query Q = P1 AND P2).
+# Expected provenance:  Alice -> (u1 ⊕ u2) ⊗ u3
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x WHERE {
+  ?x ex:likes   ex:pasta .
+  ?x ex:livesIn ex:Italy .
+}

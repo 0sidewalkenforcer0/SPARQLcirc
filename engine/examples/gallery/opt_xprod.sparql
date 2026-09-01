@@ -1,0 +1,12 @@
+PREFIX : <http://example.org/paper#>
+# Cross-product OPTIONAL as MINUS's LEFT operand: (A OPT B) MINUS P with A,B sharing NO variable
+# (knows binds ?x,?y; city binds ?w,?c). A OPT B's negative branch is UNGUARDED DIFF, so the
+# (A DIFF B) MINUS P disjunct is NOT equal to the guarded A MINUS (B UNION P) here (they diverge
+# exactly when A,B are domain-disjoint: A DIFF B removes the match, A MINUS B is a no-op). The
+# circuit therefore does not apply that reduction: the guarded/unguarded kind travels on the
+# difference node, so the two disjuncts stay distinct. This probe locks that kind distinction,
+# and the answer probabilities are checked against rdflib over every world.
+SELECT ?y WHERE {
+  { ?x :knows ?y  OPTIONAL { ?w :city ?c } }
+  MINUS { ?z :blocks ?y }
+}

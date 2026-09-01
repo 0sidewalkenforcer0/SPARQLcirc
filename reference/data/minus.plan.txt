@@ -1,0 +1,74 @@
+# ---- construction mode: requested=flat, effective=flat ----
+# ---- circuit construction plan: 4 CONSTRUCT(s) ----
+# --- step 1 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_t a c:Times ; c:in ?__sc0_a0 ; c:feeds ?__sc0_pg .
+  ?__sc0_pg a c:Plus .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(SHA256(STR(?__sc0_a0)) AS ?__sc0_srt0)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt0)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1@aaf3bd0c75c6f9d03eacf14184505eebe84b148e9d20839fc4ad7b01012147b9", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_pg)
+}
+
+# step label: marg-flat
+# --- step 2 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_t a c:Times ; c:in ?__sc0_b0 ; c:feeds ?__sc0_pg .
+  ?__sc0_pg a c:Plus .
+}
+WHERE {
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:Italy> . 
+  BIND(SHA256(STR(?__sc0_b0)) AS ?__sc0_srt0)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt0)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2@eb1b4fca2df989448290b76e6b8faa9c1278c1e0e1ac84f01391f8f698f49c91", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_pg)
+}
+
+# step label: marg-flat
+# --- step 3 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_p2 c:feeds ?__sc0_sub .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:Italy> . 
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2@eb1b4fca2df989448290b76e6b8faa9c1278c1e0e1ac84f01391f8f698f49c91", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_p2)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB@6c9522a1df256aa30bf819af28fc43a43b73d853c6e776ad8b7a773495de08c7", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_sub)
+}
+
+# step label: sub
+# --- step 4 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_m a c:Minus ; c:minuend ?__sc0_p1 ; c:subtrahend ?__sc0_sub ; c:feeds ?__sc0_ans .
+  ?__sc0_sub a c:Plus .
+  ?__sc0_ans a c:Plus ; c:answer ?__sc0_anskey .
+  ?__sc0_ans c:binding ?__sc0_b_x . ?__sc0_b_x c:var "x" ; c:val ?x .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1@aaf3bd0c75c6f9d03eacf14184505eebe84b148e9d20839fc4ad7b01012147b9", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_p1)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB@6c9522a1df256aa30bf819af28fc43a43b73d853c6e776ad8b7a773495de08c7", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_sub)
+  BIND(IRI(CONCAT("urn:g:m:", SHA256(CONCAT("M@6c9522a1df256aa30bf819af28fc43a43b73d853c6e776ad8b7a773495de08c7", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_m)
+  BIND(CONCAT("A", "|x=", IF(BOUND(?x), STR(?x), "NULL")) AS ?__sc0_anskey)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(CONCAT("A@95f65c309d66092049a8510c0bcece47c67e748fd23647df6b7e76bf172ae326", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_ans)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#x")) AS ?__sc0_b_x)
+}
+
+# step label: minusRoot
+# construction_ms: 96
+# circuit triples: 36

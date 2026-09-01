@@ -1,0 +1,5 @@
+PREFIX : <http://example.org/paper#>
+# FILTER in BGP position (Def. 4.5, clause 6): builds no gate and renames none, it
+# only removes the matches whose annotation is 0. Verified by reference/verify_gallery.py
+# as circuit WMC == possible-world enumeration, with rdflib's W3C evaluation as oracle.
+SELECT ?y WHERE { :Alice :knows ?y . FILTER(?y != :Carol) }

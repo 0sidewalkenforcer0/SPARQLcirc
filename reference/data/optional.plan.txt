@@ -1,0 +1,103 @@
+# ---- construction mode: requested=flat, effective=flat ----
+# ---- circuit construction plan: 5 CONSTRUCT(s) ----
+# --- step 1 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_t a c:Times ; c:in ?__sc0_a0 ; c:in ?__sc0_a1 ; c:feeds ?__sc0_ans .
+  ?__sc0_ans a c:Plus ; c:answer ?__sc0_anskey .
+  ?__sc0_ans c:binding ?__sc0_b_x . ?__sc0_b_x c:var "x" ; c:val ?x .
+  ?__sc0_ans c:binding ?__sc0_b_c . ?__sc0_b_c c:var "c" ; c:val ?c .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?__sc0_a1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?c . 
+  BIND(SHA256(STR(?__sc0_a0)) AS ?__sc0_srt0)
+  BIND(SHA256(STR(?__sc0_a1)) AS ?__sc0_srt1)
+  BIND(IF(?__sc0_srt0 <= ?__sc0_srt1, ?__sc0_srt0, ?__sc0_srt1) AS ?__sc0_srt2)
+  BIND(IF(?__sc0_srt0 <= ?__sc0_srt1, ?__sc0_srt1, ?__sc0_srt0) AS ?__sc0_srt3)
+  BIND(CONCAT("A", "|x=", IF(BOUND(?x), STR(?x), "NULL"), "|c=", IF(BOUND(?c), STR(?c), "NULL")) AS ?__sc0_anskey)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt2, "|", ?__sc0_srt3)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(CONCAT("A@c002a32743a27111ecac55aa70c235c6ec79e0cd54e7fa4342a63fe2f72ce25f", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))), SHA256(CONCAT("c=", IF(!BOUND(?c), "u", IF(isIRI(?c), CONCAT("i", SHA256(STR(?c))), IF(isBlank(?c), CONCAT("b", SHA256(STR(?c))), IF(isLiteral(?c), CONCAT("l", SHA256(STR(?c)), SHA256(STR(DATATYPE(?c))), SHA256(LCASE(LANG(?c)))), "x")))))))))) AS ?__sc0_ans)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#x")) AS ?__sc0_b_x)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#c")) AS ?__sc0_b_c)
+}
+
+# step label: flat-bgp
+# --- step 2 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_t a c:Times ; c:in ?__sc0_a0 ; c:feeds ?__sc0_pg .
+  ?__sc0_pg a c:Plus .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(SHA256(STR(?__sc0_a0)) AS ?__sc0_srt0)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt0)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1@aaf3bd0c75c6f9d03eacf14184505eebe84b148e9d20839fc4ad7b01012147b9", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_pg)
+}
+
+# step label: marg-flat
+# --- step 3 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_t a c:Times ; c:in ?__sc0_b0 ; c:feeds ?__sc0_pg .
+  ?__sc0_pg a c:Plus .
+}
+WHERE {
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?c . 
+  BIND(SHA256(STR(?__sc0_b0)) AS ?__sc0_srt0)
+  BIND(IRI(CONCAT("urn:g:t:", SHA256(CONCAT("T", "|", ?__sc0_srt0)))) AS ?__sc0_t)
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2@fa301aefffe317b59d112864d6e65cfdb2b4b3605b6837a01da5b1c2cba8b60b", SHA256(CONCAT("c=", IF(!BOUND(?c), "u", IF(isIRI(?c), CONCAT("i", SHA256(STR(?c))), IF(isBlank(?c), CONCAT("b", SHA256(STR(?c))), IF(isLiteral(?c), CONCAT("l", SHA256(STR(?c)), SHA256(STR(DATATYPE(?c))), SHA256(LCASE(LANG(?c)))), "x")))))), SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_pg)
+}
+
+# step label: marg-flat
+# --- step 4 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_p2 c:feeds ?__sc0_sub .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:livesIn> . 
+	?__sc0_b0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> ?c . 
+  BIND(IRI(CONCAT("urn:g:p2:", SHA256(CONCAT("P2@fa301aefffe317b59d112864d6e65cfdb2b4b3605b6837a01da5b1c2cba8b60b", SHA256(CONCAT("c=", IF(!BOUND(?c), "u", IF(isIRI(?c), CONCAT("i", SHA256(STR(?c))), IF(isBlank(?c), CONCAT("b", SHA256(STR(?c))), IF(isLiteral(?c), CONCAT("l", SHA256(STR(?c)), SHA256(STR(DATATYPE(?c))), SHA256(LCASE(LANG(?c)))), "x")))))), SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_p2)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB@d5c36ae908fd041aaf9777a32b41dd5455433eed67506ca34ca95c339f71fb41", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_sub)
+}
+
+# step label: sub
+# --- step 5 ---
+PREFIX c: <urn:circuit:>
+CONSTRUCT {
+  ?__sc0_m a c:Minus ; c:minuend ?__sc0_p1 ; c:subtrahend ?__sc0_sub ; c:feeds ?__sc0_ans .
+  ?__sc0_sub a c:Plus .
+  ?__sc0_ans a c:Plus ; c:answer ?__sc0_anskey .
+  ?__sc0_ans c:binding ?__sc0_b_x . ?__sc0_b_x c:var "x" ; c:val ?x .
+  ?__sc0_ans c:binding ?__sc0_b_c . ?__sc0_b_c c:var "c" ; c:val ?c .
+}
+WHERE {
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> ?x . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:d:likes> . 
+	?__sc0_a0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:d:pasta> . 
+  BIND(IRI(CONCAT("urn:g:p1:", SHA256(CONCAT("P1@aaf3bd0c75c6f9d03eacf14184505eebe84b148e9d20839fc4ad7b01012147b9", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_p1)
+  BIND(IRI(CONCAT("urn:g:sub:", SHA256(CONCAT("SUB@d5c36ae908fd041aaf9777a32b41dd5455433eed67506ca34ca95c339f71fb41", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_sub)
+  BIND(IRI(CONCAT("urn:g:m:", SHA256(CONCAT("M@d5c36ae908fd041aaf9777a32b41dd5455433eed67506ca34ca95c339f71fb41", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))))))) AS ?__sc0_m)
+  BIND(CONCAT("A", "|x=", IF(BOUND(?x), STR(?x), "NULL"), "|c=", "NULL") AS ?__sc0_anskey)
+  BIND(IRI(CONCAT("urn:g:a:", SHA256(CONCAT("A@c002a32743a27111ecac55aa70c235c6ec79e0cd54e7fa4342a63fe2f72ce25f", SHA256(CONCAT("x=", IF(!BOUND(?x), "u", IF(isIRI(?x), CONCAT("i", SHA256(STR(?x))), IF(isBlank(?x), CONCAT("b", SHA256(STR(?x))), IF(isLiteral(?x), CONCAT("l", SHA256(STR(?x)), SHA256(STR(DATATYPE(?x))), SHA256(LCASE(LANG(?x)))), "x")))))), SHA256(CONCAT("c=", IF(!BOUND(?c), "u", IF(isIRI(?c), CONCAT("i", SHA256(STR(?c))), IF(isBlank(?c), CONCAT("b", SHA256(STR(?c))), IF(isLiteral(?c), CONCAT("l", SHA256(STR(?c)), SHA256(STR(DATATYPE(?c))), SHA256(LCASE(LANG(?c)))), "x")))))))))) AS ?__sc0_ans)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#x")) AS ?__sc0_b_x)
+  BIND(IRI(CONCAT(STR(?__sc0_ans), "#c")) AS ?__sc0_b_c)
+}
+
+# step label: minusRoot
+# construction_ms: 110
+# circuit triples: 56

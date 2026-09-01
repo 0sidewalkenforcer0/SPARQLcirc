@@ -1,0 +1,24 @@
+# Paper running example (Asma et al., NPCS, WWW'24 — Example 3.2), encoded as
+# asserted triples plus SPARQL-star / RDF-star: a quoted triple << s p o >> is linked to its provenance
+# token u_i via ex:occurrenceOf (the predicate NPCS's SPARQL_Star scheme matches).
+# The same quoted triple with two occurrenceOf tokens (u1, u2) yields (u1 ⊕ u2).
+#
+# Use with:  java -cp target/npcs-rewrite.jar npcs.RunExample SPARQL_Star \
+#              examples/data/example.star.ttls <query.sparql>
+
+@prefix ex:  <http://example.org/paper#> .
+@prefix occ: <http://example.org/> .          # occ:occurrenceOf is the predicate NPCS's SPARQL_Star scheme matches
+
+# --- Asserted graph (the default mixed layout) ---
+ex:Alice ex:likes ex:pasta ; ex:livesIn ex:Italy .
+ex:Bob ex:likes ex:pasta .
+ex:Carol ex:livesIn ex:Italy .
+
+# --- Example 3.2 (verbatim): Alice ---
+<< ex:Alice ex:likes   ex:pasta >> occ:occurrenceOf ex:u1 .
+<< ex:Alice ex:likes   ex:pasta >> occ:occurrenceOf ex:u2 .
+<< ex:Alice ex:livesIn ex:Italy >> occ:occurrenceOf ex:u3 .
+
+# --- Added so UNION / MINUS / OPTIONAL return non-trivial provenance ---
+<< ex:Bob   ex:likes   ex:pasta >> occ:occurrenceOf ex:u4 .
+<< ex:Carol ex:livesIn ex:Italy >> occ:occurrenceOf ex:u5 .

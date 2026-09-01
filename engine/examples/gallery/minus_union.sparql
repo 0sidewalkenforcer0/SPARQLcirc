@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# MINUS whose LEFT operand is a UNION (a non-BGP operand). Exercises the circuit's
+# UNION-out-of-MINUS normalization: (A UNION B) MINUS P = (A MINUS P) UNION (B MINUS P).
+SELECT ?y WHERE {
+  { { :Alice :knows ?y } UNION { :Alice :likes ?y } }
+  MINUS { :Alice :blocks ?y }
+}

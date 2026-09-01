@@ -1,0 +1,23 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?o_year
+WHERE {
+  ?part     <p_type>          "PROMO POLISHED TIN" .
+  ?supplier <s_nation>        ?n2 .
+  ?lineitem <l_part>          ?part ;
+            <l_supp>          ?supplier ;
+            <l_order>         ?order ;
+            <l_extendedprice> ?l_extendedprice ;
+            <l_discount>      ?l_discount .
+  ?order    <o_cust>          ?customer ;
+            <o_orderdate>     ?o_orderdate .
+  ?customer <c_nation>        ?n1 .
+  ?n1       <n_region>        ?region .
+  ?n2       <n_name>          ?nation .
+  ?region   <r_name>          "AFRICA" .
+  FILTER (strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime) >= "1995-01-01T00:00:00"^^xsd:dateTime &&
+          strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime) <=  "1996-12-31T00:00:00"^^xsd:dateTime)
+  BIND(year(?o_orderdate) AS ?o_year)
+  BIND((?l_extendedprice * (1 - ?l_discount)) AS ?volume)
+}

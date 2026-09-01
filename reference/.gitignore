@@ -1,0 +1,10 @@
+# GraphDB import/preload temporary sort files
+plists_q
+pos_q
+pso_q
+# transient harness scratch
+engines/_empty.ttl
+__pycache__/
+*.pyc
+dates_q
+num_q

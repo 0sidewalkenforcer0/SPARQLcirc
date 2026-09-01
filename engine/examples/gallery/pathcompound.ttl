@@ -1,0 +1,7 @@
+@prefix : <http://example.org/paper#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+# A -p-> B -q-> C -p-> D -q-> A : (p/q) gives A->C and C->A (a cycle); (p|q) is a 4-cycle.
+:e1 rdf:subject :A ; rdf:predicate :p ; rdf:object :B .
+:e2 rdf:subject :B ; rdf:predicate :q ; rdf:object :C .
+:e3 rdf:subject :C ; rdf:predicate :p ; rdf:object :D .
+:e4 rdf:subject :D ; rdf:predicate :q ; rdf:object :A .

@@ -1,0 +1,4 @@
+@prefix d:   <urn:d:> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+d:s1 rdf:subject d:A ; rdf:predicate d:p ; rdf:object d:B .
+d:s2 rdf:subject d:C ; rdf:predicate d:p ; rdf:object d:B .

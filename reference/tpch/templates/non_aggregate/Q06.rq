@@ -1,0 +1,15 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  (1 AS ?x)
+WHERE {
+  ?lineitem <l_extendedprice> ?l_extendedprice ;
+            <l_discount>      ?l_discount ;
+            <l_shipdate>      ?l_shipdate ;
+            <l_quantity>      ?l_quantity .
+  FILTER (strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime) >= "1993-01-01T00:00:00"^^xsd:dateTime &&
+          strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime) < "1994-01-01T00:00:00"^^xsd:dateTime &&
+	  ?l_discount >= 0.06 &&
+          ?l_discount <= 0.08 &&
+	  ?l_quantity < 25)
+}

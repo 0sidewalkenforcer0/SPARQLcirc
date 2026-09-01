@@ -1,0 +1,6 @@
+PREFIX : <http://example.org/paper#>
+# FILTER inside a MINUS subtrahend. :Alice is the only blocker, so FILTER(?w != :Alice)
+# empties the subtrahend and the MINUS becomes a no-op: the filtered query returns MORE
+# answers than the unfiltered one, which is what makes this a real test that the condition
+# reaches the engine rather than being dropped.
+SELECT ?y WHERE { :Alice :knows ?y MINUS { ?w :blocks ?y FILTER(?w != :Alice) } }

@@ -1,0 +1,11 @@
+source_id	iri	stratum	reachable_count	max_hops	selection_method	selection_seed
+psrc-00	http://db.uwaterloo.ca/~galuc/wsdbm/User55358	zero	0	0	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-01	http://db.uwaterloo.ca/~galuc/wsdbm/User7585	zero	0	0	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-02	http://db.uwaterloo.ca/~galuc/wsdbm/User70475	intermediate	1	1	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-03	http://db.uwaterloo.ca/~galuc/wsdbm/User62856	intermediate	3	1	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-04	http://db.uwaterloo.ca/~galuc/wsdbm/User45362	intermediate	2	1	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-05	http://db.uwaterloo.ca/~galuc/wsdbm/User79096	intermediate	4	1	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-06	http://db.uwaterloo.ca/~galuc/wsdbm/User17123	saturated-h4	100000	4	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-07	http://db.uwaterloo.ca/~galuc/wsdbm/User4574	saturated-h5	100000	5	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-08	http://db.uwaterloo.ca/~galuc/wsdbm/User99904	saturated-h5	100000	5	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820
+psrc-09	http://db.uwaterloo.ca/~galuc/wsdbm/User28164	saturated-h6	100000	6	stratified-closure-lcg-v1(zero=2,intermediate=4,h4=1,h5=2,h6=1)	20260820

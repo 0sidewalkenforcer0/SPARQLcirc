@@ -1,0 +1,3 @@
+PREFIX : <http://example.org/paper#>
+# DISTINCT is an implicit no-op for the circuit (answer gates are already a set).
+SELECT DISTINCT ?y WHERE { :Alice :knows ?y }

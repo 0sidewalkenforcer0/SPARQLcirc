@@ -1,0 +1,4 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+PREFIX sorg: <http://schema.org/>
+SELECT ?a WHERE { <http://db.uwaterloo.ca/~galuc/wsdbm/User87768> wsdbm:likes ?a . <http://db.uwaterloo.ca/~galuc/wsdbm/User87768> wsdbm:subscribes ?b . <http://db.uwaterloo.ca/~galuc/wsdbm/User87768> wsdbm:makesPurchase ?c . }

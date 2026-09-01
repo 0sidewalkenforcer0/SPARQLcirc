@@ -1,0 +1,2 @@
+BASE <http://example.org/>
+SELECT ?order ?line WHERE { ?cust <c_mktsegment> "BUILDING" . ?order <o_cust> ?cust . ?line <l_order> ?order . }

@@ -1,0 +1,2 @@
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x WHERE { ?x ex:p ?y . MINUS { { ?y ex:q ?z } UNION { ?y ex:r ?w } } }

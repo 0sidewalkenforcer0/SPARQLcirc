@@ -1,0 +1,7 @@
+@prefix ex:  <http://example.org/paper#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+ex:A ex:p ex:B .
+ex:C ex:p ex:B .
+
+ex:s1 rdf:subject ex:A ; rdf:predicate ex:p ; rdf:object ex:B .
+ex:s2 rdf:subject ex:C ; rdf:predicate ex:p ; rdf:object ex:B .

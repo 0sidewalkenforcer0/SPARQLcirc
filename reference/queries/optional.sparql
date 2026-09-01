@@ -1,0 +1,2 @@
+PREFIX d: <urn:d:>
+SELECT ?x ?c WHERE { ?x d:likes d:pasta . OPTIONAL { ?x d:livesIn ?c . } }

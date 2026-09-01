@@ -1,0 +1,17 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?supplier
+  ?lineitem
+WHERE {
+  ?lineitem <l_supp>          ?supplier ;
+            <l_shipdate>      ?l_shipdate ;
+            <l_extendedprice> ?l_extendedprice ;
+            <l_discount>      ?l_discount .
+  FILTER (
+    strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime)
+      >= "1996-01-01T00:00:00"^^xsd:dateTime &&
+    strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime)
+      < "1996-04-01T00:00:00"^^xsd:dateTime
+  )
+}

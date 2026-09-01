@@ -1,0 +1,23 @@
+# Paper running example (Asma et al., NPCS, WWW'24 — Example 3.2), encoded as
+# asserted triples plus RDF standard reification. Each statement node u_i is a provenance token; NPCS
+# binds ?fprov to it. A base triple with two sources (u1, u2) yields (u1 ⊕ u2).
+#
+# Use with:  java -cp target/npcs-rewrite.jar npcs.RunExample Standard \
+#              examples/data/example.standard.ttl <query.sparql>
+
+@prefix ex:  <http://example.org/paper#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+# --- Asserted graph (the default mixed layout) ---
+ex:Alice ex:likes ex:pasta ; ex:livesIn ex:Italy .
+ex:Bob ex:likes ex:pasta .
+ex:Carol ex:livesIn ex:Italy .
+
+# --- Example 3.2 (verbatim): Alice ---
+ex:u1 rdf:subject ex:Alice ; rdf:predicate ex:likes   ; rdf:object ex:pasta .
+ex:u2 rdf:subject ex:Alice ; rdf:predicate ex:likes   ; rdf:object ex:pasta .   # second source of the same triple
+ex:u3 rdf:subject ex:Alice ; rdf:predicate ex:livesIn ; rdf:object ex:Italy .
+
+# --- Added so UNION / MINUS / OPTIONAL return non-trivial provenance ---
+ex:u4 rdf:subject ex:Bob   ; rdf:predicate ex:likes   ; rdf:object ex:pasta .   # Bob likes pasta, no known country
+ex:u5 rdf:subject ex:Carol ; rdf:predicate ex:livesIn ; rdf:object ex:Italy .   # Carol lives in Italy, no known food

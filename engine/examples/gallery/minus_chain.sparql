@@ -1,0 +1,8 @@
+PREFIX : <http://example.org/paper#>
+# Chained MINUS: A MINUS {P} MINUS {Q} = Difference(Difference(A,P),Q).
+# normalize() reduces it to A MINUS (P UNION Q)  [(A∖P)∖Q = A∖(P∪Q)].
+SELECT ?y WHERE {
+  :Alice :knows ?y
+  MINUS { :Alice :blocks ?y }
+  MINUS { ?y :city ?c }
+}

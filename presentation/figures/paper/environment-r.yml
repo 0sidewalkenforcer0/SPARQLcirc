@@ -1,0 +1,8 @@
+name: sparqlcirc-paper-figures
+channels:
+  - conda-forge
+dependencies:
+  - r-base=4.5.3
+  - r-dplyr=1.2.1
+  - r-ggplot2=4.0.3
+  - r-scales=1.4.0

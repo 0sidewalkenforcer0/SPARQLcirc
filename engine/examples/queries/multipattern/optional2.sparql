@@ -1,0 +1,2 @@
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x ?y ?z WHERE { ?x ex:p ?y . OPTIONAL { ?y ex:q ?z . } }

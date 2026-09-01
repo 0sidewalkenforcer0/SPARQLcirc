@@ -1,0 +1,23 @@
+# Paper running example (Asma et al., NPCS, WWW'24 — Example 3.2), encoded as
+# asserted triples plus NAMED-GRAPH reification: each base triple also lives in its own named graph, and the
+# graph name IS the provenance token u_i (the IRI NPCS's namedgraph scheme matches,
+# emitted as GRAPH ?prov { s p o }). Tokens are the SAME ex:u_i as the Standard and
+# RDF-star encodings, so the emitted circuit is byte-identical across all three.
+#
+# Use with:  java -cp target/npcs-rewrite.jar npcs.circuit.CircuitRun NamedGraph \
+#              examples/data/example.namedgraph.nq <query.sparql>
+
+# --- Asserted default graph (the default mixed layout) ---
+<http://example.org/paper#Alice> <http://example.org/paper#likes> <http://example.org/paper#pasta> .
+<http://example.org/paper#Alice> <http://example.org/paper#livesIn> <http://example.org/paper#Italy> .
+<http://example.org/paper#Bob> <http://example.org/paper#likes> <http://example.org/paper#pasta> .
+<http://example.org/paper#Carol> <http://example.org/paper#livesIn> <http://example.org/paper#Italy> .
+
+# --- Example 3.2 (verbatim): Alice ---
+<http://example.org/paper#Alice> <http://example.org/paper#likes> <http://example.org/paper#pasta> <http://example.org/paper#u1> .
+<http://example.org/paper#Alice> <http://example.org/paper#likes> <http://example.org/paper#pasta> <http://example.org/paper#u2> .
+<http://example.org/paper#Alice> <http://example.org/paper#livesIn> <http://example.org/paper#Italy> <http://example.org/paper#u3> .
+
+# --- Added so UNION / MINUS / OPTIONAL return non-trivial provenance ---
+<http://example.org/paper#Bob> <http://example.org/paper#likes> <http://example.org/paper#pasta> <http://example.org/paper#u4> .
+<http://example.org/paper#Carol> <http://example.org/paper#livesIn> <http://example.org/paper#Italy> <http://example.org/paper#u5> .

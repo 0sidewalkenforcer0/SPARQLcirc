@@ -1,0 +1,7 @@
+PREFIX : <http://example.org/paper#>
+# MINUS whose RIGHT operand is a UNION: μ is removed if it matches EITHER branch.
+# ?y :city ?c  removes y=o when o has a city;  ?w :blocks ?y  removes y=o when o is blocked.
+SELECT ?y WHERE {
+  :Alice :knows ?y
+  MINUS { { ?y :city ?c } UNION { ?w :blocks ?y } }
+}

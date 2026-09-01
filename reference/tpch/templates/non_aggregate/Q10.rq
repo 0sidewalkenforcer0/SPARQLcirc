@@ -1,0 +1,27 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?customer
+  ?c_name
+  ?c_acctbal
+  ?n_name
+  ?c_address
+  ?c_phone
+  ?c_comment
+WHERE {
+  ?customer <c_nation>        ?nation ;
+            <c_name>          ?c_name ;
+            <c_acctbal>       ?c_acctbal ;
+            <c_phone>         ?c_phone ;
+            <c_address>       ?c_address ;
+            <c_comment>       ?c_comment .
+  ?order    <o_cust>          ?customer ;
+            <o_orderdate>     ?o_orderdate .
+  ?lineitem <l_order>         ?order ;
+            <l_extendedprice> ?l_extendedprice ;
+            <l_discount>      ?l_discount ;
+            <l_returnflag>    'R' .
+  ?nation   <n_name>          ?n_name .
+  FILTER (strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime) >= "1993-11-01T00:00:00"^^xsd:dateTime &&
+	  strdt(concat(str(?o_orderdate), 'T00:00:00'), xsd:dateTime) < "1994-02-01T00:00:00"^^xsd:dateTime)
+}

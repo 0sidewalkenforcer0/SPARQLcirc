@@ -1,0 +1,2 @@
+BASE <http://example.org/>
+SELECT ?line WHERE { ?cust <c_nation> ?nat . ?order <o_cust> ?cust . ?line <l_order> ?order . ?line <l_supp> ?supp . ?supp <s_nation> ?nat . ?nat <n_region> ?reg . }

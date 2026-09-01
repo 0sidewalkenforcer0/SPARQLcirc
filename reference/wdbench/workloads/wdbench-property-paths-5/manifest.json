@@ -1,0 +1,155 @@
+{
+  "counts": {
+    "composite_path_factored": 0,
+    "dedicated_path_fixpoint": 5,
+    "property_path": 5,
+    "total": 5
+  },
+  "entries": [
+    {
+      "base_query": "queries/02/base.rq",
+      "category": "property_path",
+      "plan_class": "dedicated-path-fixpoint",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query_id": "path-02",
+      "recursive": true,
+      "screening_counts": {
+        "closure": 6,
+        "final_answers": 6
+      },
+      "screening_population_id": "path-106",
+      "selection_draw_index": 2,
+      "shard": 0,
+      "source_bounded_adaptation": false,
+      "source_fragment": "queries/02/source-fragment.sparql",
+      "source_query_number": 13,
+      "sparqlcirc_query": "queries/02/sparqlcirc.rq"
+    },
+    {
+      "base_query": "queries/05/base.rq",
+      "category": "property_path",
+      "plan_class": "dedicated-path-fixpoint",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query_id": "path-05",
+      "recursive": true,
+      "screening_counts": {
+        "closure": 6,
+        "final_answers": 6
+      },
+      "screening_population_id": "path-432",
+      "selection_draw_index": 5,
+      "shard": 1,
+      "source_bounded_adaptation": false,
+      "source_fragment": "queries/05/source-fragment.sparql",
+      "source_query_number": 111,
+      "sparqlcirc_query": "queries/05/sparqlcirc.rq"
+    },
+    {
+      "base_query": "queries/08/base.rq",
+      "category": "property_path",
+      "plan_class": "dedicated-path-fixpoint",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query_id": "path-08",
+      "recursive": true,
+      "screening_counts": {
+        "closure": 5,
+        "final_answers": 5
+      },
+      "screening_population_id": "path-223",
+      "selection_draw_index": 8,
+      "shard": 2,
+      "source_bounded_adaptation": false,
+      "source_fragment": "queries/08/source-fragment.sparql",
+      "source_query_number": 113,
+      "sparqlcirc_query": "queries/08/sparqlcirc.rq"
+    },
+    {
+      "base_query": "queries/11/base.rq",
+      "category": "property_path",
+      "plan_class": "dedicated-path-fixpoint",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query_id": "path-11",
+      "recursive": true,
+      "screening_counts": {
+        "closure": 23,
+        "final_answers": 23
+      },
+      "screening_population_id": "path-536",
+      "selection_draw_index": 11,
+      "shard": 0,
+      "source_bounded_adaptation": true,
+      "source_fragment": "queries/11/source-fragment.sparql",
+      "source_query_number": 165,
+      "sparqlcirc_query": "queries/11/sparqlcirc.rq"
+    },
+    {
+      "base_query": "queries/14/base.rq",
+      "category": "property_path",
+      "plan_class": "dedicated-path-fixpoint",
+      "projected_variables": [
+        "?var1"
+      ],
+      "query_id": "path-14",
+      "recursive": true,
+      "screening_counts": {
+        "closure": 255,
+        "final_answers": 255
+      },
+      "screening_population_id": "path-519",
+      "selection_draw_index": 14,
+      "shard": 1,
+      "source_bounded_adaptation": true,
+      "source_fragment": "queries/14/source-fragment.sparql",
+      "source_query_number": 252,
+      "sparqlcirc_query": "queries/14/sparqlcirc.rq"
+    }
+  ],
+  "method_scope": {
+    "excluded": {
+      "NPCS": "the released rewriter has no recursive property-path rule",
+      "SPARQLprov": "the released rewriter has no property-path rule"
+    },
+    "included": [
+      "C-path"
+    ],
+    "interpretation": "recursive paths use the dedicated fixpoint plan and are recorded once rather than duplicated under flat and factorised labels"
+  },
+  "query_contract": {
+    "base_query": "published path with deterministic alpha-renaming",
+    "distinct": false,
+    "limit": null,
+    "projection": "exactly ?var1",
+    "sparqlcirc_query": "semantically equivalent source-bounded orientation; a top-level sequence is exposed as named BGP joins when required"
+  },
+  "role": "C-only supplement to NPCS-public-136",
+  "schema": "wdbench-property-paths-5-workload-v1",
+  "selection": {
+    "algorithm": "five fixed draws from a seed-20260901 sample, drawn without replacement from conservatively screened candidates",
+    "candidate_rule": "closure and final count probes both completed exactly with counts <= 1000",
+    "count": 5,
+    "screening_is_formal_timing": false,
+    "seed": 20260901
+  },
+  "sharding": {
+    "algorithm": "fixed-query order round robin across three shards",
+    "counts": [
+      2,
+      2,
+      1
+    ],
+    "shards": 3
+  },
+  "source": {
+    "file": "Queries/paths.txt",
+    "repository": "https://github.com/MillenniumDB/WDBench.git"
+  },
+  "workload_id": "WDBench-property-paths-5"
+}

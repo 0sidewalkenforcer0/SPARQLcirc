@@ -1,0 +1,6 @@
+SELECT ?v0 ?v1 WHERE {
+	?v0	rev:hasReview	?v1 .
+	MINUS {
+		?p	wsdbm:purchaseFor	?v0 .
+	}
+}

@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-core:
+    name: Python core (${{ matrix.python-version }}, stdlib only)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Reference correctness battery
+        run: python reference/tests.py
+      - name: Fixed-seed per-event probabilities
+        run: python reference/paper/test_event_probabilities.py
+      - name: SPARQLprov-compatible TPC-H RDF mapping
+        run: python reference/paper/test_tpch_rdf_mapping.py
+      - name: TPC-H row data and workload preparation
+        run: >
+          python -m unittest
+          reference.paper.test_tpch_row_reification
+          reference.paper.test_tpch_prepare_data
+          reference.paper.test_tpch_sparqlprov_rows
+          reference.paper.test_tpch_workload
+      - name: TPC-H formal runners, summaries, and measured figure table
+        run: >
+          python -m unittest
+          reference.paper.test_tpch_run_batch
+          reference.paper.test_tpch_summarize
+          reference.paper.test_tpch_figure7_data
+          reference.paper.test_tpch_provsql_prepare
+          reference.paper.test_tpch_provsql_workload
+          reference.paper.test_tpch_provsql_run
+          reference.paper.test_tpch_provsql_summarize
+          reference.paper.test_tpch_provsql_verify
+      - name: WatDiv mixed reification layout
+        run: python reference/paper/test_watdiv_reify.py
+      - name: WatDiv dataset preparation
+        run: python reference/paper/test_watdiv_prepare_data.py
+      - name: Standalone WMC self-test
+        run: python reference/wmc.py
+      - name: d4 dump weighted-model-count regression
+        run: python reference/verify_ddnnf_wmc.py
+      - name: Algebraic-to-Boolean serialization boundary
+        run: python reference/verify_boolean_boundary.py
+      - name: User-facing PQE CLI regression
+        run: python reference/verify_pqe_cli.py
+      - name: Multi-root compiler contract (oracle; CUDD when available)
+        run: python reference/verify_compiler.py
+      - name: NPCS post-processing and global hash-consing regressions
+        run: python reference/paper/test_npcs_postprocess.py
+      - name: Persisted provenance artifact PQE regressions
+        run: python reference/paper/test_pqe_from_artifact.py
+      - name: WatDiv 10M formal-workload freeze and audit regressions
+        run: python reference/paper/test_watdiv10m_workload.py
+      - name: WatDiv B/R/N/C single-cell runner regressions
+        run: python reference/paper/test_watdiv10m_runner.py
+      - name: WatDiv formal matrix contract
+        run: python reference/paper/test_watdiv10m_batch.py
+      - name: Frozen Wikidata query workloads
+        run: |
+          python reference/wdbench/workloads/wikidata-141/build_manifest.py --out /tmp/wikidata-141.json
+          python reference/paper/test_wikidata141_workload.py
+      - name: Canonical external circuit-cache regressions
+        run: python reference/paper/test_circuit_cache.py
+      - name: Frozen batch identity and shared validator regressions
+        run: python reference/paper/test_freeze_inputs.py
+      - name: Controlled-mechanism provenance and recovery regressions
+        run: python reference/paper/test_controlled_mechanisms.py
+      - name: Certified CNF-primal treewidth evidence regressions
+        run: python reference/paper/test_treewidth_evidence.py
+  cudd-production:
+    name: CUDD production backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native CUDD wrapper
+        run: python -m pip install -r reference/requirements-production.txt
+      - name: Shared/per-root and complemented-edge parity
+        run: python reference/verify_compiler.py --require-cudd
+      - name: NPCS post-processing through production CUDD
+        run: python reference/paper/test_npcs_postprocess.py --require-cudd
+      - name: Production PQE JSON CLI
+        run: python reference/verify_pqe_cli.py --production
+      - name: Seeded exact-enumeration differential gate
+        run: python reference/verify_differential.py --skip-engine --require-cudd
+      - name: Multi-root physical-granularity harness regressions
+        run: python reference/paper/test_compiler_granularity.py
+      - name: Controlled mechanisms with production CUDD
+        run: python reference/paper/test_controlled_mechanisms.py
+
+  fresh-engine-circuit:
+    name: Maven build and fresh circuit to WMC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: maven
+          cache-dependency-path: engine/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the rdflib oracle (quick_verify runs the composition differential)
+        run: python -m pip install "rdflib>=6.3,<8"
+      - name: Build the shaded engine JAR
+        run: mvn -q -f engine/pom.xml package
+      - name: Algebra-scoped inline R rewriting
+        run: python reference/paper/test_reify_query.py
+      - name: TPC-H hybrid-inline row rewriting
+        run: >
+          python -m unittest
+          reference.paper.test_tpch_inline_rows
+          reference.paper.test_tpch_workload
+      # The two opt-in sweeps. Both are off by default because they used to be slow; the semantic one
+      # takes ~25 s and is the only check that compares a composed circuit against RDF4J's own W3C
+      # evaluator over every possible world, so it is worth a CI slot rather than a manual run.
+      - name: Deep composition sweeps (plan coverage and possible-world denotation)
+        run: >
+          mvn -q -f engine/pom.xml test
+          -Dsparqlcirc.deepSweep=true -Dsparqlcirc.deepSemantics=true
+      - name: Generate, parse, compile, and WMC a fresh circuit
+        run: python reference/quick_verify.py
+      - name: Factored/flat pure-BGP differential gate
+        run: python reference/verify_differential.py --engine-only --require-engine

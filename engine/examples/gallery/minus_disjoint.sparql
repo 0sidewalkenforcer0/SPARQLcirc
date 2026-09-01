@@ -1,0 +1,5 @@
+PREFIX : <http://example.org/paper#>
+# MINUS with NO shared variable between operands (?y vs ?c): W3C MINUS is a no-op,
+# so both answers must survive with provenance = P1 (NO subtraction of :city).
+# This is the probe that distinguishes W3C MINUS from the algebra's DIFF.
+SELECT ?y WHERE { :Alice :knows ?y  MINUS { :Bob :city ?c } }

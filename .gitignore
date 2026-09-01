@@ -1,0 +1,32 @@
+# Java / Maven
+engine/target/
+engine/dependency-reduced-pom.xml
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS / editors
+.DS_Store
+.vscode/
+
+# NFS temporary files retained while a deleted file is still open
+.nfs*
+
+# large, regenerable data (rebuilt by reference/watdiv/reify.py)
+*.reified.nt
+
+# generated DIMACS CNFs (rebuilt by reference/export_cnf.py)
+reference/cnf/
+
+# logs / local scratch
+*.log
+*.progress
+
+# frozen-batch raw samples, circuit caches, and environment captures
+artifacts/
+
+# scratch run artifacts
+engine/*.nt
+engine/err.txt
+circ.nt

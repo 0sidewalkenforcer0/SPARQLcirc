@@ -1,0 +1,4 @@
+SELECT ?var8
+WHERE {
+?var1 <http://www.wikidata.org/prop/direct/P31> <http://www.wikidata.org/entity/Q11424> . ?var1 <http://www.wikidata.org/prop/direct/P577> ?var8 . OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P345> ?var2 . } OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P18> ?var3 . } OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P57> ?var4 . } OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P136> ?var5 . } OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P161> ?var6 . } OPTIONAL { ?var1 <http://www.wikidata.org/prop/direct/P1476> ?var7 . }
+}

@@ -1,0 +1,2 @@
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x ?y WHERE { ?x ex:p ?y . MINUS { ?y ex:q ?z . } }

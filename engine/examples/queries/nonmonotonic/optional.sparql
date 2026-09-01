@@ -1,0 +1,9 @@
+# NON-MONOTONIC — optional (P1 OPTIONAL P2 ≡ (P1 AND P2) UNION (P1 DIFF P2);
+# the DIFF part uses the monus ⊖).
+# Expected provenance:  Alice, country=Italy -> (u1 ⊕ u2) ⊗ u3   (P2 matches)
+#                       Bob,   country=∅     -> u4                (P2 unbound; monus w/ empty subtrahend)
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x ?country WHERE {
+  ?x ex:likes ex:pasta .
+  OPTIONAL { ?x ex:livesIn ?country . }
+}

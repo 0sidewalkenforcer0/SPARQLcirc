@@ -1,0 +1,17 @@
+BASE <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT
+  ?l_shipmode
+WHERE {
+  ?order    <o_orderpriority> ?o_orderpriority .
+  ?lineitem <l_order>         ?order ;
+            <l_shipmode>      ?l_shipmode ;
+            <l_commitdate>    ?l_commitdate ;
+            <l_receiptdate>   ?l_receiptdate ;
+            <l_shipdate>      ?l_shipdate .
+  FILTER (?l_shipmode IN ('FOB', 'REG AIR') &&
+	  strdt(concat(str(?l_commitdate), 'T00:00:00'), xsd:dateTime) < strdt(concat(str(?l_receiptdate), 'T00:00:00'), xsd:dateTime) &&
+	  strdt(concat(str(?l_shipdate), 'T00:00:00'), xsd:dateTime) < strdt(concat(str(?l_commitdate), 'T00:00:00'), xsd:dateTime) &&
+	  strdt(concat(str(?l_receiptdate), 'T00:00:00'), xsd:dateTime) >= "1993-01-01T00:00:00"^^xsd:dateTime &&
+	  strdt(concat(str(?l_receiptdate), 'T00:00:00'), xsd:dateTime) < "1994-01-01T00:00:00"^^xsd:dateTime)
+}

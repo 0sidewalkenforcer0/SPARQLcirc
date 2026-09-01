@@ -1,0 +1,10 @@
+# MONOTONIC — union.
+# Expected provenance:  Alice -> (u1 ⊕ u2) ⊕ u3   (matches both branches)
+#                       Bob   -> u4                (likes pasta only)
+#                       Carol -> u5                (livesIn Italy only)
+PREFIX ex: <http://example.org/paper#>
+SELECT ?x WHERE {
+  { ?x ex:likes   ex:pasta . }
+  UNION
+  { ?x ex:livesIn ex:Italy . }
+}

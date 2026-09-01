@@ -1,0 +1,2 @@
+PREFIX d: <urn:d:>
+SELECT ?z WHERE { d:Aspirin d:iw ?x . ?x d:iw ?y . ?y d:iw ?z . }

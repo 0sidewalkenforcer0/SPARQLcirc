@@ -1,0 +1,2 @@
+PREFIX : <http://example.org/paper#>
+SELECT ?z WHERE { :Alice :knows ?y . ?y :knows ?z }

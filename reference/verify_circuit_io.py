@@ -1,0 +1,113 @@
+"""circuit_io literal-canonicalization regression (the P2 fix).
+
+canon_term() used to keep the RAW N-Triples spelling of a literal's lexical value; a literal containing
+\\" \\\\ \\n or \\uXXXX therefore canonicalized DIFFERENTLY from canon_rdflib() (rdflib stores the decoded
+value), so answer recovery was not lossless for escaped literals. This checks that:
+  1. the escapes decode to the intended value (independent of rdflib);
+  2. canon_term(raw N-Triples token) == canon_rdflib(the corresponding rdflib term)  [if rdflib present];
+  3. distinct escaped literals stay distinct, and plain ASCII literals are unaffected (no regression).
+"""
+import sys
+import circuit_io as cio
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="backslashreplace")
+
+# (raw N-Triples object token, expected decoded lexical value)
+CASES = [
+    (r'"plain"',                       "plain"),
+    (r'"a\"b"',                        'a"b'),                 # escaped quote
+    (r'"a\\b"',                        "a\\b"),                # escaped backslash
+    (r'"line1\nline2"',                "line1\nline2"),        # newline
+    (r'"tab\there"',                   "tab\there"),           # tab
+    (f'"caf{chr(92)}u00e9"',           "café"),                # é escape -> é (chr(92)=backslash so the
+                                                               #   source isn't mangled); exercises the \u branch
+    ('"literal-é"',                    "literal-é"),           # actual Unicode char, no escape -> passthrough
+    (r'"smiley\U0001F600"',            "smiley\U0001F600"),    # \UXXXXXXXX escape (emoji)
+    (r'"mix \"q\" and \\ and \n"',     'mix "q" and \\ and \n'),
+    (r'"typed\"q"^^<http://example/dt>', 'typed"q'),           # escaped quote + datatype
+    (r'"lang\nbreak"@EN',              "lang\nbreak"),         # escaped + language tag (lang lowercased)
+]
+
+def main():
+    ok = True
+    # (1) decode correctness (no rdflib needed).
+    for tok, want in CASES:
+        got = cio._nt_unescape(tok[1:tok.rindex('"')])
+        good = got == want
+        ok &= good
+        print(f"[decode] {tok:34} -> {want!r:24} {'OK' if good else 'FAIL got=' + repr(got)}")
+
+    # (2) distinctness: every case produces a distinct canonical key; plain != escaped-quote etc.
+    keys = [cio.canon_term(tok) for tok, _ in CASES]
+    distinct = len(set(keys)) == len(keys)
+    ok &= distinct
+    print(f"\n[distinct] {len(set(keys))}/{len(keys)} canonical keys distinct  {'OK' if distinct else 'FAIL'}")
+    # a raw-vs-decoded confusion would keep the backslash; assert the decoded quote is present:
+    c_esc = cio.canon_term(r'"a\"b"')                 # lexical a"b
+    sane = ('a"b' in c_esc) and ("\\" not in c_esc.split(cio.US)[1])
+    ok &= sane
+    print(f"[sanity]  canon('a\\\"b') carries decoded lexical 'a\"b'  {'OK' if sane else 'FAIL'}")
+
+    # (3) sk^-1 (§4.2's client half). No rdflib needed, so it runs before the optional section
+    # below -- which exits early when rdflib is missing and would otherwise skip it.
+    ok &= _check_unskolemize()
+
+    # (4) match rdflib (the PWE-oracle side), if available.
+    try:
+        import rdflib
+    except Exception:
+        print("\n[rdflib] not available locally — decode+distinctness checks stand; "
+              "server suite covers canon_term == canon_rdflib.")
+        print("\nALL OK" if ok else "\nFAILURES"); sys.exit(0 if ok else 1)
+
+    print()
+    for tok, want in CASES:
+        # build the matching rdflib term and compare canonical keys
+        i = tok.rindex('"'); suf = tok[i + 1:]
+        if suf.startswith("^^<"):
+            term = rdflib.Literal(want, datatype=rdflib.URIRef(suf[3:-1]))
+        elif suf.startswith("@"):
+            term = rdflib.Literal(want, lang=suf[1:])
+        else:
+            term = rdflib.Literal(want)
+        a, b = cio.canon_term(tok), cio.canon_rdflib(term)
+        good = a == b
+        ok &= good
+        print(f"[rdflib] {tok:34} canon_term==canon_rdflib? {'OK' if good else 'FAIL'}")
+        if not good:
+            print(f"           term={a!r}\n           rdfl={b!r}")
+
+    print("\nALL OK" if ok else "\nFAILURES")
+    sys.exit(0 if ok else 1)
+
+
+def _check_unskolemize():
+    """sk^-1, the client half of §4.2. Must agree with npcs.rewrite.Skolem, must report a
+    skolemized term as the BLANK NODE it stands for, and must not claim IRIs that merely look
+    like the namespace."""
+    ok = True
+    print()
+    for label in ("x", "b0", "genid-1", "a-b_c", "üñ"):
+        iri = "urn:sk:" + label.encode("utf-8").hex()
+        back = cio.unskolemize(iri)
+        good = back == label
+        ok &= good
+        print(f"[sk^-1]  {iri:40} -> {back!r} {'OK' if good else 'FAIL expected ' + label!r}")
+    # a skolemized term must come back as a blank node, matching what a plain SPARQL answer binds
+    key = cio.canon_term("<urn:sk:78>")
+    good = key == "b" + cio.US + "x"
+    ok &= good
+    print(f"[sk^-1]  canon_term(<urn:sk:78>) -> {key!r} {'OK' if good else 'FAIL'}")
+    # and nothing else may be mistaken for one
+    for iri, why in (("urn:d:a", "ordinary IRI"), ("urn:skate:x", "near-miss namespace"),
+                     ("urn:sk:7", "odd-length hex"), ("urn:sk:zz", "non-hex")):
+        claimed = cio.unskolemize(iri)
+        good = claimed is None
+        ok &= good
+        print(f"[sk^-1]  {iri:40} ({why}) -> {'not sk OK' if good else 'FAIL claimed ' + repr(claimed)}")
+    return ok
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,8 @@
+PREFIX : <http://example.org/paper#>
+# Right-nested MINUS: A MINUS (P MINUS Q). A∖(P∖Q) introduces a join (A∩Q), so it cannot be
+# reduced to a chained subtraction. It is built by materializing the inner difference as a row
+# relation the outer MINUS reads, and checked positively against rdflib over every world.
+SELECT ?y WHERE {
+  :Alice :knows ?y
+  MINUS { ?z :knows ?y  MINUS { ?y :city ?c } }
+}
