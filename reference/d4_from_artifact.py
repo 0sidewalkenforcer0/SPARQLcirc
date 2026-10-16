@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Evaluate every answer of a persisted SPARQLcirc circuit with pinned d4v2.
+"""Evaluate every answer of a persisted provenance artifact with pinned d4v2.
 
 d4v2 accepts a single Boolean root.  This runner therefore exports and
 compiles one Tseitin CNF per answer root, exactly matching the per-answer d4
-protocol used by the repository's Level-1 comparison.  The input circuit is
-loaded once; encoding, d4 compilation, d-DNNF WMC, persistence, and RSS are
-reported separately.
+protocol used by the repository's Level-1 comparison.  The input is loaded
+once; encoding, d4 compilation, d-DNNF WMC, persistence, and RSS are reported
+separately.
+
+``--kind circuit`` (default) reads a SPARQLcirc ``circuit.nt``; ``--kind
+npcs-shared`` reads the query-global NPCS DAG ``npcs-hc-dag.json`` written by
+npcs_postprocess.py.  Both use the same variable-order heuristic
+(``compiler.deterministic_order``) and the same per-root CNF export.
 """
 from __future__ import annotations
 
@@ -62,7 +67,10 @@ def evaluate(
     memory_sample_interval_s: float,
     probabilities: Optional[Path] = None,
     probability_seed: Optional[int] = None,
+    kind: str = "circuit",
 ) -> Dict[str, Any]:
+    if kind not in ("circuit", "npcs-shared"):
+        raise D4ArtifactError("unknown source kind: %s" % kind)
     if output.exists():
         raise D4ArtifactError("refusing to reuse output directory: %s" % output)
     if not source.is_file():
@@ -76,7 +84,13 @@ def evaluate(
 
     sampler.set_stage("artifact_load")
     load_started = time.perf_counter()
-    circuit, roots, bindings, source_metrics = artifact._load_circuit(source)
+    try:
+        if kind == "npcs-shared":
+            circuit, roots, bindings, source_metrics = artifact._load_npcs_dag(source)
+        else:
+            circuit, roots, bindings, source_metrics = artifact._load_circuit(source)
+    except artifact.ArtifactPqeError as exc:
+        raise D4ArtifactError(str(exc)) from exc
     artifact_load_ms = _ms(load_started)
 
     sampler.set_stage("probability_prepare")
@@ -178,7 +192,7 @@ def evaluate(
             if probability_seed is not None
             else {"kind": "file" if probabilities is not None else "uniform"}
         ),
-        "source_kind": "circuit",
+        "source_kind": kind,
         "source_artifact": source.name,
         "source_artifact_bytes": source.stat().st_size,
         "context": dict(context),
@@ -209,6 +223,7 @@ def evaluate(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--kind", choices=("circuit", "npcs-shared"), default="circuit")
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--d4", required=True, type=Path)
@@ -248,6 +263,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.probabilities.resolve() if args.probabilities is not None else None
         ),
         probability_seed=args.probability_seed,
+        kind=args.kind,
     )
     print(json.dumps(metrics, ensure_ascii=False, sort_keys=True))
     return 0

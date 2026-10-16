@@ -284,6 +284,8 @@ def runner_command(
             "--pqe-backend", args.pqe_backend,
             "--probability-seed", str(args.probability_seed),
         ))
+        if method in ("N", "N-orig"):
+            command.extend(("--npcs-variable-order", args.npcs_variable_order))
     if args.cache_mode == "cold":
         command.extend((
             "--cache-reset-command", args.cache_reset_command,
@@ -349,6 +351,9 @@ def _configuration(args: argparse.Namespace, dataset: Mapping[str, Any],
             "endpoint_buffer_bytes": args.endpoint_buffer_bytes,
             "pqe_backend": args.pqe_backend,
             "probability_seed": args.probability_seed if args.pqe_backend != "none" else None,
+            "npcs_variable_order": (
+                args.npcs_variable_order if args.pqe_backend != "none" else None
+            ),
         },
         "stores": {
             "B": "plain store (--base-endpoint)",
@@ -507,6 +512,10 @@ def _parser() -> argparse.ArgumentParser:
                             default=runner.DEFAULT_CACHE_READY_TIMEOUT_S)
     run_parser.add_argument("--pqe-backend", choices=("none", "cudd"), default="none")
     run_parser.add_argument("--probability-seed", type=int)
+    run_parser.add_argument("--npcs-variable-order",
+                            choices=("sorted-tokens", "dfs-first-appearance"),
+                            default="dfs-first-appearance",
+                            help="N/N-orig BDD order; the default matches the C compilers")
     run_parser.add_argument("--continue-after-failure", action="store_true")
     return parser
 

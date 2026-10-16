@@ -2232,6 +2232,8 @@ def _run_offline(config: Mapping[str, Any], source_run_dir: Path, run_id: str,
             str(config.get("npcs_postprocess_mode", "shared")),
             "--backend",
             str(config["pqe_backend"]),
+            "--variable-order",
+            str(config.get("npcs_variable_order") or "sorted-tokens"),
             "--memory-sample-interval",
             str(config.get("memory_sample_interval_s", DEFAULT_MEMORY_SAMPLE_INTERVAL_S)),
         ]
@@ -3630,6 +3632,15 @@ def _run_parser() -> argparse.ArgumentParser:
         default="shared",
         help="query-global or sequential local per-answer NPCS hash-consing",
     )
+    parser.add_argument(
+        "--npcs-variable-order",
+        choices=("sorted-tokens", "dfs-first-appearance"),
+        default="sorted-tokens",
+        help=(
+            "BDD variable order for N/N-orig PQE; dfs-first-appearance is the heuristic "
+            "of the C circuit compilers (default: sorted-tokens, the published setting)"
+        ),
+    )
     probability = parser.add_mutually_exclusive_group()
     probability.add_argument("--probabilities", type=Path)
     probability.add_argument("--uniform-probability", type=float)
@@ -3709,6 +3720,7 @@ def _configuration(args: argparse.Namespace) -> Dict[str, Any]:
         "exact_response_row_limit": args.exact_response_row_limit,
         "pqe_backend": args.pqe_backend,
         "npcs_postprocess_mode": args.npcs_postprocess_mode,
+        "npcs_variable_order": args.npcs_variable_order,
         "probabilities": (
             str(args.probabilities.resolve()) if args.probabilities is not None else None
         ),

@@ -31,6 +31,7 @@ def _children(circ, n):
     op, pl = circ[n]
     if op in ("times", "plus"): return list(pl)
     if op == "minus": return [pl[0], pl[1]]
+    if op == "not": return [pl]
     return []
 
 
@@ -76,6 +77,7 @@ def prob_read_once(circ, root, P):
             for c in pl: r *= (1.0 - ev(c))
             return 1.0 - r
         if op == "minus": return ev(pl[0]) * (1.0 - ev(pl[1]))
+        if op == "not": return 1.0 - ev(pl)
         raise ValueError("unexpected gate op: " + op)
     return ev(root)
 

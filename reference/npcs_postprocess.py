@@ -1159,17 +1159,41 @@ def _weights(
     return _select_weights(source, selected_uniform, tokens, selected_seed)
 
 
+VARIABLE_ORDERS = ("sorted-tokens", "dfs-first-appearance")
+
+
+def variable_order(result: PostprocessResult, heuristic: str = "sorted-tokens") -> Tuple[str, ...]:
+    """BDD variable order for the NPCS DAG.
+
+    ``sorted-tokens`` (the published default) sorts the token strings;
+    ``dfs-first-appearance`` is ``compiler.deterministic_order``, the heuristic
+    the SPARQLcirc circuit paths (runner, pqe_from_artifact.py,
+    d4_from_artifact.py) use, so N and C can be compiled under the same rule.
+    """
+    if heuristic == "sorted-tokens":
+        return result.dag.tokens()
+    if heuristic == "dfs-first-appearance":
+        import compiler
+
+        return tuple(compiler.deterministic_order(
+            result.dag.compiler_circuit(), result.dag.roots
+        ))
+    raise ValueError("unknown variable-order heuristic: %s" % heuristic)
+
+
 def compile_and_wmc(
     result: PostprocessResult,
     backend: str,
     weights: Mapping[str, float],
     mode: str = "shared",
     memory_sampler: Optional[StageRssSampler] = None,
+    order: Optional[Sequence[str]] = None,
 ) -> Tuple[Dict[str, float], Dict[str, Any]]:
     """Compile DAG roots in the requested manager scope without digests."""
     import compiler
 
-    order = result.dag.tokens()
+    if order is None:
+        order = result.dag.tokens()
     if memory_sampler is not None:
         memory_sampler.set_stage("pqe_compile")
     started = time.perf_counter()
@@ -1649,6 +1673,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
     )
     parser.add_argument("--backend", choices=("none", "oracle", "cudd"), default="none")
+    parser.add_argument(
+        "--variable-order",
+        choices=VARIABLE_ORDERS,
+        default="sorted-tokens",
+        help=(
+            "BDD variable order for the shared DAG; dfs-first-appearance matches the "
+            "SPARQLcirc circuit compilers (default: sorted-tokens, the published setting)"
+        ),
+    )
     probability = parser.add_mutually_exclusive_group()
     probability.add_argument("--probabilities", type=Path)
     probability.add_argument("--uniform-probability", type=float)
@@ -1837,20 +1870,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.probability_seed,
             )
             probability_load_ms = _milliseconds(probability_load_started)
+            order_started = time.perf_counter()
+            used_order = variable_order(result, args.variable_order)
+            order_ms = _milliseconds(order_started)
             values, compiler_metrics = compile_and_wmc(
                 result,
                 args.backend,
                 probabilities,
                 memory_sampler=memory_sampler,
+                order=used_order,
             )
         except (ImportError, RuntimeError, ValueError, OSError) as exc:
             parser.error(str(exc))
+        compiler_metrics["variable_order_heuristic"] = args.variable_order
+        compiler_metrics["variable_order_ms"] = order_ms
         memory_sampler.set_stage("pqe_artifact_persist")
-        variable_order = result.dag.tokens()
+        variable_order_list = used_order
         variable_order_started = time.perf_counter()
         _atomic_utf8_lines(
             output / "variable-order.txt",
-            variable_order,
+            variable_order_list,
         )
         compiler_metrics["variable_order_persist_ms"] = _milliseconds(variable_order_started)
         compiler_metrics["variable_order_bytes"] = (

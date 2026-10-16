@@ -9,7 +9,11 @@ Encoding (Boolean abstraction of the circuit):
   plus  g=OR(C)   -> (¬g ∨ ⋁C) and (g ∨ ¬c) for each c            [g ↔ OR]
   times g=AND(C)  -> (g ∨ ⋁¬C) and (¬g ∨ c) for each c            [g ↔ AND]
   minus g=a∧¬b    -> (¬g ∨ a), (¬g ∨ ¬b), (g ∨ ¬a ∨ b)            [g ↔ a∧¬b]
+  not   g=¬c      -> (¬g ∨ ¬c), (g ∨ c)                           [g ↔ ¬c]
   root            -> unit clause (root)
+The ``not`` gate occurs in NPCS DAGs (npcs_postprocess.py normalizes a monus
+⊖(a,b) to a ∧ ¬b).  Any other operation is rejected instead of being left
+unconstrained, which would silently over-count models.
 Gate/const variables get weight (1,1); the biconditionals functionally determine
 them from the tokens, so the weighted model count over ALL variables equals the
 answer probability.
@@ -28,6 +32,10 @@ def export(circ, root, P):
             for c in pl: dfs(c)
         elif op == "minus":
             dfs(pl[0]); dfs(pl[1])
+        elif op == "not":
+            dfs(pl)
+        elif op not in ("leaf", "const"):
+            raise ValueError("export_cnf: unsupported gate operation %r" % (op,))
         order.append(n)
     dfs(root)
 
@@ -64,6 +72,9 @@ def export(circ, root, P):
         elif op == "minus":
             a, b = v(pl[0]), v(pl[1])
             clauses += [[-g, a], [-g, -b], [g, -a, b]]
+        elif op == "not":
+            c = v(pl)
+            clauses += [[-g, -c], [g, c]]
     clauses.append([var_of[root]])                         # assert root
 
     nv = len(var_of)
