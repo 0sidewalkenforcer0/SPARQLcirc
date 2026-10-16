@@ -147,3 +147,4 @@ jobs:
           python reference/www27/test_e1_batch_summary.py
           python reference/www27/test_npcs_pqe_toy.py
           python reference/www27/test_pqe_posthoc.py
+          python reference/www27/test_unsat_roots.py

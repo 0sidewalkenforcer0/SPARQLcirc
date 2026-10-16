@@ -261,6 +261,120 @@ def evaluate_tseitin_file(path, dimacs_weights):
         return evaluate_tseitin_text(fh.read(), dimacs_weights)
 
 
+def _consistent(lits):
+    return not any(-lit in lits for lit in lits)
+
+
+def _classic_satisfiable(lines):
+    if lines and lines[0].lower().startswith("nnf "):
+        lines = lines[1:]
+    values = []
+    for line in lines:
+        p = line.split()
+        tag = p[0].upper()
+        try:
+            if tag == "L" and len(p) == 2:
+                int(p[1])
+                values.append(True)
+            elif tag == "A" and len(p) >= 2:
+                children = [int(x) for x in p[2:]]
+                if len(children) != int(p[1]) or any(c < 0 or c >= len(values) for c in children):
+                    raise NNFError(f"malformed classic-NNF AND: {line}")
+                values.append(all(values[c] for c in children))
+            elif tag == "O" and len(p) >= 3:
+                children = [int(x) for x in p[3:]]
+                if len(children) != int(p[2]) or any(c < 0 or c >= len(values) for c in children):
+                    raise NNFError(f"malformed classic-NNF OR: {line}")
+                values.append(any(values[c] for c in children))
+            else:
+                raise NNFError(f"unsupported classic-NNF line: {line}")
+        except (ValueError, IndexError) as ex:
+            raise NNFError(f"malformed classic-NNF line: {line}") from ex
+    if not values:
+        raise NNFError("empty classic NNF")
+    return values[-1]
+
+
+def _d4_satisfiable(lines):
+    kinds, arcs, declared = {}, {}, []
+    for line in lines:
+        p = line.split()
+        if p[0].lower() in ("o", "a", "t", "f"):
+            if len(p) < 2:
+                raise NNFError(f"malformed d4 node: {line}")
+            node = int(p[1])
+            if node in kinds:
+                raise NNFError(f"duplicate d4 node {node}")
+            kinds[node] = p[0].lower(); declared.append(node); arcs[node] = []
+            continue
+        try:
+            nums = [int(x) for x in p]
+        except ValueError as ex:
+            raise NNFError(f"malformed d4 arc: {line}") from ex
+        if len(nums) < 3 or nums[-1] != 0:
+            raise NNFError(f"malformed d4 arc: {line}")
+        arcs.setdefault(nums[0], []).append((nums[1], nums[2:-1]))
+    if not kinds:
+        raise NNFError("empty d4 NNF")
+    if set(arcs) - set(kinds) or {c for xs in arcs.values() for c, _ in xs} - set(kinds):
+        raise NNFError("d4 arcs reference undeclared nodes")
+    children = {c for xs in arcs.values() for c, _ in xs}
+    roots = [n for n in declared if n not in children]
+    if len(roots) != 1:
+        raise NNFError(f"expected one d4 root, found {roots}")
+    memo = {}
+    order, stack, state = [], [roots[0]], {}
+    while stack:
+        node = stack.pop()
+        if state.get(node) == 2:
+            continue
+        if state.get(node) == 1:
+            state[node] = 2
+            order.append(node)
+            continue
+        state[node] = 1
+        stack.append(node)
+        for child, _ in arcs.get(node, ()):
+            if state.get(child) == 1:
+                raise NNFError("cycle in d4 NNF")
+            if state.get(child) != 2:
+                stack.append(child)
+    for node in order:
+        kind = kinds[node]
+        if kind in ("t", "f"):
+            memo[node] = kind == "t"
+            continue
+        terms = [memo[child] and _consistent(lits) for child, lits in arcs.get(node, ())]
+        memo[node] = any(terms) if kind == "o" else all(terms)
+    return memo[roots[0]]
+
+
+def satisfiable_text(text):
+    """Whether a d-DNNF dump has a model.
+
+    The test is structural and exact: a literal and a true node are
+    satisfiable, a false node is not, a disjunction is satisfiable when one
+    child is, and a decomposable conjunction when every child is.  An arc of
+    the d4 format conjoins its literals with the child, so a complementary pair
+    on one arc makes the arc unsatisfiable.  No weights are read, so the result
+    does not depend on token probabilities of 0 or 1.
+    """
+    lines = _clean(text)
+    if not lines:
+        raise NNFError("empty NNF output")
+    first = lines[0].split()[0]
+    if first.lower() == "nnf" or first in ("L", "A", "O"):
+        return _classic_satisfiable(lines)
+    if first in ("o", "a", "t", "f"):
+        return _d4_satisfiable(lines)
+    raise NNFError(f"unknown NNF format: {lines[0]}")
+
+
+def satisfiable_file(path):
+    with open(path) as fh:
+        return satisfiable_text(fh.read())
+
+
 def weights_from_dimacs(path):
     """Read ``c p weight <lit> <weight> 0`` comments into input-weight pairs.
 

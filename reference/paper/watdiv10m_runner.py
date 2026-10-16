@@ -1985,9 +1985,16 @@ def _process_circuit(
         )
         start_stage("pqe_wmc", root_count=len(roots))
         wmc_started = time.perf_counter()
+        unsatisfiable = set(batch.unsatisfiable_keys())
         values = batch.wmc_many(weights)
+        for key in unsatisfiable:
+            del values[key]
         wmc_wall_ms = _milliseconds(wmc_started)
-        complete_stage("pqe_wmc", result_count=len(values))
+        complete_stage(
+            "pqe_wmc",
+            result_count=len(values),
+            unsatisfiable_roots_dropped=len(unsatisfiable),
+        )
         start_stage("pqe_artifact_persist")
         order_started = time.perf_counter()
         _atomic_utf8_lines(output / "variable-order.txt", order)
@@ -2025,6 +2032,8 @@ def _process_circuit(
             "probability_persist_ms": _round_ms(probability_persist_ms),
             "pqe_total_ms": _round_ms(pqe_total_ms),
             "pqe_wall_ms": _round_ms(_milliseconds(pqe_started)),
+            "unsatisfiable_roots_dropped": len(unsatisfiable),
+            "answers_reported": len(values),
         })
         metrics["compiler"] = compiler_metrics
     metrics["offline_stage_event_count"] = stage_event_count

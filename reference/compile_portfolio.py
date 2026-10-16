@@ -118,11 +118,15 @@ def d4_compile_once(circ, root, P, d4bin=None, timeout=COMPILE_TIMEOUT_S):
         t = time.perf_counter()
         ev = ddnnf_wmc.evaluate_tseitin_file(nnf, e["weights"])
         wmc_ms = (time.perf_counter() - t) * 1000
+        t = time.perf_counter()
+        satisfiable = ddnnf_wmc.satisfiable_file(nnf)
+        sat_ms = (time.perf_counter() - t) * 1000
     if not (-1e-9 <= ev.probability <= 1.0 + 1e-9):
         raise RuntimeError(f"d-DNNF WMC outside [0,1]: {ev.probability}")
     return dict(probability=ev.probability, ddnnf_nodes=ev.nodes, ddnnf_edges=ev.edges,
                 encode_ms=encode_ms, compile_ms=compile_ms, wmc_ms=wmc_ms, nnf_format=ev.format,
-                cnf_vars=e["nvars"], cnf_clauses=e["nclauses"])
+                cnf_vars=e["nvars"], cnf_clauses=e["nclauses"],
+                satisfiable=satisfiable, sat_ms=sat_ms)
 
 
 def d4_wmc(circ, root, P, d4bin=None, strict=False, size=True):

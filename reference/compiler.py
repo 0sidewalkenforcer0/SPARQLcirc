@@ -340,6 +340,26 @@ class CompiledBatch:
     def root_sizes(self) -> Dict[Any, int]:
         return {key: self.root_size(key) for key in self.roots}
 
+    def unsatisfiable_keys(self) -> List[Any]:
+        """Outputs whose compiled root is the constant false.
+
+        A root denotes an answer that occurs in some possible world exactly
+        when its Boolean function is satisfiable.  The difference rewriting
+        over-approximates the answers (for ``Diff(P, P)`` every candidate
+        denotes ``A and not A``), so callers drop these outputs after
+        compilation.  On a BDD the test is a comparison with the false
+        terminal.  It does not depend on the probabilities, so a satisfiable
+        root whose weighted count is 0 because some token has probability 0
+        is not reported here.
+        """
+        out: List[Any] = []
+        for group in self._groups:
+            false = group.manager.false if self.backend == "cudd" else group.manager.FALSE
+            for key, root in group.roots.items():
+                if root == false:
+                    out.append(key)
+        return sorted(out, key=_stable_text)
+
     def wmc_many(self, weights: Mapping[str, float]) -> Dict[Any, float]:
         """Evaluate all outputs; shared mode reuses one node-value memo."""
         started = time.perf_counter()

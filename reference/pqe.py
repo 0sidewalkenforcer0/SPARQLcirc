@@ -62,6 +62,8 @@ def _parser() -> argparse.ArgumentParser:
                    help="one shared CUDD manager (default) or one manager per answer root")
     p.add_argument("--oracle", action="store_true",
                    help="testing only: use the bundled Python ROBDD instead of production CUDD")
+    p.add_argument("--keep-unsatisfiable", action="store_true",
+                   help="report unsatisfiable answer roots with probability 0 instead of dropping them")
     return p
 
 
@@ -152,7 +154,7 @@ def _term_json(canonical: str) -> dict[str, str]:
 
 
 def evaluate(nt: str, probabilities: dict[str, float], compile_mode: str = "shared",
-             oracle: bool = False) -> dict:
+             oracle: bool = False, drop_unsatisfiable: bool = True) -> dict:
     circ, answers, bindings = circuit_io.parse(nt)
     binding_by_key = {}
 
@@ -176,8 +178,11 @@ def evaluate(nt: str, probabilities: dict[str, float], compile_mode: str = "shar
         circ, roots, mode=compile_mode, backend="oracle" if oracle else "cudd")
     answer_probabilities = batch.wmc_many(probabilities)
     root_sizes = batch.root_sizes()
+    unsatisfiable = set(batch.unsatisfiable_keys()) if drop_unsatisfiable else set()
     rows = []
     for binding_key, root in sorted(roots.items()):
+        if binding_key in unsatisfiable:
+            continue
         binding = binding_by_key[binding_key]
         rows.append({
             "binding": {name: _term_json(value) for name, value in sorted(binding.items())},
@@ -188,6 +193,7 @@ def evaluate(nt: str, probabilities: dict[str, float], compile_mode: str = "shar
     return {
         "answers": rows,
         "answer_count": len(rows),
+        "unsatisfiable_roots_dropped": len(unsatisfiable),
         "raw_answer_root_count": len(answers),
         "answer_root_normalization": answer_root_normalization,
         "gate_count": len(circ),
@@ -201,7 +207,8 @@ def main(argv=None) -> int:
     try:
         probabilities = _load_probabilities(args.probabilities)
         result = evaluate(_build_circuit(args), probabilities,
-                          compile_mode=args.compile_mode, oracle=args.oracle)
+                          compile_mode=args.compile_mode, oracle=args.oracle,
+                          drop_unsatisfiable=not args.keep_unsatisfiable)
     except (KeyError, OSError, RecursionError, RuntimeError, TypeError,
             ValueError, subprocess.SubprocessError) as exc:
         parser.exit(1, f"pqe: error: {exc}\n")

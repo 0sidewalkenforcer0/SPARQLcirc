@@ -371,7 +371,16 @@ def evaluate(
     context: Mapping[str, str],
     memory_sample_interval_s: float = DEFAULT_MEMORY_SAMPLE_INTERVAL_S,
     probability_seed: Optional[int] = None,
+    drop_unsatisfiable: bool = True,
 ) -> Dict[str, Any]:
+    """Compile every answer root, drop the unsatisfiable ones, and persist WMC.
+
+    A root whose compiled function is the constant false denotes an answer that
+    occurs in no possible world.  The difference rewriting emits such roots as
+    candidates, so they are removed after compilation and counted in
+    ``unsatisfiable_roots_dropped``.  ``drop_unsatisfiable=False`` keeps them
+    with probability 0, which reproduces runs made before the removal existed.
+    """
     if output.exists():
         raise ArtifactPqeError("refusing to reuse output directory: %s" % output)
     if not source.is_file():
@@ -410,10 +419,17 @@ def evaluate(
     )
     compile_ms = _milliseconds(compile_started)
 
+    sampler.set_stage("pqe_satisfiability")
+    satisfiability_started = time.perf_counter()
+    unsatisfiable = set(batch.unsatisfiable_keys()) if drop_unsatisfiable else set()
+    satisfiability_ms = _milliseconds(satisfiability_started)
+
     sampler.set_stage("pqe_wmc")
     wmc_started = time.perf_counter()
     values = batch.wmc_many(weights)
     wmc_ms = _milliseconds(wmc_started)
+    for key in unsatisfiable:
+        del values[key]
 
     sampler.set_stage("artifact_persist")
     persist_started = time.perf_counter()
@@ -456,13 +472,19 @@ def evaluate(
         "context": dict(context),
         **source_metrics,
         "variable_count": len(order),
+        "answer_roots_compiled": len(roots),
+        "drop_unsatisfiable": bool(drop_unsatisfiable),
+        "unsatisfiable_roots_dropped": len(unsatisfiable),
+        "answers_reported": len(values),
         "artifact_load_ms": _round_ms(input_load_ms),
         "probability_load_ms": _round_ms(probability_load_ms),
         "compile_wall_ms": _round_ms(compile_ms),
+        "satisfiability_ms": _round_ms(satisfiability_ms),
         "wmc_wall_ms": _round_ms(wmc_ms),
         "artifact_persist_ms": _round_ms(persist_ms),
         "pqe_total_ms": _round_ms(
-            input_load_ms + probability_load_ms + compile_ms + wmc_ms + persist_ms
+            input_load_ms + probability_load_ms + compile_ms + satisfiability_ms
+            + wmc_ms + persist_ms
         ),
         "pqe_wall_ms": _round_ms(_milliseconds(wall_started)),
         "variable_order_bytes": order_path.stat().st_size,
@@ -493,6 +515,11 @@ def _parser() -> argparse.ArgumentParser:
         type=_positive_seconds,
         default=DEFAULT_MEMORY_SAMPLE_INTERVAL_S,
     )
+    parser.add_argument(
+        "--keep-unsatisfiable",
+        action="store_true",
+        help="report unsatisfiable answer roots with probability 0 instead of dropping them",
+    )
     return parser
 
 
@@ -519,6 +546,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             context,
             args.memory_sample_interval,
             probability_seed=args.probability_seed,
+            drop_unsatisfiable=not args.keep_unsatisfiable,
         )
     except (ArtifactPqeError, OSError, RuntimeError, ValueError) as exc:
         parser.exit(1, "pqe_from_artifact: error: %s\n" % exc)

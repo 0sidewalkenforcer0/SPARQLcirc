@@ -68,7 +68,14 @@ def evaluate(
     probabilities: Optional[Path] = None,
     probability_seed: Optional[int] = None,
     kind: str = "circuit",
+    drop_unsatisfiable: bool = True,
 ) -> Dict[str, Any]:
+    """Compile every answer root with d4, drop the unsatisfiable ones, and persist WMC.
+
+    Satisfiability is read off the d-DNNF structure, independently of the
+    weights.  ``drop_unsatisfiable=False`` keeps unsatisfiable roots with
+    probability 0, which reproduces runs made before the removal existed.
+    """
     if kind not in ("circuit", "npcs-shared"):
         raise D4ArtifactError("unknown source kind: %s" % kind)
     if output.exists():
@@ -113,6 +120,8 @@ def evaluate(
     ddnnf_edges = 0
     cnf_variables = 0
     cnf_clauses = 0
+    sat_ms = 0.0
+    unsatisfiable = 0
     completed = 0
     persist_started = time.perf_counter()
     with probability_partial.open("wb") as probability_handle, progress_path.open(
@@ -146,18 +155,22 @@ def evaluate(
             ddnnf_edges += int(result["ddnnf_edges"])
             cnf_variables += int(result["cnf_vars"])
             cnf_clauses += int(result["cnf_clauses"])
+            sat_ms += float(result["sat_ms"])
             completed = index
-            row = {
-                **dict(context),
-                "answer_key": key,
-                "binding": bindings[key],
-                "probability": float(result["probability"]),
-            }
-            probability_handle.write(
-                (json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
-                    "utf-8"
+            if drop_unsatisfiable and not result["satisfiable"]:
+                unsatisfiable += 1
+            else:
+                row = {
+                    **dict(context),
+                    "answer_key": key,
+                    "binding": bindings[key],
+                    "probability": float(result["probability"]),
+                }
+                probability_handle.write(
+                    (json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+                        "utf-8"
+                    )
                 )
-            )
             if index == 1 or index % 50 == 0 or index == len(roots):
                 progress = {
                     "completed_roots": index,
@@ -175,7 +188,7 @@ def evaluate(
         os.fsync(progress_handle.fileno())
     probabilities_path = output / "probabilities.jsonl"
     os.replace(probability_partial, probabilities_path)
-    persist_ms = _ms(persist_started) - encode_ms - compile_ms - wmc_ms
+    persist_ms = _ms(persist_started) - encode_ms - compile_ms - wmc_ms - sat_ms
     persist_ms = max(0.0, persist_ms)
 
     stage_memory = sampler.finish()
@@ -199,6 +212,9 @@ def evaluate(
         **source_metrics,
         "variable_count": len(order),
         "root_count_completed": completed,
+        "drop_unsatisfiable": bool(drop_unsatisfiable),
+        "unsatisfiable_roots_dropped": unsatisfiable,
+        "answers_reported": completed - unsatisfiable,
         "method_timeout_s": float(method_timeout_s),
         "root_timeout_rule": "remaining complete-method budget",
         "artifact_load_ms": round(artifact_load_ms, 6),
@@ -206,8 +222,9 @@ def evaluate(
         "cnf_encode_ms": round(encode_ms, 6),
         "d4_compile_ms": round(compile_ms, 6),
         "ddnnf_wmc_ms": round(wmc_ms, 6),
+        "ddnnf_satisfiability_ms": round(sat_ms, 6),
         "artifact_persist_ms": round(persist_ms, 6),
-        "pqe_backend_ms": round(encode_ms + compile_ms + wmc_ms, 6),
+        "pqe_backend_ms": round(encode_ms + compile_ms + wmc_ms + sat_ms, 6),
         "pqe_wall_ms": round(_ms(wall_started), 6),
         "ddnnf_nodes_sum": ddnnf_nodes,
         "ddnnf_edges_sum": ddnnf_edges,
@@ -236,6 +253,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--query-id")
     parser.add_argument("--run-id")
     parser.add_argument("--method")
+    parser.add_argument(
+        "--keep-unsatisfiable",
+        action="store_true",
+        help="report unsatisfiable answer roots with probability 0 instead of dropping them",
+    )
     return parser
 
 
@@ -264,6 +286,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
         probability_seed=args.probability_seed,
         kind=args.kind,
+        drop_unsatisfiable=not args.keep_unsatisfiable,
     )
     print(json.dumps(metrics, ensure_ascii=False, sort_keys=True))
     return 0
