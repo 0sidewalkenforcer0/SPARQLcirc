@@ -21,21 +21,32 @@ EP    = os.environ.get("SPARQLCIRC_ENDPOINT")
 NAME  = sys.argv[1] if len(sys.argv) > 1 else (EP or "endpoint")
 SHA256_OF_X = "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
 
+# gallery.ttl holds the reification statements only: lookup-only layout (see verify_gallery.py).
+SCHEME = "Standard_Pure"
+
 def rdf4j_circuit(qf):
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", DATA, qf],
-                       capture_output=True, text=True, check=True)
+    # The engine's own triples, before the client folds unary Plus gates: the other engine's
+    # CONSTRUCT output is compared unnormalized as well.
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
+                        SCHEME, DATA, qf],
+                       capture_output=True, text=True, check=True,
+                       env=dict(os.environ, CIRCUIT_SKIP_NORMALIZATION="1"))
     return r.stdout
 
 def plan(qf):
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
-                        "Standard", EMPTY, qf], capture_output=True, text=True, check=True)
+                        SCHEME, EMPTY, qf], capture_output=True, text=True, check=True)
     out = []
     for ch in re.split(r"# --- step \d+ ---", r.stderr)[1:]:
         ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
         if ch.startswith("PREFIX") or ch.startswith("CONSTRUCT"):
             out.append(ch)
-    if len(out) != 1:
-        raise RuntimeError(f"HTTP read-path verification requires one flat CONSTRUCT; got {len(out)}")
+    if not out:
+        raise RuntimeError("HTTP read-path verification found no CONSTRUCT in the flat plan")
+    for query in out:
+        if "urn:sc:" in query.split("WHERE", 1)[0]:
+            raise RuntimeError("HTTP read-path verification cannot run a plan that writes private "
+                               "relations back to the endpoint")
     return out
 
 def sparql(query, accept):

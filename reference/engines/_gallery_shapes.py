@@ -10,13 +10,14 @@ Excluded here: path shapes (pathplus/pathstar/... need the writable iterative pr
 writable engines separately), and rejection guards (filter_exists_unsupported/limit/minus_rnested/
 opt_xprod, which must ERROR rather than be equality-checked).
 
-Also not yet listed: the FILTER shapes (filter/filter_optional/filter_minus). They are part of E1's
-correctness battery in verify_gallery.py, but the frozen paper workload and recorded cross-engine
-byte-identity artifacts predate them. Add them here only together with a byte-identity re-run."""
+The FILTER shapes (filter/filter_optional/filter_minus) joined on 2026-10-16 with a byte-identity
+re-run against Oxigraph (pyoxigraph 0.5.8, verify_oxigraph.py); the HTTP engines are re-run in the
+WWW'27 E4 batch. The byte-identity artifacts recorded before that date do not cover them."""
 
 E1_NONPATH = [
     "atom", "join", "union",
     "minus", "minus_disjoint", "minus_union", "minus_p2union", "minus_chain",
     "optional", "opt_left", "opt_right", "opt_disjoint",
     "distinct",
+    "filter", "filter_optional", "filter_minus",
 ]

@@ -17,6 +17,8 @@ answers the same way, so two answers that differ only by term type never merge o
 either side (that would hide the STR-collision bug; see verify_answer_keys.py)."""
 import subprocess, itertools, os, sys
 
+import circuit_io
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 JAR = os.path.join(HERE, "..", "engine", "target", "npcs-rewrite.jar")
 G = os.path.join(HERE, "..", "engine", "examples", "gallery")
@@ -33,6 +35,11 @@ TOKS = list(TRIP)
 P = {"t1": .9, "t2": .8, "t3": .7, "t4": .6, "t5": .5, "t6": .4}
 
 # ---- term-aware canonicalization (identical on circuit + oracle sides) ----
+# gallery.ttl holds the reification statements only, so the circuit reads them with the
+# lookup-only layout. The CLI name "Standard" selects the mixed layout, which also matches
+# the asserted triple and finds nothing in this file.
+SCHEME = "Standard_Pure"
+
 def tcanon(kind, lex, dt, lang):
     if kind == "u":    return "u"                        # unbound
     if kind == "iri":  return "i\x1f" + lex
@@ -77,35 +84,21 @@ def circuit(op, construction=None):
         if construction not in {"factorised", "flat"}:
             raise ValueError(f"unknown construction mode: {construction}")
         cmd.append(f"--construction={construction}")
-    cmd += ["Standard", f"{G}/gallery.ttl", f"{G}/{op}.sparql"]
+    cmd += [SCHEME, f"{G}/gallery.ttl", f"{G}/{op}.sparql"]
     nt = subprocess.run(cmd,
                         capture_output=True, text=True, check=True).stdout
-    kind, feeds, ins, mnd, sub = {}, {}, {}, {}, {}
-    ans_gates, g_bnodes, b_var, b_val = set(), {}, {}, {}
-    for line in nt.splitlines():
-        if not line.endswith(" ."): continue
-        s, p, o = line[:-2].split(None, 2)
-        s, p, o = s.strip("<>"), p.strip("<>"), o.strip()
-        oi = o.strip("<>")
-        if p == RS + "type": kind[s] = oi.split(":")[-1]              # Plus/Times/Minus
-        elif p == "urn:circuit:feeds": feeds.setdefault(s, set()).add(oi)
-        elif p == "urn:circuit:in": ins.setdefault(s, set()).add(oi.replace(EX, ""))
-        elif p == "urn:circuit:minuend": mnd[s] = oi
-        elif p == "urn:circuit:subtrahend": sub[s] = oi
-        elif p == "urn:circuit:answer": ans_gates.add(s)              # readable label only -> mark as answer
-        elif p == "urn:circuit:binding": g_bnodes.setdefault(s, set()).add(oi)
-        elif p == "urn:circuit:var": b_var[s] = o.strip('"')
-        elif p == "urn:circuit:val": b_val[s] = o                    # RAW N-Triples term token
-    feeders = {}
-    for g, tgts in feeds.items():
-        for t in tgts: feeders.setdefault(t, set()).add(g)
-    binds = {}                                                        # gate -> {var: canonical value}
-    for g in ans_gates:
-        d = {}
-        for b in g_bnodes.get(g, ()):
-            v = b_var.get(b)
-            if v is not None: d[v] = canon_ntoken(b_val.get(b))       # missing c:val -> "u" (unbound)
-        binds[g] = d
+    # The shared parser understands the native encoding: types inferred from the edges,
+    # answers marked by c:answerRoot, bindings as direct predicates (circuit_io.py).
+    circ, ans_gates, encoded = circuit_io.parse(nt)
+    kind, feeders, ins, mnd, sub = {}, {}, {}, {}, {}
+    for gate, (op, payload) in circ.items():
+        if op == "times":
+            kind[gate] = "Times"; ins[gate] = set(payload)
+        elif op == "plus":
+            kind[gate] = "Plus"; feeders[gate] = set(payload)
+        elif op == "minus":
+            kind[gate] = "Minus"; mnd[gate], sub[gate] = payload
+    binds = {gate: dict(encoded.get(gate, {})) for gate in ans_gates}
     return kind, feeders, ins, mnd, sub, ans_gates, binds
 
 def evalg(g, asn, kind, feeders, ins, mnd, sub, memo=None, active=None):
@@ -197,20 +190,29 @@ def check_nested_evaluator():
     return ok
 
 def check_construction_modes():
-    """Lock down default factorised structure and the explicit flat ablation."""
-    jk, jf, ji, _, _, _, _ = circuit("join")       # no flag: production default
-    base_pluses = {g for g, k in jk.items() if k == "Plus"
-                   and any(source not in jk for source in jf.get(g, ()))}
-    nested_products = {g for g, k in jk.items() if k == "Times"
-                       and any(child in base_pluses for child in ji.get(g, ()))}
-    factored_shape = bool(base_pluses and nested_products)
+    """Lock down default factorised structure and the explicit flat ablation.
+
+    A two-pattern join has no variable to eliminate, so the factorised planner emits its base
+    case, the one-CONSTRUCT direct form: the same answer roots and one product over the same
+    tokens as the flat circuit (the product gate's IRI may differ between the plans). The circuit
+    normalizer collapses a non-answer Plus with one child, so a Minus may read a token directly;
+    what has to hold is that every Minus feeds an answer root.
+    """
+    jk, jf, ji, _, _, ja, _ = circuit("join")       # no flag: production default
+    fk, ff, fi, _, _, fa, _ = circuit("join", "flat")
+
+    def products(kinds, ins):
+        return sorted(tuple(sorted(ins.get(g, ()))) for g, k in kinds.items() if k == "Times")
+    factored_shape = (ja == fa and products(jk, ji) == products(fk, fi)
+                      and sorted(jk.values()) == sorted(fk.values()) and bool(products(jk, ji)))
 
     mk, mf, _, mm, ms, ma, _ = circuit("minus")  # default requests factorised
     minus_gates = {g for g, k in mk.items() if k == "Minus"}
+    fed_answers = {g: any(source in minus_gates for source in mf.get(g, ())) for g in ma}
     nested_minus = bool(minus_gates) and all(
-        mk.get(mm.get(g)) == "Plus" and mk.get(ms.get(g)) == "Plus"
-        for g in minus_gates
-    ) and any(any(source in minus_gates for source in mf.get(answer, ())) for answer in ma)
+        g in mm and g in ms for g in minus_gates
+    ) and all(any(g in mf.get(answer, ()) for answer in ma) for g in minus_gates) \
+        and any(fed_answers.values())
 
     flat_ok = True
     for op in ("atom", "join"):
@@ -223,8 +225,8 @@ def check_construction_modes():
                              for g, k in fk.items())
     flat_shape = not flat_has_base_plus
 
-    print(f"[default ] factorised base-Plus -> Times nesting: {'OK' if factored_shape else 'FAIL'}")
-    print(f"[default ] nested Plus -> Minus -> answer: {'OK' if nested_minus else 'FAIL'}")
+    print(f"[default ] join: factorised base case equals the flat circuit: {'OK' if factored_shape else 'FAIL'}")
+    print(f"[default ] every Minus feeds an answer root: {'OK' if nested_minus else 'FAIL'}")
     print(f"[flat    ] explicit BGP ablation WMC==PWE/old shape: "
           f"{'OK' if flat_ok and flat_shape else 'FAIL'}")
     return factored_shape and nested_minus and flat_ok and flat_shape
@@ -309,14 +311,19 @@ def rejects(cmd):
     return r.returncode != 0 and "Unsupported" in (r.stderr + r.stdout)
 
 def check_guard():
-    def circ(f): return rejects(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard",
+    def circ(f): return rejects(["java", "-cp", JAR, "npcs.circuit.CircuitRun", SCHEME,
                                  f"{G}/gallery.ttl", f"{G}/{f}"])
-    def npcs(f): return rejects(["java", "-jar", JAR, "Standard", "path", f"{G}/{f}"])
+    def npcs(f): return rejects(["java", "-jar", JAR, "rewrite", "Standard", "path", f"{G}/{f}"])
+    def npcs_keeps_filter(f):
+        r = subprocess.run(["java", "-jar", JAR, "rewrite", "Standard", "path", f"{G}/{f}"],
+                           capture_output=True, text=True)
+        return r.returncode == 0 and "FILTER(" in r.stdout
     # FILTER itself is INSIDE the circuit rewriter's fragment (Def. 4.5, clause 6) and is checked
     # positively by the WMC == PWE loop below; what must still be refused is a condition the
     # rewriting cannot render into an operand's group (EXISTS carries provenance of its own), and a
-    # left-join condition spanning both operands. The NPCS string rewriter has no filter rule at all.
-    r = {"FILTER (NpcsRewriter, no filter rule)": npcs("filter_unsupported.sparql"),
+    # left-join condition spanning both operands. The NPCS re-implementation carries a FILTER into
+    # the reified group, as the circuit rewriter does.
+    r = {"FILTER (NpcsRewriter keeps the condition)": npcs_keeps_filter("filter_unsupported.sparql"),
          "FILTER EXISTS (NpcsRewriter)":  npcs("filter_exists_unsupported.sparql"),
          "FILTER EXISTS (CircuitRewriter)": circ("filter_exists_unsupported.sparql"),
          "LIMIT (CircuitRewriter)":      circ("limit.sparql")}

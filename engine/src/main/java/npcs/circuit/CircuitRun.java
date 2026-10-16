@@ -382,7 +382,12 @@ public final class CircuitRun {
                         ? new LinkedHashModel(circuit) : new LinkedHashModel(pathWorkspace);
             }
             long normalizationStarted = System.nanoTime();
-            CircuitNormalizer.Result normalized = CircuitNormalizer.normalize(circuit);
+            // CIRCUIT_SKIP_NORMALIZATION=1 keeps the triples exactly as the endpoint returned them,
+            // so a cross-engine check can compare raw CONSTRUCT outputs (reference/engines/).
+            CircuitNormalizer.Result normalized =
+                    "1".equals(System.getenv("CIRCUIT_SKIP_NORMALIZATION"))
+                            ? new CircuitNormalizer.Result(circuit.size(), 0, 0)
+                            : CircuitNormalizer.normalize(circuit);
             long normalizationNanos = elapsedNanos(normalizationStarted);
             stage("normalization",
                     "duration_ms", milliseconds(normalizationNanos),

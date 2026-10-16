@@ -15,21 +15,32 @@ G    = os.path.join(HERE, "..", "..", "engine", "examples", "gallery")
 DATA = f"{G}/gallery.ttl"
 EMPTY = os.path.join(HERE, "_empty.ttl"); open(EMPTY, "w").close()
 
+# gallery.ttl holds the reification statements only: lookup-only layout (see verify_gallery.py).
+SCHEME = "Standard_Pure"
+
 def rdf4j_circuit(query_file):
-    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "Standard", DATA, query_file],
-                       capture_output=True, text=True, check=True)
+    # The engine's own triples, before the client folds unary Plus gates: the other engine's
+    # CONSTRUCT output is compared unnormalized as well.
+    r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
+                        SCHEME, DATA, query_file],
+                       capture_output=True, text=True, check=True,
+                       env=dict(os.environ, CIRCUIT_SKIP_NORMALIZATION="1"))
     return r.stdout
 
 def plan(query_file):
     r = subprocess.run(["java", "-cp", JAR, "npcs.circuit.CircuitRun", "--construction=flat",
-                        "Standard", EMPTY, query_file], capture_output=True, text=True, check=True)
+                        SCHEME, EMPTY, query_file], capture_output=True, text=True, check=True)
     out = []
     for ch in re.split(r"# --- step \d+ ---", r.stderr)[1:]:
         ch = ch.split("# ---- ")[0].split("# circuit triples")[0].strip()
         if ch.startswith("PREFIX") or ch.startswith("CONSTRUCT"):
             out.append(ch)
-    if len(out) != 1:
-        raise RuntimeError(f"Oxigraph read-path verification requires one flat CONSTRUCT; got {len(out)}")
+    if not out:
+        raise RuntimeError("Oxigraph read-path verification found no CONSTRUCT in the flat plan")
+    for query in out:
+        if "urn:sc:" in query.split("WHERE", 1)[0]:
+            raise RuntimeError("Oxigraph read-path verification cannot run a plan that writes private "
+                               "relations back to the endpoint")
     return out
 
 def oxigraph_circuit(query_file):
