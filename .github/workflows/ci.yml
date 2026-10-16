@@ -139,3 +139,11 @@ jobs:
         run: python reference/quick_verify.py
       - name: Factored/flat pure-BGP differential gate
         run: python reference/verify_differential.py --engine-only --require-engine
+      # The N-orig cases that need the original NPCS jar are skipped unless
+      # NPCS_ORIG_JAR is set; d4 cases run only with WWW27_D4.
+      - name: WWW'27 runner protocol, E1 batch/summary, E2 PQE regressions
+        run: |
+          python reference/www27/test_runner_www27.py
+          python reference/www27/test_e1_batch_summary.py
+          python reference/www27/test_npcs_pqe_toy.py
+          python reference/www27/test_pqe_posthoc.py

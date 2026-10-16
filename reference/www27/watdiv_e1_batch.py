@@ -229,6 +229,10 @@ def _validate_run(args: argparse.Namespace, dataset: Mapping[str, Any]) -> None:
             raise E1Error("cold-cache cells use zero or one warm-up")
         if not args.cache_reset_command:
             raise E1Error("--cache-mode cold requires --cache-reset-command")
+        if args.engine_pid is not None:
+            raise E1Error("the store restarts in cold mode; use --engine-pid-file, not --engine-pid")
+    if args.engine_pid is not None and args.engine_pid_file is not None:
+        raise E1Error("use either --engine-pid or --engine-pid-file")
     if len(set(args.methods)) != len(args.methods):
         raise E1Error("methods must be unique")
     unknown = sorted(set(args.methods).difference(ALL_METHODS))

@@ -122,10 +122,13 @@ def cell_status(cell: Mapping[str, Any], runs_expected: int = 5) -> str:
     return "timeout" if any("timeout" in text for text in texts) else "failed"
 
 
-def time_field(cell: Mapping[str, Any], c_field: str) -> str:
+def time_field(cell: Mapping[str, Any], c_field: str, window: str = "endpoint-only") -> str:
+    """Per-execution field: the protocol's primary one, or the kept legacy window."""
     timing = _group(cell)[1]
     if timing != "endpoint-only":
         return "endpoint_e2e_ms"
+    if window == "legacy":
+        return "legacy_endpoint_e2e_ms"
     if str(cell.get("method", "")).startswith("C-"):
         return c_field
     return "endpoint_only_ms"
@@ -194,7 +197,8 @@ def _ratio(numerator: Optional[float], denominator: Optional[float]) -> Optional
 
 def summarize(workload_root: Path, roots: Sequence[Path], c_field: str = "endpoint_only_ms",
               templates: Sequence[str] = published.FORMAL_TEMPLATES,
-              instances: Sequence[str] = published.FORMAL_INSTANCES) -> Dict[str, Any]:
+              instances: Sequence[str] = published.FORMAL_INSTANCES,
+              window: str = "endpoint-only") -> Dict[str, Any]:
     rows = published._read_workload_rows(workload_root)
     selected = published._selected_rows(rows, templates, instances)
     by_query = {row["query_id"]: row for row in selected}
@@ -208,13 +212,18 @@ def summarize(workload_root: Path, roots: Sequence[Path], c_field: str = "endpoi
         engine, timing, cache, query_id, method, layout = key
         row = by_query[query_id]
         status = cell_status(cell)
-        field = time_field(cell, c_field)
+        field = time_field(cell, c_field, window)
         value = cell_median(cell, field) if status == "ok" else None
         per_cell.append({
             "engine": engine, "timing_protocol": timing, "cache_mode": cache,
             "query_id": query_id, "template": row["template"], "instance": row["instance"],
             "method": method, "layout": layout, "status": status, "time_field": field,
             "median_ms": value,
+            "measured_runs_spilled_to_disk": sum(
+                bool(((run.get("endpoint") or {}).get("endpoint") or {}).get(
+                    "response_spilled_to_disk"))
+                for run in _measured(cell)
+            ),
             "unsupported_reason": cell.get("unsupported_reason"),
             "cell": cell["_path"],
         })
@@ -301,6 +310,7 @@ def summarize(workload_root: Path, roots: Sequence[Path], c_field: str = "endpoi
             "template; ratios per template; median of per-template ratios"
         ),
         "c_time_field": c_field,
+        "window": window,
         "workload": str(workload_root),
         "cell_roots": [str(root.resolve()) for root in roots],
         "templates": list(templates),
@@ -393,7 +403,13 @@ def _parser() -> argparse.ArgumentParser:
                         help="an E1 batch output root; repeat for engines and layouts")
     parser.add_argument("--c-field", choices=("endpoint_only_ms", "c_request_ms_sum",
                                               "legacy_endpoint_e2e_ms"),
-                        default="endpoint_only_ms")
+                        default="endpoint_only_ms",
+                        help="C field under --window endpoint-only (default: construction_ms)")
+    parser.add_argument("--window", choices=("endpoint-only", "legacy"), default="endpoint-only",
+                        help=(
+                            "legacy summarizes legacy_endpoint_e2e_ms of endpoint-only cells, "
+                            "the published window measured in the same executions"
+                        ))
     parser.add_argument("--template", dest="templates", action="append",
                         choices=published.FORMAL_TEMPLATES)
     parser.add_argument("--instance", dest="instances", action="append")
@@ -411,6 +427,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.workload.resolve(), [path.resolve() for path in args.cells], args.c_field,
             tuple(args.templates or published.FORMAL_TEMPLATES),
             tuple(args.instances or published.FORMAL_INSTANCES),
+            args.window,
         )
         write_outputs(result, args.json, args.csv, args.ratios_csv)
     except (OSError, ValueError, SummaryError, published.BatchError) as error:
