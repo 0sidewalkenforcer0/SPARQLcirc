@@ -13,6 +13,20 @@ The default complete-JSON protocol remains available.  The opt-in streamed TSV
 protocol keeps bounded B/R answer evidence and the compact provenance rows that
 N post-processing requires instead of persisting the complete endpoint response.
 No experiment-level checksum or content digest is computed.
+
+Options added for the WWW'27 measurements (defaults keep the published protocol):
+
+* ``--scheme SPARQL_Star_Pure`` runs R, N and C in the lookup-only layout of the
+  original NPCS jar instead of the asserted-plus-lookup layout;
+* ``--method N-orig`` sends the original jar's rewrite (``--orig-jar`` or
+  ``$NPCS_ORIG_JAR``); queries outside its correct fragment become
+  ``unsupported`` cells before any request, see :mod:`npcs_orig`;
+* ``--method B-mixed`` sends the unchanged query to the mixed store;
+* ``--timing-protocol endpoint-only`` prepares the query text once before the
+  first execution and times only the HTTP exchange (``endpoint_only_ms``); the
+  published window is kept as ``legacy_endpoint_e2e_ms``;
+* ``--cache-mode cold`` runs a deployment-supplied ``--cache-reset-command``
+  before every execution and waits until the store answers ``ASK {}``.
 """
 from __future__ import annotations
 
@@ -54,7 +68,33 @@ OFFLINE_STAGE_SCHEMA = "watdiv-brnc-offline-stage-v1"
 C_STAGE_SCHEMA = "sparqlcirc-c-stage-v1"
 C_STAGE_PREFIX = "# sc-stage "
 OFFLINE_RESUME_SCHEMA = "watdiv-brnc-offline-resume-v1"
-METHODS = ("B", "R", "N", "C-flat", "C-factorised", "C-path")
+PREPARE_SCHEMA = "watdiv-brnc-prepared-query-v1"
+CACHE_RESET_SCHEMA = "watdiv-brnc-cache-reset-v1"
+METHODS = ("B", "B-mixed", "R", "N", "N-orig", "C-flat", "C-factorised", "C-path")
+# B sends the unchanged query to the plain (asserted-triples-only) store; B-mixed
+# sends the same text to the mixed store that R, N, N-orig and C query.
+PLAIN_METHODS = ("B", "B-mixed")
+ANSWER_METHODS = ("B", "B-mixed", "R")
+# N is the re-implemented NPCS rewriter (engine/target/npcs-rewrite.jar); N-orig is
+# the original ReifySparqlByte.jar, restricted to plain SELECT-over-BGP queries.
+NPCS_METHODS = ("N", "N-orig")
+# ``*_Pure`` selects the lookup-only layout (one occurrence lookup per triple
+# pattern, the layout of the original NPCS jar); the other names select the mixed
+# layout that also matches the asserted triple.
+SCHEMES = ("Standard", "SPARQL_Star", "SPARQL_Star_Row", "Standard_Pure", "SPARQL_Star_Pure")
+TIMING_PROTOCOLS = ("legacy-e2e", "endpoint-only")
+DEFAULT_TIMING_PROTOCOL = "legacy-e2e"
+CACHE_MODES = ("warm", "cold")
+DEFAULT_ENDPOINT_BUFFER_BYTES = 1 << 30
+DEFAULT_CACHE_RESET_TIMEOUT_S = 900.0
+DEFAULT_CACHE_READY_TIMEOUT_S = 900.0
+ENDPOINT_ONLY_SCOPE = (
+    "client clock from immediately before the HTTP POST is opened (TCP connect, request "
+    "headers and body) through the read that returns end-of-body; the response is kept "
+    "in memory (or appended to a spool file past the buffer limit, see "
+    "response_spilled_to_disk); query rewriting, query-file reads, result parsing, "
+    "answer/provenance extraction and persistence are outside this window"
+)
 JSON_RESULTS = "application/sparql-results+json"
 TSV_RESULTS = "text/tab-separated-values"
 NT_RESULTS = "application/n-triples"
@@ -107,6 +147,35 @@ def _java_heap_size(value: str) -> str:
     if re.fullmatch(r"[1-9][0-9]*[kKmMgG]", value) is None:
         raise argparse.ArgumentTypeError("Java heap must look like 512m or 192g")
     return value
+
+
+def _layout(scheme: str) -> str:
+    """Name the physical query layout selected by a scheme."""
+    if scheme.endswith("_Pure"):
+        return "lookup-only"
+    if scheme == "SPARQL_Star_Row":
+        return "row-inline"
+    return "asserted-plus-lookup"
+
+
+def _base_scheme(scheme: str) -> str:
+    return scheme[: -len("_Pure")] if scheme.endswith("_Pure") else scheme
+
+
+def _timing_protocol(config: Mapping[str, Any]) -> str:
+    return str(config.get("timing_protocol") or DEFAULT_TIMING_PROTOCOL)
+
+
+def _primary_endpoint_ms(endpoint: Mapping[str, Any]) -> Optional[float]:
+    """The per-execution endpoint time of the protocol that produced the record."""
+    metrics = endpoint.get("endpoint") if isinstance(endpoint, Mapping) else None
+    if not isinstance(metrics, Mapping):
+        return None
+    for key in ("endpoint_only_ms", "endpoint_e2e_ms"):
+        value = metrics.get(key)
+        if value is not None:
+            return float(value)
+    return None
 
 
 def _milliseconds(started: float) -> float:
@@ -360,13 +429,20 @@ def _run_java_rewrite(config: Mapping[str, Any], run_dir: Path, deadline: float)
     }
 
 
+def _reification_text(query: str, scheme: str) -> str:
+    """R query text: asserted pattern plus lookup, or the lookup alone for *_Pure."""
+    import reify_query
+    return reify_query.reify(
+        query, scheme=_base_scheme(scheme), pure=scheme.endswith("_Pure")
+    )
+
+
 def _run_reification_rewrite(
     query: str, run_dir: Path, scheme: str
 ) -> Tuple[str, Dict[str, Any]]:
     started = time.perf_counter()
     try:
-        import reify_query
-        rewritten = reify_query.reify(query, scheme=scheme)
+        rewritten = _reification_text(query, scheme)
     except Exception as exc:
         raise StageError("rewrite-error", "R rewrite failed: %s" % exc) from exc
     rewrite_ms = _milliseconds(started)
@@ -375,9 +451,32 @@ def _run_reification_rewrite(
     return rewritten, {
         "kind": "algebra-preserving-reification",
         "scheme": scheme,
+        "layout": _layout(scheme),
         "rewrite_ms": _round_ms(rewrite_ms),
         "rewritten_query_bytes": target.stat().st_size,
     }
+
+
+def _run_orig_rewrite(
+    config: Mapping[str, Any], run_dir: Path, deadline: float
+) -> Tuple[str, Dict[str, Any]]:
+    """Rewrite with the original NPCS jar in a fresh JVM, exactly once per call."""
+    import npcs_orig
+
+    try:
+        rewritten, metrics = npcs_orig.run_original(
+            Path(str(config["orig_jar"])),
+            npcs_orig.orig_scheme(str(config["scheme"])),
+            Path(str(config["query"])),
+            str(config.get("java", "java")),
+            timeout_s=_remaining(deadline),
+        )
+    except npcs_orig.OrigNpcsError as exc:
+        raise StageError(exc.status, exc.detail) from exc
+    target = run_dir / "rewritten.rq"
+    _atomic_text(target, rewritten)
+    metrics["layout"] = _layout(str(config["scheme"]))
+    return rewritten, metrics
 
 
 def _persist_query_response_json(
@@ -494,7 +593,7 @@ class _StreamingTsvCollector:
         self.variables: Optional[List[str]] = None
         self.solution_rows = 0
         self.counts: Counter[str] = Counter()
-        self.exact = method in ("B", "R")
+        self.exact = method in ANSWER_METHODS
         self.provenance_variable: Optional[str] = None
         self.answer_variables: List[str] = []
         self.provenance_target = output / "npcs-provenance.jsonl"
@@ -508,7 +607,7 @@ class _StreamingTsvCollector:
     def _start(self, line: str) -> None:
         self.variables = sparql_results_tsv.parse_header(line)
         self.output.mkdir(parents=True, exist_ok=False)
-        if self.method == "N":
+        if self.method in NPCS_METHODS:
             self.provenance_variable = npcs_postprocess._provenance_variable(
                 self.variables, None
             )
@@ -523,7 +622,7 @@ class _StreamingTsvCollector:
             self._start(line)
             return
         self.solution_rows += 1
-        if self.method in ("B", "R"):
+        if self.method in ANSWER_METHODS:
             if not self.exact:
                 return
             if self.solution_rows > self.exact_row_limit:
@@ -587,7 +686,7 @@ class _StreamingTsvCollector:
             self.provenance_handle = None
             os.replace(self.provenance_partial, self.provenance_target)
 
-        if self.method in ("B", "R") and self.exact:
+        if self.method in ANSWER_METHODS and self.exact:
             records = [
                 {"binding": json.loads(binding), "multiplicity": self.counts[binding]}
                 for binding in sorted(self.counts)
@@ -595,7 +694,7 @@ class _StreamingTsvCollector:
             _atomic_json_lines(self.output / "answer-records.jsonl", records)
             distinct_binding_count: Optional[int] = len(records)
             evidence_mode = "exact-multiset"
-        elif self.method in ("B", "R"):
+        elif self.method in ANSWER_METHODS:
             distinct_binding_count = None
             evidence_mode = "cardinality-only"
         else:
@@ -614,11 +713,11 @@ class _StreamingTsvCollector:
             "response_bytes": response_bytes,
             "raw_response_persisted": False,
             "provenance_payload_bytes": (
-                self.provenance_payload_bytes if self.method == "N" else None
+                self.provenance_payload_bytes if self.method in NPCS_METHODS else None
             ),
             "provenance_field_encodings": (
                 dict(sorted(self.provenance_field_encodings.items()))
-                if self.method == "N" else None
+                if self.method in NPCS_METHODS else None
             ),
             "retained_artifact": (
                 "answer-records.jsonl" if evidence_mode == "exact-multiset"
@@ -731,6 +830,181 @@ def _stream_query_response_tsv(
             "drain includes remaining transfer and incremental TSV row handling"
         ),
     }
+
+
+def _http_exchange(
+    endpoint: str,
+    query: str,
+    accept: str,
+    deadline: float,
+    spool: Path,
+    buffer_limit: int,
+) -> Dict[str, Any]:
+    """Time one SPARQL request from opening the POST until end-of-body.
+
+    The timed window contains only the HTTP exchange: connection set-up, the
+    request, endpoint evaluation and serialization, and the transfer of the
+    complete body into client memory.  A body larger than ``buffer_limit`` is
+    appended to ``spool`` from that point on; the result records whether that
+    happened because the file writes then fall inside the window.  Parsing and
+    persistence happen afterwards in :func:`_finish_exchange`.
+    """
+    request = urllib.request.Request(
+        endpoint,
+        data=query.encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/sparql-query", "Accept": accept},
+    )
+    chunks: List[bytes] = []
+    buffered = 0
+    byte_count = 0
+    spool_handle = None
+    headers_at: Optional[float] = None
+    first_body_at: Optional[float] = None
+    try:
+        request_started = time.perf_counter()
+        with _NO_PROXY_OPENER.open(
+            request, timeout=max(0.001, _remaining(deadline))
+        ) as response:
+            headers_at = time.perf_counter()
+            read = getattr(response, "read1", None) or response.read
+            while True:
+                chunk = read(CHUNK_BYTES)
+                if not chunk:
+                    break
+                if first_body_at is None:
+                    first_body_at = time.perf_counter()
+                byte_count += len(chunk)
+                if spool_handle is None and buffered + len(chunk) > buffer_limit:
+                    spool_handle = spool.open("xb")
+                    for previous in chunks:
+                        spool_handle.write(previous)
+                    chunks = []
+                if spool_handle is not None:
+                    spool_handle.write(chunk)
+                else:
+                    chunks.append(chunk)
+                    buffered += len(chunk)
+                _remaining(deadline)
+        response_received = time.perf_counter()
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read(4096).decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        raise StageError(
+            "http-error",
+            "HTTP %d: %s" % (exc.code, detail.strip() or exc.reason),
+            {"http_status": exc.code},
+        ) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (socket.timeout, TimeoutError)):
+            raise StageError("timeout", "HTTP request timed out: %s" % reason) from exc
+        raise StageError("network-error", str(reason)) from exc
+    except (socket.timeout, TimeoutError) as exc:
+        raise StageError("timeout", "HTTP request timed out: %s" % exc) from exc
+    except FileExistsError as exc:
+        raise StageError("artifact-error", str(exc)) from exc
+    finally:
+        if spool_handle is not None:
+            spool_handle.close()
+
+    def since_start(moment: Optional[float]) -> Optional[float]:
+        return None if moment is None else _round_ms((moment - request_started) * 1000.0)
+
+    return {
+        "endpoint_only_ms": _round_ms((response_received - request_started) * 1000.0),
+        "headers_ms": since_start(headers_at),
+        "first_body_byte_ms": since_start(first_body_at),
+        "response_bytes": byte_count,
+        "response_spilled_to_disk": spool_handle is not None,
+        "endpoint_buffer_limit_bytes": int(buffer_limit),
+        "_chunks": chunks,
+        "_spool": spool if spool_handle is not None else None,
+    }
+
+
+def _exchange_chunks(exchange: Mapping[str, Any]) -> Iterable[bytes]:
+    spool = exchange.get("_spool")
+    if spool is None:
+        yield from exchange["_chunks"]
+        return
+    with Path(spool).open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK_BYTES)
+            if not chunk:
+                return
+            yield chunk
+
+
+def _finish_exchange(
+    exchange: Dict[str, Any],
+    response_mode: str,
+    run_dir: Path,
+    method: str,
+    exact_row_limit: int,
+    context: Mapping[str, str],
+) -> Dict[str, Any]:
+    """Turn a timed response into the artifacts the offline stage expects."""
+    started = time.perf_counter()
+    spool = exchange.pop("_spool", None)
+    try:
+        if response_mode == "stream-tsv":
+            collector = _StreamingTsvCollector(
+                method, run_dir / "response", exact_row_limit, context
+            )
+            try:
+                for chunk in _exchange_chunks({"_chunks": exchange["_chunks"], "_spool": spool}):
+                    collector.feed(chunk)
+                evidence = collector.finish(int(exchange["response_bytes"]))
+            except sparql_results_tsv.TsvResultsError as exc:
+                collector.abort()
+                raise StageError("invalid-response", str(exc)) from exc
+            except FileExistsError as exc:
+                collector.abort()
+                raise StageError("artifact-error", str(exc)) from exc
+            result: Dict[str, Any] = {
+                "response_format": evidence["response_format"],
+                "response_lines": evidence["solution_rows"] + 1,
+                "solution_rows": evidence["solution_rows"],
+                "distinct_binding_count": evidence["distinct_binding_count"],
+                "answer_evidence_mode": evidence["answer_evidence_mode"],
+                "provenance_payload_bytes": evidence["provenance_payload_bytes"],
+                "provenance_field_encodings": evidence["provenance_field_encodings"],
+                "raw_response_persisted": False,
+                "retained_response_bytes": _directory_bytes(run_dir / "response"),
+            }
+        else:
+            target = run_dir / "raw-response.json"
+            if target.exists():
+                raise StageError("artifact-error", "refusing to overwrite %s" % target)
+            if spool is not None:
+                with Path(spool).open("rb+") as handle:
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(spool, target)
+                spool = None
+            else:
+                _atomic_bytes(target, b"".join(exchange["_chunks"]))
+            newline_count = 0
+            last_byte = b""
+            for chunk in _exchange_chunks({"_chunks": [], "_spool": target}):
+                newline_count += chunk.count(b"\n")
+                last_byte = chunk[-1:]
+            byte_count = int(exchange["response_bytes"])
+            result = {
+                "response_format": "SPARQL Results JSON",
+                "response_lines": newline_count
+                + (1 if byte_count and last_byte != b"\n" else 0),
+                "raw_response_persisted": True,
+            }
+    finally:
+        exchange["_chunks"] = []
+        if spool is not None and Path(spool).exists():
+            Path(spool).unlink()
+    result["response_postprocess_ms"] = _round_ms(_milliseconds(started))
+    return result
 
 
 def _parse_c_stage_records(text: str, method: str, plan_steps: int,
@@ -1055,6 +1329,21 @@ def _run_c(config: Mapping[str, Any], run_dir: Path, deadline: float) -> Dict[st
     protocol = _parse_c_stderr(stderr_text, method)
     stage_records = protocol.pop("_structured_timing_records")
     _atomic_json_lines(run_dir / "c-stages.jsonl", stage_records)
+    request_records = [
+        record for record in stage_records
+        if record.get("event") in ("construct_step", "path_construct")
+    ]
+    protocol["c_request_ms_sum"] = _round_ms(sum(
+        float(record.get("query_ms") or 0.0) + float(record.get("feedback_ms") or 0.0)
+        for record in request_records
+    ))
+    protocol["c_request_count"] = len(request_records)
+    protocol["c_request_scope"] = (
+        "sum over CONSTRUCT steps (construct_step and path_construct records) of query_ms "
+        "(request until the streamed result is consumed, including client-side RDF parsing "
+        "and statement classification) plus feedback_ms (INSERT of private rows); excludes "
+        "path-planning SELECTs, workspace/endpoint cleanup and normalization"
+    )
     endpoint_e2e_ms = (persisted_at - started) * 1000.0
     protocol["process_ms"] = _round_ms(process_ms)
     protocol["endpoint_e2e_ms"] = _round_ms(endpoint_e2e_ms)
@@ -1095,25 +1384,44 @@ def _endpoint_run(config: Mapping[str, Any], run_dir: Path) -> Dict[str, Any]:
         if engine_memory is not None:
             engine_memory.set_stage(name if engine_active else None)
 
+    protocol = _timing_protocol(config)
     try:
         if method.startswith("C-"):
             memory_stage("circuit_construct_and_persist", engine_active=True)
             metrics = _run_c(config, run_dir, deadline)
             endpoint_e2e_ms = float(metrics["endpoint_e2e_ms"])
             rewrite = None
+            if protocol == "endpoint-only":
+                # CircuitRun issues the plan's CONSTRUCTs itself.  Its own construction
+                # window excludes JVM start, plan generation, repository set-up,
+                # serialization and persistence; the process wall clock is kept as the
+                # legacy figure under a name that cannot be mistaken for it.
+                metrics["legacy_endpoint_e2e_ms"] = metrics.pop("endpoint_e2e_ms")
+                metrics["legacy_endpoint_e2e_scope"] = metrics.pop("timing_scope")
+                metrics["endpoint_only_ms"] = float(metrics["construction_ms"])
+                metrics["endpoint_only_scope"] = (
+                    "CircuitRun construction_ms: execution of every CONSTRUCT of the plan "
+                    "(including streamed client-side parsing and classification of each "
+                    "response, private-row feedback and workspace cleanup) plus final "
+                    "normalization; JVM start, plan generation, repository set-up, circuit "
+                    "serialization and persistence are excluded"
+                )
+                metrics["timing_protocol"] = protocol
         else:
             memory_stage("query_read")
             query_started = time.perf_counter()
             query = Path(str(config["query"])).read_text(encoding="utf-8")
             query_read_ms = _milliseconds(query_started)
-            if method == "B":
+            if method in PLAIN_METHODS:
                 rewritten = query
                 rewrite = {
                     "kind": "none",
                     "rewrite_ms": 0.0,
                     "rewritten_query_bytes": len(query.encode("utf-8")),
                 }
-                endpoint = str(config["base_endpoint"])
+                endpoint = str(
+                    config["base_endpoint"] if method == "B" else config["reified_endpoint"]
+                )
             elif method == "R":
                 memory_stage("rewrite")
                 expected = config.get("expected_r_query")
@@ -1137,49 +1445,104 @@ def _endpoint_run(config: Mapping[str, Any], run_dir: Path) -> Dict[str, Any]:
                 memory_stage("rewrite")
                 rewritten, rewrite = _run_java_rewrite(config, run_dir, deadline)
                 endpoint = str(config["reified_endpoint"])
+            elif method == "N-orig":
+                memory_stage("rewrite")
+                rewritten, rewrite = _run_orig_rewrite(config, run_dir, deadline)
+                endpoint = str(config["reified_endpoint"])
             else:
                 raise StageError("configuration-error", "unknown method: %s" % method)
-            memory_stage("endpoint_query_serialize_transfer", engine_active=True)
-            if config.get("response_mode", DEFAULT_RESPONSE_MODE) == "stream-tsv":
-                request_metrics = _stream_query_response_tsv(
+            response_mode = str(config.get("response_mode", DEFAULT_RESPONSE_MODE))
+            context = {
+                "query_id": str(config["query_id"]),
+                "run_id": run_dir.name,
+                "engine": str(config["engine"]),
+                "method": method,
+            }
+            if protocol == "endpoint-only":
+                # The text sent is the one prepared before the cell's first execution;
+                # the rewrite above only reproduces the legacy end-to-end window.
+                prepared = Path(str(config["prepared_query"])).read_bytes().decode("utf-8")
+                if rewritten != prepared:
+                    raise StageError(
+                        "prepared-query-mismatch",
+                        "this execution's rewrite differs from the prepared query text",
+                    )
+                memory_stage("endpoint_query_serialize_transfer", engine_active=True)
+                exchange = _http_exchange(
                     endpoint,
-                    rewritten,
-                    run_dir / "response",
+                    prepared,
+                    TSV_RESULTS if response_mode == "stream-tsv" else JSON_RESULTS,
                     deadline,
+                    run_dir / "response.spool",
+                    int(config.get("endpoint_buffer_bytes", DEFAULT_ENDPOINT_BUFFER_BYTES)),
+                )
+                memory_stage("response_postprocess")
+                finished = _finish_exchange(
+                    exchange,
+                    response_mode,
+                    run_dir,
                     method,
                     int(config.get(
                         "exact_response_row_limit", DEFAULT_EXACT_RESPONSE_ROW_LIMIT
                     )),
-                    {
-                        "query_id": str(config["query_id"]),
-                        "run_id": run_dir.name,
-                        "engine": str(config["engine"]),
-                        "method": method,
-                    },
+                    context,
                 )
-                endpoint_scope = (
-                    "worker start, query read and rewrite through complete TSV drain and "
-                    "bounded response-evidence finalization"
-                )
+                legacy_ms = _milliseconds(started)
+                endpoint_e2e_ms = legacy_ms
+                metrics = {
+                    key: value for key, value in exchange.items() if not key.startswith("_")
+                }
+                metrics.update(finished)
+                metrics.update({
+                    "timing_protocol": protocol,
+                    "endpoint_only_scope": ENDPOINT_ONLY_SCOPE,
+                    "prepared_query_bytes": len(prepared.encode("utf-8")),
+                    "query_read_ms": _round_ms(query_read_ms),
+                    "legacy_endpoint_e2e_ms": _round_ms(legacy_ms),
+                    "legacy_endpoint_e2e_scope": (
+                        "worker start, query read and this execution's rewrite (fresh JVM "
+                        "for N and N-orig, rdflib for R) through the complete response and "
+                        "its post-processing; the response is drained before it is parsed"
+                    ),
+                })
             else:
-                request_metrics = _persist_query_response_json(
-                    endpoint, rewritten, run_dir / "raw-response.json", deadline
-                )
-                endpoint_scope = (
-                    "worker start, query read and rewrite through atomic persistence of the "
-                    "complete JSON response"
-                )
-            endpoint_e2e_ms = _milliseconds(started)
-            metrics = dict(request_metrics)
-            metrics["query_read_ms"] = _round_ms(query_read_ms)
-            metrics["endpoint_e2e_ms"] = _round_ms(endpoint_e2e_ms)
-            metrics["endpoint_e2e_scope"] = endpoint_scope
+                memory_stage("endpoint_query_serialize_transfer", engine_active=True)
+                if response_mode == "stream-tsv":
+                    request_metrics = _stream_query_response_tsv(
+                        endpoint,
+                        rewritten,
+                        run_dir / "response",
+                        deadline,
+                        method,
+                        int(config.get(
+                            "exact_response_row_limit", DEFAULT_EXACT_RESPONSE_ROW_LIMIT
+                        )),
+                        context,
+                    )
+                    endpoint_scope = (
+                        "worker start, query read and rewrite through complete TSV drain and "
+                        "bounded response-evidence finalization"
+                    )
+                else:
+                    request_metrics = _persist_query_response_json(
+                        endpoint, rewritten, run_dir / "raw-response.json", deadline
+                    )
+                    endpoint_scope = (
+                        "worker start, query read and rewrite through atomic persistence of the "
+                        "complete JSON response"
+                    )
+                endpoint_e2e_ms = _milliseconds(started)
+                metrics = dict(request_metrics)
+                metrics["query_read_ms"] = _round_ms(query_read_ms)
+                metrics["endpoint_e2e_ms"] = _round_ms(endpoint_e2e_ms)
+                metrics["endpoint_e2e_scope"] = endpoint_scope
         _remaining(deadline)
         result: Dict[str, Any] = {
             "schema": ENDPOINT_SCHEMA,
             "status": "ok",
             "method": method,
             "scheme": config["scheme"],
+            "layout": _layout(str(config["scheme"])),
             "endpoint_timeout_s": float(config["endpoint_timeout_s"]),
             "endpoint": metrics,
             "rewrite": rewrite,
@@ -1833,7 +2196,7 @@ def _run_offline(config: Mapping[str, Any], source_run_dir: Path, run_id: str,
     timeout_s = float(config["offline_timeout_s"])
     stdout_path = artifact_run_dir / "offline.stdout"
     stderr_path = artifact_run_dir / "offline.stderr"
-    if method in ("B", "R"):
+    if method in ANSWER_METHODS:
         output = artifact_run_dir / "offline"
         streamed = config.get("response_mode", DEFAULT_RESPONSE_MODE) == "stream-tsv"
         command = [
@@ -1849,7 +2212,7 @@ def _run_offline(config: Mapping[str, Any], source_run_dir: Path, run_id: str,
             "--memory-sample-interval",
             str(config.get("memory_sample_interval_s", DEFAULT_MEMORY_SAMPLE_INTERVAL_S)),
         ]
-    elif method == "N":
+    elif method in NPCS_METHODS:
         output = artifact_run_dir / "pp"
         streamed = config.get("response_mode", DEFAULT_RESPONSE_MODE) == "stream-tsv"
         command = [
@@ -1964,7 +2327,7 @@ def _run_offline(config: Mapping[str, Any], source_run_dir: Path, run_id: str,
         result["detail"] = "offline process returned success without metrics.json"
         return result
     result["metrics"] = _read_json(metrics_path)
-    if method == "N":
+    if method in NPCS_METHODS:
         try:
             result["answer_records"] = _persist_npcs_answer_records(
                 output,
@@ -2035,7 +2398,7 @@ def _run_endpoint_worker(
 
 
 def _answer_records_path(method: str, run_dir: Path) -> Path:
-    if method == "N":
+    if method in NPCS_METHODS:
         return run_dir / "pp" / "answer-records.jsonl"
     records = run_dir / "offline" / "answer-records.jsonl"
     summary = run_dir / "offline" / "answer-summary.json"
@@ -2086,7 +2449,7 @@ def _component_method_e2e(endpoint: Mapping[str, Any], offline: Mapping[str, Any
     offline_metrics = offline.get("metrics")
     if not isinstance(endpoint_metrics, Mapping) or not isinstance(offline_metrics, Mapping):
         return None
-    endpoint_ms = endpoint_metrics.get("endpoint_e2e_ms")
+    endpoint_ms = _primary_endpoint_ms(endpoint)
     if endpoint_ms is None:
         return None
     if offline_metrics.get("postprocess_mode") == "per-answer":
@@ -2164,12 +2527,276 @@ def _normalized_failure(run: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
+def _universal_newlines(text: str) -> str:
+    """The text a ``read_text`` of the same bytes would return."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _java_rewrite_text(config: Mapping[str, Any], scheme: str, query: Path,
+                       timeout_s: float) -> str:
+    """Run our rewriter once and return its text as the endpoint worker reads it."""
+    command = [
+        str(config.get("java", "java")), "-jar", str(config["jar"]),
+        "rewrite", scheme, "path", str(query),
+    ]
+    completed = subprocess.run(command, capture_output=True, timeout=timeout_s, check=False)
+    if completed.returncode != 0 or not completed.stdout:
+        raise StageError(
+            "rewrite-error",
+            "NPCS rewrite failed: %s"
+            % completed.stderr.decode("utf-8", errors="replace").strip()[-1000:],
+        )
+    return _universal_newlines(completed.stdout.decode("utf-8"))
+
+
+def _prepare_query(config: Mapping[str, Any], output: Path) -> Dict[str, Any]:
+    """Generate the text a non-C method sends, once, before the cell's first execution.
+
+    The text is written to ``prepared-query.rq``.  With the endpoint-only timing
+    protocol every execution sends exactly these bytes.  N-orig is gated here:
+    a query outside the original jar's correct fragment, or an output without
+    a usable provenance column, makes the cell ``unsupported`` before any
+    endpoint request is issued.
+    """
+    method = str(config["method"])
+    scheme = str(config["scheme"])
+    query_path = Path(str(config["query"]))
+    query = query_path.read_text(encoding="utf-8")
+    timeout_s = float(config.get("prepare_timeout_s", 300.0))
+    target = output / "prepared-query.rq"
+    document: Dict[str, Any] = {
+        "schema": PREPARE_SCHEMA,
+        "method": method,
+        "scheme": scheme,
+        "layout": _layout(scheme) if method not in PLAIN_METHODS else "plain",
+        "status": "ok",
+        "unsupported_reason": None,
+        "prepared_query": target.name,
+        "scope": (
+            "one rewrite in the runner process before the first warm-up; it is not part "
+            "of any measured execution"
+        ),
+    }
+    started = time.perf_counter()
+    try:
+        if method in PLAIN_METHODS:
+            text = query
+            document["generator"] = "none: the query is sent unchanged"
+        elif method == "R":
+            expected = config.get("expected_r_query")
+            if expected is not None:
+                text = Path(str(expected)).read_text(encoding="utf-8")
+                document["generator"] = "frozen expected R query"
+            else:
+                text = _reification_text(query, scheme)
+                document["generator"] = "reference/reify_query.py"
+        elif method == "N":
+            text = _java_rewrite_text(config, scheme, query_path, timeout_s)
+            document["generator"] = "npcs-rewrite.jar rewrite %s" % scheme
+        elif method == "N-orig":
+            import npcs_orig
+
+            gate = npcs_orig.static_gate(query)
+            document["gate"] = gate.document()
+            document["generator"] = "original ReifySparqlByte.jar %s" % npcs_orig.orig_scheme(scheme)
+            if not gate.supported:
+                document.update(status="unsupported", unsupported_reason=gate.reason)
+                document["prepare_ms"] = _round_ms(_milliseconds(started))
+                _atomic_json(output / "prepared-query.json", document)
+                return document
+            try:
+                text, orig_metrics = npcs_orig.run_original(
+                    Path(str(config["orig_jar"])),
+                    npcs_orig.orig_scheme(scheme),
+                    query_path,
+                    str(config.get("java", "java")),
+                    timeout_s,
+                )
+            except npcs_orig.OrigNpcsError as exc:
+                raise StageError(exc.status, exc.detail) from exc
+            document["original_rewrite"] = orig_metrics
+            problem = npcs_orig.check_rewritten(text)
+            _atomic_text(target, text)
+            if problem is None:
+                parse_error = npcs_orig.parse_check(
+                    Path(str(config["jar"])), target, str(config.get("java", "java")),
+                    timeout_s,
+                )
+                document["rdf4j_parse"] = "ok" if parse_error is None else parse_error
+                problem = parse_error
+            ours = _java_rewrite_text(config, scheme, query_path, timeout_s)
+            _atomic_text(output / "reimplementation-query.rq", ours)
+            document["reimplementation_query"] = "reimplementation-query.rq"
+            document["reimplementation_equivalent"] = npcs_orig.equivalent_to_reimplementation(
+                text, ours
+            )
+            document["equivalence_rule"] = (
+                "engine/verify/diff_harness.py norm(): equal up to gensym renaming and the "
+                "argument order of the commutative ⊗/⊕ operators"
+            )
+            if problem is not None:
+                document.update(status="unsupported", unsupported_reason=problem)
+            document["prepare_ms"] = _round_ms(_milliseconds(started))
+            document["prepared_query_bytes"] = target.stat().st_size
+            _atomic_json(output / "prepared-query.json", document)
+            return document
+        else:
+            raise StageError("configuration-error", "%s has no prepared query text" % method)
+    except StageError as exc:
+        document.update(status="prepare-error", detail=exc.detail[:4000], failure_status=exc.status)
+        document["prepare_ms"] = _round_ms(_milliseconds(started))
+        _atomic_json(output / "prepared-query.json", document)
+        return document
+    except subprocess.TimeoutExpired:
+        document.update(status="prepare-error", detail="rewrite exceeded %.6gs" % timeout_s,
+                        failure_status="timeout")
+        document["prepare_ms"] = _round_ms(_milliseconds(started))
+        _atomic_json(output / "prepared-query.json", document)
+        return document
+    except Exception as exc:
+        document.update(status="prepare-error", detail="%s: %s" % (type(exc).__name__, exc),
+                        failure_status="rewrite-error")
+        document["prepare_ms"] = _round_ms(_milliseconds(started))
+        _atomic_json(output / "prepared-query.json", document)
+        return document
+    _atomic_text(target, text)
+    document["prepare_ms"] = _round_ms(_milliseconds(started))
+    document["prepared_query_bytes"] = target.stat().st_size
+    _atomic_json(output / "prepared-query.json", document)
+    return document
+
+
+def _probe_endpoint(endpoint: str, timeout_s: float) -> Dict[str, Any]:
+    """Wait until ``ASK {}`` succeeds on a freshly reset endpoint."""
+    started = time.perf_counter()
+    deadline = time.monotonic() + timeout_s
+    attempts = 0
+    last_error = None
+    while True:
+        attempts += 1
+        request = urllib.request.Request(
+            endpoint,
+            data=b"ASK {}",
+            method="POST",
+            headers={"Content-Type": "application/sparql-query", "Accept": JSON_RESULTS},
+        )
+        try:
+            with _NO_PROXY_OPENER.open(
+                request, timeout=max(0.001, min(30.0, deadline - time.monotonic()))
+            ) as response:
+                response.read()
+            return {
+                "endpoint": endpoint,
+                "status": "ok",
+                "attempts": attempts,
+                "wait_ms": _round_ms(_milliseconds(started)),
+            }
+        except Exception as exc:  # the endpoint may refuse connections while starting
+            last_error = "%s: %s" % (type(exc).__name__, exc)
+        if time.monotonic() + 1.0 >= deadline:
+            return {
+                "endpoint": endpoint,
+                "status": "not-ready",
+                "attempts": attempts,
+                "wait_ms": _round_ms(_milliseconds(started)),
+                "last_error": last_error[:1000] if last_error else None,
+            }
+        time.sleep(1.0)
+
+
+def _cache_reset(config: Mapping[str, Any], run_dir: Path) -> Dict[str, Any]:
+    """Run the configured cold-cache hook before one execution, then wait for the store.
+
+    The hook is a shell command supplied by the deployment (for example a store
+    restart followed by ``sync; echo 3 > /proc/sys/vm/drop_caches``, which needs
+    root).  The runner never invents such a command.
+    """
+    command = str(config["cache_reset_command"])
+    environment = dict(os.environ)
+    environment.update({
+        "SPARQLCIRC_RUN_DIR": str(run_dir),
+        "SPARQLCIRC_RUN_ID": run_dir.name,
+        "SPARQLCIRC_QUERY_ID": str(config.get("query_id")),
+        "SPARQLCIRC_ENGINE": str(config.get("engine")),
+        "SPARQLCIRC_METHOD": str(config.get("method")),
+        "SPARQLCIRC_BASE_ENDPOINT": str(config.get("base_endpoint") or ""),
+        "SPARQLCIRC_MIXED_ENDPOINT": str(config.get("reified_endpoint") or ""),
+    })
+    stdout_path = run_dir / "cache-reset.stdout"
+    stderr_path = run_dir / "cache-reset.stderr"
+    timeout_s = float(config.get("cache_reset_timeout_s", DEFAULT_CACHE_RESET_TIMEOUT_S))
+    with stdout_path.open("xb") as stdout_handle, stderr_path.open("xb") as stderr_handle:
+        process = subprocess.Popen(
+            ["/bin/sh", "-c", command],
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            env=environment,
+            start_new_session=(os.name == "posix"),
+        )
+        returncode, wall_ms, timed_out = _wait_process(process, timeout_s)
+    record: Dict[str, Any] = {
+        "schema": CACHE_RESET_SCHEMA,
+        "mode": "cold",
+        "command": command,
+        "returncode": returncode,
+        "wall_ms": _round_ms(wall_ms),
+        "timed_out": timed_out,
+        "timeout_s": timeout_s,
+        "status": "ok",
+    }
+    if timed_out or returncode != 0:
+        record["status"] = "cache-reset-error"
+        record["detail"] = stderr_path.read_text(encoding="utf-8", errors="replace")[-2000:]
+        return record
+    probe = str(config.get("cache_ready_probe") or "ask")
+    record["ready_probe"] = probe
+    if probe == "ask":
+        method = str(config["method"])
+        endpoint = config["base_endpoint"] if method == "B" else config["reified_endpoint"]
+        ready = _probe_endpoint(
+            str(endpoint),
+            float(config.get("cache_ready_timeout_s", DEFAULT_CACHE_READY_TIMEOUT_S)),
+        )
+        record["ready"] = ready
+        if ready["status"] != "ok":
+            record["status"] = "cache-reset-error"
+            record["detail"] = "endpoint did not answer ASK {} after the reset hook"
+    return record
+
+
 def _validate_config(config: Mapping[str, Any]) -> None:
     method = str(config["method"])
     if method not in METHODS:
         raise RunnerError("unknown method: %s" % method)
-    if config.get("scheme") not in ("Standard", "SPARQL_Star", "SPARQL_Star_Row"):
-        raise RunnerError("scheme must be Standard, SPARQL_Star, or SPARQL_Star_Row")
+    if config.get("scheme") not in SCHEMES:
+        raise RunnerError("scheme must be one of %s" % ", ".join(SCHEMES))
+    scheme = str(config["scheme"])
+    if scheme.endswith("_Pure") and config.get("expected_r_query") is not None:
+        raise RunnerError("a frozen --expected-r-query cannot be combined with a lookup-only scheme")
+    if _timing_protocol(config) not in TIMING_PROTOCOLS:
+        raise RunnerError("timing protocol must be one of %s" % ", ".join(TIMING_PROTOCOLS))
+    cache_mode = str(config.get("cache_mode") or "warm")
+    if cache_mode not in CACHE_MODES:
+        raise RunnerError("cache mode must be warm or cold")
+    if cache_mode == "cold" and not str(config.get("cache_reset_command") or "").strip():
+        raise RunnerError("--cache-mode cold requires --cache-reset-command")
+    if cache_mode == "warm" and config.get("cache_reset_command"):
+        raise RunnerError("--cache-reset-command is only used with --cache-mode cold")
+    if config.get("engine_pid_file") is not None and config.get("engine_pid") is not None:
+        raise RunnerError("use either --engine-pid or --engine-pid-file")
+    if method == "N-orig":
+        import npcs_orig
+
+        orig_jar = Path(str(config.get("orig_jar") or ""))
+        if not orig_jar.is_file():
+            raise RunnerError(
+                "N-orig requires the original ReifySparqlByte.jar via --orig-jar or %s"
+                % npcs_orig.ORIG_JAR_ENV
+            )
+        try:
+            npcs_orig.orig_scheme(scheme)
+        except ValueError as exc:
+            raise RunnerError(str(exc)) from exc
     query = Path(str(config["query"]))
     if not query.is_file() or query.stat().st_size == 0:
         raise RunnerError("query is missing or empty: %s" % query)
@@ -2187,7 +2814,9 @@ def _validate_config(config: Mapping[str, Any]) -> None:
         raise RunnerError("B requires --base-endpoint")
     if method != "B" and not config.get("reified_endpoint"):
         raise RunnerError("%s requires --reified-endpoint" % method)
-    if method == "N" or method.startswith("C-"):
+    if method in NPCS_METHODS or method.startswith("C-"):
+        # N-orig also needs our jar: it parse-checks the original's output with
+        # RDF4J and compares it with the re-implementation's rewrite.
         jar = Path(str(config.get("jar") or ""))
         if not jar.is_file():
             raise RunnerError("%s requires an existing --jar" % method)
@@ -2235,8 +2864,20 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
         expected_target = output / "expected-r-query.rq"
         _atomic_bytes(expected_target, expected_source.read_bytes())
         config["expected_r_query"] = str(expected_target.resolve())
+    prepared: Optional[Dict[str, Any]] = None
+    # The legacy protocol keeps the published cell layout; only the endpoint-only
+    # protocol (which sends the prepared text) and N-orig (whose gate must run
+    # before any request) prepare the query text ahead of the executions.
+    if not str(config["method"]).startswith("C-") and (
+        _timing_protocol(config) == "endpoint-only" or config["method"] == "N-orig"
+    ):
+        prepared = _prepare_query(config, output)
+        if prepared["status"] == "ok":
+            config["prepared_query"] = str((output / "prepared-query.rq").resolve())
     config_path = output / "cell-config.json"
     _atomic_json(config_path, config)
+    if prepared is not None and prepared["status"] != "ok":
+        return _terminal_without_runs(config, output, prepared)
 
     runs: List[Dict[str, Any]] = []
     stop = False
@@ -2249,15 +2890,46 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
             run_id = "%s-%02d" % (phase, index)
             run_dir = output / run_id
             run_dir.mkdir()
+            cache_reset: Optional[Dict[str, Any]] = None
+            if str(config.get("cache_mode") or "warm") == "cold":
+                # The hook runs before the execution's clock starts, so neither the
+                # store restart nor the readiness probe is part of any timing.
+                cache_reset = _cache_reset(config, run_dir)
+                if cache_reset["status"] != "ok":
+                    record = {
+                        "schema": RUN_SCHEMA,
+                        "run_id": run_id,
+                        "phase": phase,
+                        "index": index,
+                        "endpoint": None,
+                        "offline": None,
+                        "status": "cache-reset-error",
+                        "cache_reset": cache_reset,
+                    }
+                    _atomic_json(run_dir / "run.json", record)
+                    runs.append(record)
+                    stop = True
+                    break
             run_started = time.perf_counter()
             execution_config = config
             execution_config_path = config_path
             complete_timeout = config.get("complete_method_timeout_s")
+            overrides: Dict[str, Any] = {}
             if complete_timeout is not None:
-                execution_config = dict(config)
-                execution_config["endpoint_timeout_s"] = min(
+                overrides["endpoint_timeout_s"] = min(
                     float(config["endpoint_timeout_s"]), float(complete_timeout)
                 )
+            if config.get("engine_pid_file"):
+                # A cold-cache hook may restart the store; read its PID afresh.
+                try:
+                    overrides["engine_pid"] = int(
+                        Path(str(config["engine_pid_file"])).read_text(encoding="ascii").strip()
+                    )
+                except (OSError, ValueError):
+                    overrides["engine_pid"] = None
+            if overrides:
+                execution_config = dict(config)
+                execution_config.update(overrides)
                 execution_config_path = run_dir / "execution-config.json"
                 _atomic_json(execution_config_path, execution_config)
             endpoint = _run_endpoint_worker(
@@ -2272,6 +2944,8 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
                 "offline": None,
                 "status": endpoint.get("status"),
             }
+            if cache_reset is not None:
+                record["cache_reset"] = cache_reset
             if endpoint.get("status") == "ok":
                 offline_config = config
                 if complete_timeout is not None:
@@ -2359,9 +3033,15 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
             break
 
     measured = [item for item in runs if item["phase"] == "measured" and item["status"] == "ok"]
+    timing_protocol = _timing_protocol(config)
     endpoint_values = [
-        float(item["endpoint"]["endpoint"]["endpoint_e2e_ms"])
+        float(_primary_endpoint_ms(item["endpoint"]))
         for item in measured
+    ]
+    legacy_values = [
+        float(item["endpoint"]["endpoint"]["legacy_endpoint_e2e_ms"])
+        for item in measured
+        if item["endpoint"]["endpoint"].get("legacy_endpoint_e2e_ms") is not None
     ]
     method_values = [
         float(item["component_method_e2e_ms"])
@@ -2412,14 +3092,88 @@ def _run_cell(config: Dict[str, Any], output: Path) -> Dict[str, Any]:
                 config.get("stop_after_warmup_offline_failure", False)
             ),
             "artifact_policy": "new immutable directory per execution",
+            **_protocol_identity(config),
         },
+        "prepared_query": prepared,
         "runs": runs,
         "summary": {
             "measured_successes": len(measured),
-            "endpoint_e2e_ms": _summary(endpoint_values),
             "component_method_e2e_ms": _summary(method_values),
             "primary_statistic": "%s of the configured measured executions"
             % str(config.get("primary_statistic", "median")),
+            "warmups_excluded": True,
+        },
+        "artifact_bytes_before_cell_record": _directory_bytes(output),
+    }
+    if timing_protocol == "endpoint-only":
+        result["summary"]["endpoint_only_ms"] = _summary(endpoint_values)
+        result["summary"]["legacy_endpoint_e2e_ms"] = _summary(legacy_values)
+    else:
+        result["summary"]["endpoint_e2e_ms"] = _summary(endpoint_values)
+    _assert_no_digest_fields(result)
+    _atomic_json(output / "cell.json", result)
+    return result
+
+
+def _protocol_identity(config: Mapping[str, Any]) -> Dict[str, Any]:
+    """Protocol fields that distinguish the WWW'27 cells from the published ones."""
+    scheme = str(config["scheme"])
+    return {
+        "timing_protocol": _timing_protocol(config),
+        "layout": "plain" if config["method"] in PLAIN_METHODS else _layout(scheme),
+        "store": "plain" if config["method"] == "B" else "mixed",
+        "cache_mode": str(config.get("cache_mode") or "warm"),
+        "cache_reset_command": config.get("cache_reset_command"),
+        "cache_ready_probe": (
+            str(config.get("cache_ready_probe") or "ask")
+            if str(config.get("cache_mode") or "warm") == "cold" else None
+        ),
+        "pqe_backend": str(config.get("pqe_backend", "none")),
+    }
+
+
+def _terminal_without_runs(config: Mapping[str, Any], output: Path,
+                           prepared: Mapping[str, Any]) -> Dict[str, Any]:
+    """Record a cell that issued no endpoint request: N-orig refusal or a failed prepare."""
+    status = "unsupported" if prepared["status"] == "unsupported" else "prepare-error"
+    detail = prepared.get("unsupported_reason") or prepared.get("detail")
+    result = {
+        "schema": SCHEMA,
+        "status": status,
+        "unsupported_reason": prepared.get("unsupported_reason"),
+        "failure": (
+            None if status == "unsupported" else {
+                "cause": "PREPARE_ERROR",
+                "stage": "prepare",
+                "status": prepared.get("failure_status"),
+                "detail": detail,
+            }
+        ),
+        "failures": [],
+        "recovery_required": False,
+        "query_id": config["query_id"],
+        "workload": config.get("workload", "watdiv"),
+        "engine": config["engine"],
+        "method": config["method"],
+        "scheme": config["scheme"],
+        "protocol": {
+            "warmups": config["warmups"],
+            "measured_runs": config["runs"],
+            "primary_statistic": config.get("primary_statistic", "median"),
+            "endpoint_timeout_s_per_execution": config["endpoint_timeout_s"],
+            "offline_timeout_s_per_execution": config["offline_timeout_s"],
+            "complete_method_timeout_s_per_execution": config.get(
+                "complete_method_timeout_s"
+            ),
+            "response_mode": config.get("response_mode", DEFAULT_RESPONSE_MODE),
+            "artifact_policy": "new immutable directory per execution",
+            **_protocol_identity(config),
+        },
+        "prepared_query": dict(prepared),
+        "runs": [],
+        "summary": {
+            "measured_successes": 0,
+            "endpoint_requests_issued": 0,
             "warmups_excluded": True,
         },
         "artifact_bytes_before_cell_record": _directory_bytes(output),
@@ -2451,7 +3205,7 @@ def _offline_input_path(config: Mapping[str, Any], source_run_dir: Path) -> Path
 
 def _usable_offline_result(method: str, result: Any,
                            artifact_run_dir: Path) -> bool:
-    output = artifact_run_dir / ("pp" if method == "N" else "offline")
+    output = artifact_run_dir / ("pp" if method in NPCS_METHODS else "offline")
     return (
         isinstance(result, Mapping)
         and result.get("schema") == OFFLINE_SCHEMA
@@ -2566,9 +3320,7 @@ def _evaluate_resumed_cell(cell: Path, config: Mapping[str, Any],
     method_values = []
     for item in measured_complete:
         source_record = source_runs[item["run_id"]]
-        endpoint_values.append(
-            float(source_record["endpoint"]["endpoint"]["endpoint_e2e_ms"])
-        )
+        endpoint_values.append(float(_primary_endpoint_ms(source_record["endpoint"])))
         if item["component_method_e2e_ms"] is not None:
             method_values.append(float(item["component_method_e2e_ms"]))
     return {
@@ -2580,7 +3332,10 @@ def _evaluate_resumed_cell(cell: Path, config: Mapping[str, Any],
         "runs": effective_runs,
         "summary": {
             "measured_successes": len(measured_complete),
-            "endpoint_e2e_ms": _summary(endpoint_values),
+            (
+                "endpoint_only_ms" if _timing_protocol(config) == "endpoint-only"
+                else "endpoint_e2e_ms"
+            ): _summary(endpoint_values),
             "component_method_e2e_ms": _summary(method_values),
             "primary_statistic": "median of the configured measured executions",
             "warmups_excluded": True,
@@ -2612,6 +3367,11 @@ def _resume_offline_cell(cell: Path) -> Dict[str, Any]:
     method = str(config.get("method"))
     if method not in METHODS:
         raise RunnerError("unknown method in saved cell: %s" % method)
+    if source_cell.get("status") in ("unsupported", "prepare-error"):
+        raise RunnerError(
+            "cell issued no endpoint request (%s); there is no offline stage to resume"
+            % source_cell.get("status")
+        )
     source_runs = {
         str(item.get("run_id")): item
         for item in source_cell.get("runs", [])
@@ -2707,6 +3467,8 @@ def _run_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run one WatDiv query x engine x B/R/N/C method cell."
     )
+    # Defaults reproduce the published protocol; the WWW'27 batch passes the
+    # endpoint-only, lookup-only and (optionally) cold-cache settings explicitly.
     parser.add_argument("--query", required=True, type=Path)
     parser.add_argument("--query-id", required=True)
     parser.add_argument(
@@ -2723,10 +3485,63 @@ def _run_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--method", required=True, choices=METHODS)
     parser.add_argument(
+        "--engine-pid-file",
+        type=Path,
+        help=(
+            "file holding the endpoint PID, re-read before every execution (use with "
+            "--cache-mode cold when the reset hook restarts the store)"
+        ),
+    )
+    parser.add_argument(
         "--scheme",
-        choices=("Standard", "SPARQL_Star", "SPARQL_Star_Row"),
+        choices=SCHEMES,
         default="SPARQL_Star",
-        help="reification scheme used by R, N, and C (default: SPARQL_Star)",
+        help=(
+            "reification scheme used by R, N, N-orig and C (default: SPARQL_Star, the "
+            "asserted-plus-lookup layout); SPARQL_Star_Pure selects the lookup-only "
+            "layout of the original NPCS jar"
+        ),
+    )
+    parser.add_argument(
+        "--orig-jar",
+        type=Path,
+        default=(Path(os.environ["NPCS_ORIG_JAR"]) if os.environ.get("NPCS_ORIG_JAR") else None),
+        help="original NPCS ReifySparqlByte.jar for N-orig (default: $NPCS_ORIG_JAR)",
+    )
+    parser.add_argument(
+        "--timing-protocol",
+        choices=TIMING_PROTOCOLS,
+        default=DEFAULT_TIMING_PROTOCOL,
+        help=(
+            "legacy-e2e (published protocol: endpoint_e2e_ms includes the rewrite) or "
+            "endpoint-only (query text prepared before the first execution; "
+            "endpoint_only_ms times the HTTP exchange only)"
+        ),
+    )
+    parser.add_argument(
+        "--endpoint-buffer-bytes",
+        type=_positive_integer,
+        default=DEFAULT_ENDPOINT_BUFFER_BYTES,
+        help="endpoint-only protocol: response bytes kept in memory before spooling to disk",
+    )
+    parser.add_argument("--cache-mode", choices=CACHE_MODES, default="warm")
+    parser.add_argument(
+        "--cache-reset-command",
+        help=(
+            "cold mode: shell command run before every execution, e.g. a store restart "
+            "plus 'sync; echo 3 > /proc/sys/vm/drop_caches' (root); never run by default"
+        ),
+    )
+    parser.add_argument(
+        "--cache-reset-timeout",
+        type=_positive_seconds,
+        default=DEFAULT_CACHE_RESET_TIMEOUT_S,
+    )
+    parser.add_argument("--cache-ready-probe", choices=("ask", "none"), default="ask")
+    parser.add_argument(
+        "--cache-ready-timeout",
+        type=_positive_seconds,
+        default=DEFAULT_CACHE_READY_TIMEOUT_S,
     )
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--base-endpoint")
@@ -2847,8 +3662,8 @@ def _resume_parser() -> argparse.ArgumentParser:
 
 def _configuration(args: argparse.Namespace) -> Dict[str, Any]:
     if args.npcs_postprocess_mode == "per-answer":
-        if args.method != "N":
-            raise ValueError("per-answer NPCS post-processing is only valid for method N")
+        if args.method not in NPCS_METHODS:
+            raise ValueError("per-answer NPCS post-processing is only valid for method N or N-orig")
     return {
         "schema": SCHEMA,
         "query": str(args.query.resolve()),
@@ -2856,8 +3671,19 @@ def _configuration(args: argparse.Namespace) -> Dict[str, Any]:
         "workload": args.workload,
         "engine": args.engine,
         "engine_pid": args.engine_pid,
+        "engine_pid_file": (
+            str(args.engine_pid_file.resolve()) if args.engine_pid_file is not None else None
+        ),
         "method": args.method,
         "scheme": args.scheme,
+        "orig_jar": str(args.orig_jar.resolve()) if args.orig_jar is not None else None,
+        "timing_protocol": args.timing_protocol,
+        "endpoint_buffer_bytes": args.endpoint_buffer_bytes,
+        "cache_mode": args.cache_mode,
+        "cache_reset_command": args.cache_reset_command,
+        "cache_reset_timeout_s": args.cache_reset_timeout,
+        "cache_ready_probe": args.cache_ready_probe,
+        "cache_ready_timeout_s": args.cache_ready_timeout,
         "base_endpoint": args.base_endpoint,
         "reified_endpoint": args.reified_endpoint,
         "update_endpoint": args.update_endpoint,
@@ -2962,6 +3788,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "method": result["method"],
         "cell": str((args.out.resolve() / "cell.json")),
     }, ensure_ascii=False, sort_keys=True))
+    if result["status"] == "unsupported":
+        return 3
     return 0 if result["status"] == "ok" else 1
 
 
