@@ -218,9 +218,30 @@ def eval_pexpr(circ, e, data):
         return _with_zerolen(circ, eval_pexpr(circ, e[1], data), data)
     raise ValueError("unknown path op: " + kind)
 
+def _anchored_zero_length(subj, obj):
+    """The constant at which a zero-length match holds in every graph, if any.
+
+    W3C evaluates ``Path(X:term, ZeroOrMorePath(P), Y)`` (and ``ZeroOrOnePath``)
+    with the pair ``(X, X)`` whatever the graph, and symmetrically for a
+    constant object; two constants match only when they are the same term.
+    """
+    constants = [t for t in (subj, obj) if not (isinstance(t, str) and t.startswith("?"))]
+    if not constants or any(c != constants[0] for c in constants):
+        return None
+    return constants[0]
+
+
 def eval_path(circ, subj, pexpr, obj, data):
-    """Bind a property-path pattern (subj pathexpr obj); subj/obj are var ('?x') or const."""
+    """Bind a property-path pattern (subj pathexpr obj); subj/obj are var ('?x') or const.
+
+    A zero-length match at a constant endpoint is ``g_⊤`` (CONST1), as in the
+    engine and the paper; with two variable endpoints it is "the term occurs".
+    """
     rel = eval_pexpr(circ, pexpr, data)
+    anchor = _anchored_zero_length(subj, obj) if pexpr[0] in ("star", "opt") else None
+    if anchor is not None:
+        rel = dict(rel)
+        rel[(anchor, anchor)] = circ.CONST1
     groups = defaultdict(list)
     for (u, v), g in rel.items():
         b = {}

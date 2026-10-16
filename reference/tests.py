@@ -74,6 +74,12 @@ TESTS = [
   ("path_plus_join", DS_cyc, ["?y"],                # path composed with a join (mixed fragment)
      ("join", ("path", "A", ("plus", ("edge", "p")), "?y"),
               ("bgp", [("?y", "p", "A")]))),
+  ("path_star_src", DS_pth, ["?y"],                 # bound source: X p* ?y, (X, X) in every world
+     ("path", "X", ("star", ("edge", "p")), "?y")),
+  ("path_star_absent", DS_pth, ["?y"],              # a source no triple mentions still reaches itself
+     ("path", "W", ("star", ("edge", "p")), "?y")),
+  ("path_opt_tgt", DS_pth, ["?x"],                  # constant target: ?x q? Y, (Y, Y) in every world
+     ("path", "?x", ("opt", ("edge", "q")), "Y")),
 ]
 
 

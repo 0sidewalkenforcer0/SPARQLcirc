@@ -210,7 +210,7 @@ public class CircuitRewriterTest {
     }
 
     @Test
-    public void boundStarPathsAnchorZeroLengthOccurrenceLookup() {
+    public void boundStarPathsBindTheSourceForTheZeroLengthPair() {
         String[] queries = {
             "SELECT ?v WHERE { <urn:start> <urn:p>* ?v }",
             "SELECT ?v WHERE { <urn:start> (^<urn:p>)* ?v }"
@@ -228,37 +228,24 @@ public class CircuitRewriterTest {
                 List<String> init = path.init(CircuitRun.PATH_VALUES_BATCH);
                 String zeroLength = init.get(init.size() - 1);
                 new SPARQLParser().parseQuery(zeroLength, null);
-                assertTrue("the known source must be bound before occurrence lookup",
+                assertTrue("the known source must be bound",
                         zeroLength.contains("VALUES ?__sc0_u { <urn:start> }"));
-                assertTrue("the subject branch must anchor the embedded triple",
-                        zeroLength.contains("<< ?__sc0_u "));
-                assertTrue("the object branch must anchor the embedded triple",
-                        zeroLength.contains(" ?__sc0_u >>"));
-                assertFalse("do not scan occurrenceOf and extract every statement subject",
-                        zeroLength.contains("<http://www.w3.org/1999/02/22-rdf-syntax-ns#subject>("));
-                assertFalse("do not scan occurrenceOf and extract every statement object",
-                        zeroLength.contains("<http://www.w3.org/1999/02/22-rdf-syntax-ns#object>("));
+                assertFalse("the zero-length pair of a bound source reads no occurrence",
+                        zeroLength.contains("<<"));
+                assertFalse("the zero-length pair of a bound source reads no statement",
+                        zeroLength.contains("22-rdf-syntax-ns#subject"));
+                assertTrue("the zero-length pair is fed by the empty product g_⊤",
+                        zeroLength.contains(" a c:Times ; c:feeds "));
             }
         }
     }
 
     @Test
-    public void boundStarZeroLengthKeepsExactlyTheIncidentOccurrenceTokens() {
+    public void boundStarZeroLengthIsTheEmptyProductInEveryGraph() {
         Repository repo = new SailRepository(new MemoryStore());
         try (RepositoryConnection con = repo.getConnection()) {
             ValueFactory vf = con.getValueFactory();
-            IRI occurrence = vf.createIRI("http://example.org/occurrenceOf");
             IRI start = vf.createIRI("urn:start");
-            IRI subjectToken = vf.createIRI("urn:token:subject");
-            IRI objectToken = vf.createIRI("urn:token:object");
-            IRI unrelatedToken = vf.createIRI("urn:token:unrelated");
-            con.add(vf.createTriple(start, vf.createIRI("urn:p"), vf.createIRI("urn:a")),
-                    occurrence, subjectToken);
-            con.add(vf.createTriple(vf.createIRI("urn:x"), vf.createIRI("urn:q"), start),
-                    occurrence, objectToken);
-            con.add(vf.createTriple(vf.createIRI("urn:x"), vf.createIRI("urn:q"),
-                    vf.createIRI("urn:y")), occurrence, unrelatedToken);
-
             CircuitRewriter.PathQuery path = new CircuitRewriter(
                     Reification.SPARQL_STAR_INLINE, ConstructionMode.FACTORISED,
                     "path-zero-semantics")
@@ -274,15 +261,20 @@ public class CircuitRewriterTest {
                     con.prepareGraphQuery(zeroLength).evaluate()) {
                 while (result.hasNext()) circuit.add(result.next());
             }
-            Set<Value> inputs = new LinkedHashSet<>();
-            for (Statement statement : circuit.filter(null, vf.createIRI(C, "in"), null)) {
-                inputs.add(statement.getObject());
-            }
-            Set<Value> expected = new LinkedHashSet<>();
-            expected.add(subjectToken);
-            expected.add(objectToken);
-            assertEquals("only statements incident to the bound source belong to reach^0",
-                    expected, inputs);
+            assertTrue("g_⊤ has no input, so the empty store still yields the zero-length pair",
+                    circuit.filter(null, vf.createIRI(C, "in"), null).isEmpty());
+            Model times = circuit.filter(null, RDF.TYPE, vf.createIRI(C, "Times"));
+            assertEquals("one g_⊤ gate", 1, times.size());
+            Resource top = times.iterator().next().getSubject();
+            Model feeds = circuit.filter(top, vf.createIRI(C, "feeds"), null);
+            assertEquals("g_⊤ feeds the zero-length reach gate", 1, feeds.size());
+            Resource reach = (Resource) feeds.iterator().next().getObject();
+            assertEquals(start, circuit.filter(reach, vf.createIRI(C, "rfrom"), null)
+                    .iterator().next().getObject());
+            assertEquals(start, circuit.filter(reach, vf.createIRI(C, "rto"), null)
+                    .iterator().next().getObject());
+            assertEquals("zero", circuit.filter(reach, vf.createIRI(C, "rlvl"), null)
+                    .iterator().next().getObject().stringValue());
         } finally {
             repo.shutDown();
         }

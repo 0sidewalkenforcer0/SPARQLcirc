@@ -82,25 +82,9 @@ public class CircuitSemanticsTest {
     private static final class Shape {
         final String name, query;
         final List<String> projected;
-        /**
-         * Set for a {@code :p*} / {@code :p?} whose source is a CONSTANT, naming that source and the
-         * variable its zero-length match binds. This is the one place the circuit deliberately departs
-         * from W3C SPARQL and so the one place the oracle has to be told about (see
-         * {@link #theZeroLengthRootIsTheTermsInGraphReading()}):
-         * W3C makes {@code <s> :p* ?y} yield {@code ?y = s} unconditionally, whereas the circuit gives
-         * it the "s occurs in the graph" gate. They differ exactly when the source occurs in no triple
-         * of the world, and {@link #oracle} subtracts that answer there.
-         */
-        final String zeroLengthSource, zeroLengthVar;
 
         Shape(String name, String query, List<String> projected) {
-            this(name, query, projected, null, null);
-        }
-
-        Shape(String name, String query, List<String> projected,
-              String zeroLengthSource, String zeroLengthVar) {
             this.name = name; this.query = query; this.projected = projected;
-            this.zeroLengthSource = zeroLengthSource; this.zeroLengthVar = zeroLengthVar;
         }
     }
 
@@ -1444,8 +1428,7 @@ public class CircuitSemanticsTest {
         };
         List<Shape> shapes = Arrays.asList(
             new Shape("p+ alone",       "SELECT ?y WHERE { <urn:n0> <urn:p>+ ?y }", Arrays.asList("y")),
-            new Shape("p* alone",       "SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }", Arrays.asList("y"),
-                                        "urn:n0", "y"),
+            new Shape("p* alone",       "SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }", Arrays.asList("y")),
             new Shape("p+ then join",   "SELECT ?y ?z WHERE { <urn:n0> <urn:p>+ ?y . ?y <urn:q> ?z }",
                                         Arrays.asList("y", "z")),
             new Shape("p+ in a union",  "SELECT ?y WHERE { { <urn:n0> <urn:p>+ ?y } UNION "
@@ -1555,50 +1538,65 @@ public class CircuitSemanticsTest {
         };
         checkAgainstOracle(Arrays.asList(
             new Shape("cyclic p+", "SELECT ?y WHERE { <urn:n0> <urn:p>+ ?y }", Arrays.asList("y")),
-            new Shape("cyclic p*", "SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }", Arrays.asList("y"),
-                    "urn:n0", "y")),
+            new Shape("cyclic p*", "SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }", Arrays.asList("y"))),
             facts, new ConstructionMode[]{ConstructionMode.FLAT});
     }
 
     /**
-     * The one deliberate departure from W3C SPARQL, pinned so it cannot drift silently in either
-     * direction: the zero-length root of {@code e*}/{@code e?} is the "source occurs in the graph"
-     * gate, not the paper's constant {@code g⊤}.
-     *
-     * <p>W3C makes {@code <n0> :p* ?y} yield {@code ?y = n0} even over the empty graph. The circuit
-     * gives that answer the ⊕ of the tokens of the triples mentioning {@code n0}, so over an empty
-     * world it has no answer at all. The Python oracle cannot see the difference
-     * because it encodes the same convention — this oracle is RDF4J's own evaluator, so it can, and
-     * that is why the deviation has to be subtracted explicitly rather than left implicit.
-     *
-     * <p>If someone implements the paper's {@code g⊤}, this test fails and the semantic
-     * convention must be updated explicitly rather than re-hidden in the oracle.
+     * The zero-length root of a bound source is {@code g_⊤ = ⊗(∅)}, as in the paper and in W3C
+     * SPARQL, which makes {@code <n0> :p* ?y} and {@code <n0> :p? ?y} yield {@code ?y = n0} in every
+     * graph, including the empty one. The oracle above is RDF4J's own W3C evaluator, so the sweeps
+     * check this too; this test pins the empty world explicitly, where the earlier "source occurs in
+     * the graph" gate differed.
      */
     @Test
-    public void theZeroLengthRootIsTheTermsInGraphReading() {
+    public void theZeroLengthRootOfABoundSourceIsTop() {
         Repository repo = new SailRepository(new MemoryStore());
         try (RepositoryConnection con = repo.getConnection()) {
             reify(con, "urn:r:e0", "urn:n0", "urn:p", "urn:n1");
-            Model circuit = new LinkedHashModel();
-            CircuitRewriter rewriter = new CircuitRewriter(Reification.STANDARD,
-                    ConstructionMode.FLAT, "junit-zerolen");
-            CircuitRun.executeConstructionPlan(con,
-                    rewriter.constructionPlan("SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }"),
-                    circuit, false);
-            Resource selfAnswer = null;
-            for (Resource root : answerRoots(circuit)) {
-                if ("<urn:n0>".equals(bindingsOf(circuit, root).get("y"))) selfAnswer = root;
+            for (String query : new String[]{
+                    "SELECT ?y WHERE { <urn:n0> <urn:p>* ?y }",
+                    "SELECT ?y WHERE { <urn:n0> <urn:p>? ?y }"}) {
+                for (ConstructionMode mode : ConstructionMode.values()) {
+                    Model circuit = new LinkedHashModel();
+                    CircuitRewriter rewriter = new CircuitRewriter(Reification.STANDARD,
+                            mode, "junit-zerolen");
+                    CircuitRun.executeConstructionPlan(con, rewriter.constructionPlan(query),
+                            circuit, false);
+                    Resource selfAnswer = null;
+                    for (Resource root : answerRoots(circuit)) {
+                        if ("<urn:n0>".equals(bindingsOf(circuit, root).get("y"))) selfAnswer = root;
+                    }
+                    assertTrue(query + " " + mode + ": the zero-length answer ?y = n0 must exist",
+                            selfAnswer != null);
+                    assertTrue(query + " " + mode + ": it holds once the triple is present",
+                            evaluate(circuit, selfAnswer,
+                                    new LinkedHashSet<>(Arrays.asList("urn:r:e0")), new HashMap<>()));
+                    assertTrue(query + " " + mode + ": and in the empty world, as W3C requires",
+                            evaluate(circuit, selfAnswer, new LinkedHashSet<>(), new HashMap<>()));
+                }
             }
-            assertTrue("the zero-length answer ?y = n0 must exist", selfAnswer != null);
-            assertTrue("and it must hold once the token mentioning n0 is present",
-                    evaluate(circuit, selfAnswer,
-                            new LinkedHashSet<>(Arrays.asList("urn:r:e0")), new HashMap<>()));
-            assertFalse("terms-in-graph, NOT the paper's g⊤: with no triple mentioning n0 the "
-                    + "zero-length answer does not hold. If this is ever changed to g⊤, update "
-                    + "the documented semantic convention in the same commit.",
-                    evaluate(circuit, selfAnswer, new LinkedHashSet<>(), new HashMap<>()));
         } finally {
             repo.shutDown();
+        }
+    }
+
+    /** {@code :p?} from a constant, against the W3C oracle in every world. */
+    @Test
+    public void optionalPathFromAConstantDenotesTheQueryEventInEveryWorld() {
+        String[][] facts = {
+            {"urn:r:e0", "urn:n0", "urn:p", "urn:n1"},
+            {"urn:r:q0", "urn:n1", "urn:q", "urn:z"},
+            {"urn:r:q1", "urn:n0", "urn:q", "urn:w"},
+        };
+        List<Shape> shapes = Arrays.asList(
+            new Shape("p? alone", "SELECT ?y WHERE { <urn:n0> <urn:p>? ?y }", Arrays.asList("y")),
+            new Shape("p? to a constant", "SELECT ?x WHERE { ?x <urn:p>? <urn:n1> }",
+                    Arrays.asList("x")),
+            new Shape("p* into a join", "SELECT ?y ?z WHERE { <urn:n0> <urn:p>* ?y . ?y <urn:q> ?z }",
+                    Arrays.asList("y", "z")));
+        for (Reification scheme : new Reification[]{Reification.STANDARD, Reification.SPARQL_STAR}) {
+            checkAgainstOracle(shapes, facts, ConstructionMode.values(), scheme);
         }
     }
 
@@ -1873,21 +1871,7 @@ public class CircuitSemanticsTest {
                 out.add(render(bindings, shape.projected));
             }
         }
-        if (shape.zeroLengthSource != null && !occurs(con, shape.zeroLengthSource)) {
-            // The documented terms-in-graph deviation. The source occurs in no triple of this world, so
-            // no path of length >= 1 leaves it either: the ONLY answer binding the source is the
-            // zero-length one, and dropping it is exactly the reading the circuit implements.
-            Map<String, String> zeroLength = new TreeMap<>();
-            for (String variable : shape.projected) zeroLength.put(variable, null);
-            zeroLength.put(shape.zeroLengthVar, "<" + shape.zeroLengthSource + ">");
-            out.remove(render(zeroLength, shape.projected));
-        }
         return out;
-    }
-
-    private static boolean occurs(RepositoryConnection con, String term) {
-        IRI iri = con.getValueFactory().createIRI(term);
-        return con.hasStatement(iri, null, null, false) || con.hasStatement(null, null, iri, false);
     }
 
     private static String render(Map<String, String> bindings, List<String> projected) {

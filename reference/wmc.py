@@ -53,7 +53,8 @@ def prob(circ, root, P):
 def _path_pairs(pexpr, T):
     """Set of (u,v) pairs connected by path expr `pexpr` over active triples T --
     an INDEPENDENT plain-reachability oracle (no provenance), for cross-checking the
-    gamma path circuit.  SET semantics; zero-length uses the terms-in-graph reading."""
+    gamma path circuit.  SET semantics; zero-length uses the terms-in-graph reading, and
+    _plain_eval adds the pair at a constant endpoint, which W3C returns in every graph."""
     kind = pexpr[0]
     if kind == "edge":
         return {(s, o) for (s, p, o) in T if p == pexpr[1]}
@@ -129,7 +130,11 @@ def _plain_eval(q, T):
     if t == "path":
         subj, pexpr, obj = q[1], q[2], q[3]
         out = []
-        for (u, v) in _path_pairs(pexpr, T):
+        pairs = _path_pairs(pexpr, T)
+        anchor = gamma._anchored_zero_length(subj, obj) if pexpr[0] in ("star", "opt") else None
+        if anchor is not None:                            # W3C: (c, c) at a constant endpoint, in every graph
+            pairs = pairs | {(anchor, anchor)}
+        for (u, v) in pairs:
             b = {}
             if not gamma._bind_term(b, subj, u):
                 continue

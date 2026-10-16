@@ -686,10 +686,13 @@ public class CircuitRewriter {
     }
 
     /**
-     * Zero-length path {@code ?x <>? ?y} (the reflexive branch RDF4J emits for {@code :p?}, and the
-     * zero-length part of {@code :p*}): the pair {@code (u,u)} for every term {@code u} in the graph,
-     * with provenance {@code occ(u)} = ⊕ of the tokens of triples that mention {@code u} ("u occurs")
-     * — the terms-in-graph reading. Both endpoints bind to {@code u}; a constant endpoint filters it.
+     * Zero-length path {@code ?x <>? ?y} (the reflexive branch RDF4J emits for {@code :p?}). With
+     * two variable endpoints it is the pair {@code (u,u)} for every term {@code u} in the graph,
+     * with provenance {@code occ(u)} = ⊕ of the tokens of triples that mention {@code u} ("u occurs"),
+     * which is W3C's reading over a possible world. A constant endpoint {@code c} gives the single
+     * pair {@code (c,c)} in every graph (W3C {@code eval(Path(X:term, ZeroLengthPath, Y))}), so its
+     * provenance is {@code g_⊤ = ⊗(∅)}; two constant endpoints give it only when they are the same
+     * term. Both endpoints bind to {@code u}.
      */
     private String zeroLengthPlan(ZeroLengthPath zlp, List<String> W) {
         if (!scheme.isStandard() && !scheme.isSparqlStar())
@@ -710,7 +713,7 @@ public class CircuitRewriter {
         }
         idk.append(")");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" c:in ").append(tok)
+        q.append("CONSTRUCT {\n  ").append(times).append(zeroLengthChild(zlp, tok))
          .append(" ; c:feeds ").append(ans).append(" .\n")
          .append(answerTriple(ans, zv));
         for (String w : zv) {
@@ -719,9 +722,7 @@ public class CircuitRewriter {
         }
         q.append("}\nWHERE {\n");
         q.append(zeroLengthWhere(zlp, u, tok));
-        q.append("  BIND(IRI(CONCAT(\"urn:g:t:\", ")
-         .append(CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + tok + ")))"))
-         .append(")) AS ").append(times).append(")\n")
+        q.append(zeroLengthGate(zlp, tok, times))
          .append("  BIND(IRI(CONCAT(\"urn:g:a:\", ")
          .append(CircuitEncoding.hashExpression(idk.toString()))
          .append(")) AS ").append(ans).append(")\n");
@@ -729,9 +730,39 @@ public class CircuitRewriter {
         return q.toString();
     }
 
-    /** Match one token witnessing that the zero-length endpoint occurs in the graph. */
+    /** Whether an endpoint is a constant, which makes the zero-length pair hold in every graph. */
+    private static boolean zeroLengthAnchored(ZeroLengthPath zlp) {
+        return zlp.getSubjectVar().hasValue() || zlp.getObjectVar().hasValue();
+    }
+
+    /** The template part after the product gate: its token child, or its type for {@code g_⊤}. */
+    private static String zeroLengthChild(ZeroLengthPath zlp, String tok) {
+        return zeroLengthAnchored(zlp) ? " a c:Times" : " c:in " + tok;
+    }
+
+    /** Bind the product gate: {@code ⊗(tok)} for a graph term, {@code ⊗(∅)} for a constant. */
+    private static String zeroLengthGate(ZeroLengthPath zlp, String tok, String times) {
+        String key = zeroLengthAnchored(zlp) ? "\"T\"" : "CONCAT(\"T|\", SHA256(STR(" + tok + ")))";
+        return "  BIND(IRI(CONCAT(\"urn:g:t:\", " + CircuitEncoding.hashExpression(key)
+                + ")) AS " + times + ")\n";
+    }
+
+    /**
+     * Bind {@code u} to the zero-length endpoint. A constant endpoint is bound directly (two constants
+     * must be the same term). Otherwise match one token witnessing that {@code u} occurs in the graph.
+     */
     private String zeroLengthWhere(ZeroLengthPath zlp, String u, String tok) {
         StringBuilder where = new StringBuilder();
+        Var subject = zlp.getSubjectVar(), object = zlp.getObjectVar();
+        if (zeroLengthAnchored(zlp)) {
+            Var anchor = subject.hasValue() ? subject : object;
+            where.append("  BIND(").append(Terms.render(anchor)).append(" AS ").append(u).append(")\n");
+            if (subject.hasValue() && object.hasValue()) {
+                where.append("  FILTER(sameTerm(").append(Terms.render(subject)).append(", ")
+                     .append(Terms.render(object)).append("))\n");
+            }
+            return where.toString();
+        }
         if (scheme.isStandard()) {
             where.append("  { ").append(tok).append(" <").append(RDF_S).append("> ").append(u)
                  .append(" . } UNION { ").append(tok).append(" <").append(RDF_O).append("> ").append(u)
@@ -744,9 +775,6 @@ public class CircuitRewriter {
                  .append(tok).append(" . BIND(<").append(RDF_O).append(">(").append(qv("zto"))
                  .append(") AS ").append(u).append(") }\n");
         }
-        Var s = zlp.getSubjectVar(), o = zlp.getObjectVar();
-        if (s.hasValue()) where.append("  FILTER(").append(u).append(" = ").append(Terms.render(s)).append(")\n");
-        if (o.hasValue()) where.append("  FILTER(").append(u).append(" = ").append(Terms.render(o)).append(")\n");
         return where.toString();
     }
 
@@ -756,7 +784,7 @@ public class CircuitRewriter {
         String u = qv("u"), tok = qv("tok"), times = qv("t"), plus = "?" + gateVar;
         String row = qv("oprow");
         StringBuilder q = new StringBuilder(PRE);
-        q.append("CONSTRUCT {\n  ").append(times).append(" c:in ").append(tok)
+        q.append("CONSTRUCT {\n  ").append(times).append(zeroLengthChild(zlp, tok))
          .append(" ; c:feeds ").append(plus).append(" .\n  ").append(row).append(" <")
          .append(FactoredBgpRewriter.MESSAGE).append("> <")
          .append(relationIri).append("> ; <").append(FactoredBgpRewriter.GATE).append("> ")
@@ -765,9 +793,7 @@ public class CircuitRewriter {
             q.append(" ; <").append(FactoredBgpRewriter.valuePredicate(column)).append("> ").append(u);
         }
         q.append(" .\n}\nWHERE {\n").append(zeroLengthWhere(zlp, u, tok))
-         .append("  BIND(IRI(CONCAT(\"urn:g:t:\", ")
-         .append(CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + tok + ")))"))
-         .append(")) AS ").append(times).append(")\n");
+         .append(zeroLengthGate(zlp, tok, times));
         for (String column : columns) q.append(bind("?" + column, u));
         q.append(bindIri(plus, "urn:g:z:", idKey(columns, "ZLP@" + zeroFp)))
          .append(bindIri(row, FactoredBgpRewriter.META_NS + "row:",
@@ -2591,9 +2617,12 @@ public class CircuitRewriter {
             String fromPredicate = v("fromPredicate"), toPredicate = v("toPredicate");
             StringBuilder out = new StringBuilder("  VALUES (").append(fromPredicate).append(' ')
                     .append(toPredicate).append(") {\n");
-            for (int level = 0; level <= lastLevel; level++) {
-                out.append("    (<").append(feedbackFromPredicate(Integer.toString(level)))
-                        .append("> <").append(feedbackToPredicate(Integer.toString(level)))
+            List<String> levels = new ArrayList<>();
+            if (star) levels.add(zeroLevel());
+            for (int level = 0; level <= lastLevel; level++) levels.add(Integer.toString(level));
+            for (String level : levels) {
+                out.append("    (<").append(feedbackFromPredicate(level))
+                        .append("> <").append(feedbackToPredicate(level))
                         .append(">)\n");
             }
             return out.append("  }\n  ").append(gate).append(' ').append(fromPredicate)
@@ -2609,14 +2638,47 @@ public class CircuitRewriter {
                  + CircuitEncoding.hashExpression("CONCAT(\"T|\", " + lo + ", \"|\", " + hi + ")")
                  + ")) AS " + out + ")\n";
         }
-        String zeroLenConstruct() {                              // reach^0(u,u) = OR of tokens mentioning u
+        /**
+         * The level that holds the zero-length pairs of {@code e*}. Under exact levels it is a level
+         * of its own: the rounds compose numbered levels only, so a zero-length pair never enters a
+         * product and level k keeps the walks of exactly k+1 edges. The cumulative form keeps it in
+         * level 0, whose carry chain is what reaches the last level there.
+         */
+        private static String zeroLevel() {
+            return exactLevels() ? "zero" : "0";
+        }
+
+        /**
+         * The zero-length pairs of {@code e*}.
+         *
+         * <p>With a bound source the only zero-length pair is {@code (s, s)}, and the W3C semantics
+         * returns it in every graph, so its gate is {@code g_⊤ = ⊗(∅)}: a {@code c:Times} gate with
+         * no child, named by the key of the empty product. Def. 4.7 item 2 and the Lean model
+         * ({@code Paths.gC}) use the same root. A pinned source comes from a mapping of a binding
+         * operand, whose derivation already contains a triple that mentions the source, so the
+         * product with that mapping is the same Boolean function either way.
+         *
+         * <p>An unbound source (opt-in, outside the fragment) has a zero-length pair for every node
+         * of the graph, and a node belongs to a world exactly when some triple of the world mentions
+         * it, so each pair is the disjunction of the tokens that mention the node.
+         */
+        String zeroLenConstruct() {
             String u = v("u"), vv = v("v"), z = v("z"), tg = v("tg"), rg = v("rg");
-            return PRE + "CONSTRUCT {\n  " + reachHead("0", fp, gp) + " .\n  " + tg
+            if (boundSource()) {
+                return PRE + "CONSTRUCT {\n  " + reachHead(zeroLevel(), fp, gp) + " .\n  " + tg
+                     + " a c:Times ; c:feeds " + rg + " .\n}\nWHERE {\n"
+                     + sourceValuesClause()
+                     + "  BIND(" + u + " AS " + vv + ")\n"
+                     + reachIri(u, u, zeroLevel(), fp, gp)
+                     + "  BIND(IRI(CONCAT(\"urn:g:t:\", "
+                     + CircuitEncoding.hashExpression("\"T\"")
+                     + ")) AS " + tg + ")\n}\n";
+            }
+            return PRE + "CONSTRUCT {\n  " + reachHead(zeroLevel(), fp, gp) + " .\n  " + tg
                  + " c:in " + z + " ; c:feeds " + rg + " .\n}\nWHERE {\n"
-                 + sourceValuesClause()
                  + activeNodePattern(z, u, "z")
                  + "  BIND(" + u + " AS " + vv + ")\n"
-                 + reachIri(u, u, "0", fp, gp)
+                 + reachIri(u, u, zeroLevel(), fp, gp)
                  + "  BIND(IRI(CONCAT(\"urn:g:t:\", "
                  + CircuitEncoding.hashExpression("CONCAT(\"T|\", SHA256(STR(" + z + ")))")
                  + ")) AS " + tg + ")\n}\n";
