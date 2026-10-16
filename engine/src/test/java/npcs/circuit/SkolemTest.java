@@ -151,6 +151,100 @@ public class SkolemTest {
         }
     }
 
+    private static final String KNOWS =
+            "@prefix d: <urn:d:> .\n"
+          + "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+          + "d:t1 rdf:subject _:b ; rdf:predicate d:knows ; rdf:object d:alice .\n"
+          + "d:t2 rdf:subject d:carol ; rdf:predicate d:knows ; rdf:object d:dave .\n";
+
+    /**
+     * The meta-review's example: a filter that tests the term kind or reads the lexical form must
+     * answer on the skolemized graph as it answers on the original one. The oracle is RDF4J's own
+     * W3C evaluation of the query over the original graph, blank node included.
+     */
+    @Test
+    public void filtersSeeSkolemIrisAsTheBlankNodesTheyReplace() throws Exception {
+        String[] filters = {
+            "isBlank(?x)",
+            "isIRI(?x)",
+            "!isBlank(?x)",
+            "isBlank(?x) || isIRI(?x)",
+            "CONTAINS(STR(?x), \"urn:\")",
+            "!CONTAINS(STR(?x), \"urn:d:\")",
+            "sameTerm(?x, ?x) && isLiteral(?y) = false",
+        };
+        File data = File.createTempFile("skolem-filter", ".ttl");
+        try {
+            Files.write(data.toPath(), KNOWS.getBytes(StandardCharsets.UTF_8));
+            for (String filter : filters) {
+                String query = "SELECT ?y WHERE { ?x <urn:d:knows> ?y FILTER(" + filter + ") }";
+                Set<String> expected = originalAnswers(query);
+                for (ConstructionMode mode : ConstructionMode.values()) {
+                    assertEquals(mode + " " + filter, expected, circuitAnswers(data, query, mode));
+                }
+            }
+            assertEquals("the example of the meta-review answers Alice",
+                    java.util.Collections.singleton("urn:d:alice"),
+                    originalAnswers("SELECT ?y WHERE { ?x <urn:d:knows> ?y FILTER(isBlank(?x)) }"));
+        } finally {
+            data.delete();
+        }
+    }
+
+    @Test
+    public void theReservedErrorVariableIsRejected() {
+        try {
+            new CircuitRewriter(Reification.STANDARD, ConstructionMode.FLAT, "junit-skolem")
+                    .constructionPlan("SELECT ?y WHERE { ?x <urn:d:knows> ?y FILTER(?"
+                            + Filters.SKOLEM_ERROR_VARIABLE + " = ?y) }");
+            org.junit.Assert.fail("the reserved variable must be rejected");
+        } catch (UnsupportedOperationException expected) {
+            assertTrue(expected.getMessage().contains("reserved"));
+        }
+    }
+
+    /** RDF4J's W3C answers over the plain original graph, with its blank node. */
+    private static Set<String> originalAnswers(String query) {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            SimpleValueFactory vf = SimpleValueFactory.getInstance();
+            con.add(vf.createBNode("b"), vf.createIRI("urn:d:knows"), vf.createIRI("urn:d:alice"));
+            con.add(vf.createIRI("urn:d:carol"), vf.createIRI("urn:d:knows"), vf.createIRI("urn:d:dave"));
+            Set<String> out = new java.util.TreeSet<>();
+            try (org.eclipse.rdf4j.query.TupleQueryResult result =
+                    con.prepareTupleQuery(query).evaluate()) {
+                while (result.hasNext()) out.add(result.next().getValue("y").stringValue());
+            }
+            return out;
+        } finally {
+            repo.shutDown();
+        }
+    }
+
+    /** The answers whose circuit root holds in the world that contains every statement. */
+    private static Set<String> circuitAnswers(File data, String query, ConstructionMode mode) {
+        Repository repo = new SailRepository(new MemoryStore());
+        try (RepositoryConnection con = repo.getConnection()) {
+            Skolem.load(con, data, "urn:base:", RDFFormat.TURTLE);
+            Model circuit = new LinkedHashModel();
+            CircuitRun.executeConstructionPlan(con, new CircuitRewriter(
+                    Reification.STANDARD, mode, "junit-skolem-filter").constructionPlan(query),
+                    circuit, false);
+            Set<String> world = CircuitTestSupport.leaves(circuit);
+            Set<String> out = new java.util.TreeSet<>();
+            for (org.eclipse.rdf4j.model.Resource root : CircuitTestSupport.answerRoots(circuit)) {
+                if (CircuitTestSupport.evaluate(circuit, root, world, new java.util.HashMap<>())) {
+                    out.add(CircuitTestSupport.bindingValues(circuit, root).get("y").stringValue());
+                }
+            }
+            return out;
+        } catch (java.io.IOException failure) {
+            throw new AssertionError(failure);
+        } finally {
+            repo.shutDown();
+        }
+    }
+
     private static boolean containsBlankNode(Value value) {
         if (value instanceof org.eclipse.rdf4j.model.BNode) return true;
         if (!(value instanceof Triple)) return false;

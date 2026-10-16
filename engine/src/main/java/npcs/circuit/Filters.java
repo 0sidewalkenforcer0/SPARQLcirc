@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 
+import npcs.rewrite.Skolem;
 import npcs.rewrite.Terms;
 
 /**
@@ -63,6 +64,13 @@ import npcs.rewrite.Terms;
  * </ol>
  */
 public final class Filters {
+
+    /**
+     * A variable no pattern binds. {@code STR} of an unbound variable is an evaluation error in every
+     * SPARQL 1.1 engine, which is what {@code STR} of a blank node is, so the skolem-aware
+     * {@code STR} below evaluates it for a skolem IRI.
+     */
+    static final String SKOLEM_ERROR_VARIABLE = "sparqlcirc_skolem_str_error";
 
     private Filters() {}
 
@@ -209,7 +217,13 @@ public final class Filters {
      * than approximated.
      */
     public static String render(ValueExpr e) {
-        if (e instanceof Var)           return Terms.render((Var) e);
+        if (e instanceof Var) {
+            if (SKOLEM_ERROR_VARIABLE.equals(((Var) e).getName())) {
+                throw new UnsupportedOperationException(
+                    "Unsupported FILTER: ?" + SKOLEM_ERROR_VARIABLE + " is reserved by the rewriting.");
+            }
+            return Terms.render((Var) e);
+        }
         if (e instanceof ValueConstant) return Terms.value(((ValueConstant) e).getValue());
         if (e instanceof Compare) {
             Compare c = (Compare) e;
@@ -231,12 +245,14 @@ public final class Filters {
                        + render(m.getRightArg()) + ")";
         }
         if (e instanceof Bound)     return "BOUND(" + Terms.render(((Bound) e).getArg()) + ")";
-        if (e instanceof Str)       return "STR(" + render(((Str) e).getArg()) + ")";
+        if (e instanceof Str)       return skolemAwareStr(render(((Str) e).getArg()));
         if (e instanceof Lang)      return "LANG(" + render(((Lang) e).getArg()) + ")";
         if (e instanceof Datatype)  return "DATATYPE(" + render(((Datatype) e).getArg()) + ")";
-        if (e instanceof IsURI)     return "isIRI(" + render(((IsURI) e).getArg()) + ")";
+        if (e instanceof IsURI)     return "(isIRI(" + render(((IsURI) e).getArg()) + ") && !"
+                                        + isSkolem(render(((IsURI) e).getArg())) + ")";
         if (e instanceof IsLiteral) return "isLiteral(" + render(((IsLiteral) e).getArg()) + ")";
-        if (e instanceof IsBNode)   return "isBlank(" + render(((IsBNode) e).getArg()) + ")";
+        if (e instanceof IsBNode)   return "(isIRI(" + render(((IsBNode) e).getArg()) + ") && "
+                                        + isSkolem(render(((IsBNode) e).getArg())) + ")";
         if (e instanceof IsNumeric) return "isNumeric(" + render(((IsNumeric) e).getArg()) + ")";
         if (e instanceof SameTerm) {
             SameTerm s = (SameTerm) e;
@@ -268,6 +284,25 @@ public final class Filters {
           + "isNumeric sameTerm langMatches REGEX IN STRDT CONCAT CONTAINS YEAR). "
           + "EXISTS/NOT EXISTS carry a pattern of their own "
           + "and are outside the fragment. Refusing to emit a circuit for the unfiltered query.");
+    }
+
+    /**
+     * The input graph reaches the endpoint skolemized ({@link Skolem}): every blank node is an IRI in
+     * the reserved namespace. Three built-ins of the supported core tell a blank node from an IRI,
+     * and they are rendered so that a filter returns on the skolemized graph what it returns on the
+     * original one. {@code isBlank(x)} holds for a skolem IRI, {@code isIRI(x)} does not, and
+     * {@code STR(x)} raises the error that {@code STR} of a blank node raises. Every other supported
+     * built-in either compares terms, which the injective {@code sk} preserves, or rejects an IRI and
+     * a blank node alike. A graph without blank nodes has no IRI in the namespace, so the rendering
+     * changes nothing there.
+     */
+    private static String isSkolem(String term) {
+        return "STRSTARTS(STR(" + term + "), \"" + Skolem.NS + "\")";
+    }
+
+    private static String skolemAwareStr(String term) {
+        return "IF(isIRI(" + term + ") && " + isSkolem(term) + ", STR(?" + SKOLEM_ERROR_VARIABLE
+                + "), STR(" + term + "))";
     }
 
     /** Render the standard function calls used by SPARQLprov's TPC-H non-aggregate templates. */
