@@ -22,6 +22,9 @@ on toy data and loopback endpoints only (see "Local verification" at the end).
 | Cache | warm (1 warm-up + 5) | warm (1 + 5) or cold (hook before every execution, 0 or 1 warm-up + 5) |
 | Statistic | figure CSV used `successful_mean_ms` (mean) | median of the 5 measured executions per cell, median of instances per template, ratios per template, median of ratios; no mean anywhere |
 | NPCS PQE | never run (`--pqe-backend none`, Wikidata PQE batch only for C) | N-shared DAG through CUDD and d4 with the circuits' budget rule |
+| Unsatisfiable answer roots | reported with probability 0 | dropped after compilation for every method (CUDD/oracle: the root is the false terminal; d4: the d-DNNF has no model, decided structurally); counted as `unsatisfiable_roots_dropped`; `--keep-unsatisfiable` restores the old output |
+| Zero-length pair of `e*`/`e?` at a constant or bound source | "the source occurs in the world" (the ⊕ of the tokens that mention it) | `g_⊤ = ⊗(∅)`, the W3C reading, as in the paper and the Lean model. This changes the WatDiv `P-star` template and all five Wikidata closure queries (`wdbench-property-paths-5` are `*` closures): the source's own answer now has probability 1, and its circuit has one ⊤ gate instead of the incident-token gates, so their published circuit hashes and PQE times do not carry over |
+| FILTER on skolemized data | `isBlank`, `isIRI`, `STR` rendered as written | rendered against the skolem namespace `urn:sk:`, so a filter answers as on the graph with blank nodes; gate keys of queries with these built-ins change |
 
 Defaults of `watdiv10m_runner.py`, `run_cell.py`, `run_shard.py`,
 `run_pqe_batch.py` and `npcs_postprocess.py` still reproduce the published
@@ -75,7 +78,12 @@ Run on a compute allocation, not a login node.
    python3 reference/www27/test_e1_batch_summary.py
    D4V2=1 WWW27_D4=$D4 python3 reference/www27/test_npcs_pqe_toy.py
    WWW27_D4=$D4 python3 reference/www27/test_pqe_posthoc.py
+   D4V2=1 WWW27_D4=$D4 python3 reference/www27/test_unsat_roots.py
    ```
+   `test_unsat_roots.py` with the pinned d4v2 is the check that d4v2 writes a
+   d-DNNF with a false node for an unsatisfiable root, as d4 v1 does. If it
+   writes no file instead, `d4_compile_once` stops with "d4 produced no
+   d-DNNF"; report it before the runs rather than treating it as a timeout.
    `test_watdiv10m_runner.py` has one known failure on macOS only
    (`/var` vs `/private/var` in `test_circuit_offline_resume_reuses_the_saved_circuit`);
    on Linux it must pass.
@@ -364,8 +372,32 @@ possible-world enumeration for BGP, UNION, OPTIONAL and MINUS in both layouts
 (oracle BDD and d4 v1), and the WatDiv/Wikidata PQE runners on real toy
 artifacts.
 
+Added later on 2026-10-16, also checked locally:
+
+- Unsatisfiable roots: `test_unsat_roots.py` (oracle BDD and d4 v1). On
+  engine circuits for `x p y MINUS { x p y }` every candidate root is dropped,
+  and on `x p y MINUS { x p <B> }` exactly the answer that possible-world
+  enumeration never produces is dropped, while a satisfiable root of
+  probability 0 is kept.
+- Zero-length root: JUnit `theZeroLengthRootOfABoundSourceIsTop`,
+  `optionalPathFromAConstantDenotesTheQueryEventInEveryWorld` (RDF4J's W3C
+  evaluator as oracle, every world), `tests.py` cases `path_star_src`,
+  `path_star_absent`, `path_opt_tgt`.
+- FILTER under skolemization: JUnit `filtersSeeSkolemIrisAsTheBlankNodesTheyReplace`
+  (seven filters, both plans, oracle = RDF4J over the original graph with its
+  blank node, including the meta-review's `isBlank` example).
+- The original jar's output on Oxigraph (pyoxigraph 0.5.8): parsed, every
+  answer has provenance, and the merged DAG equals possible-world enumeration
+  on the toy BGP queries (`test_original_jar_output_runs_on_oxigraph`).
+- N-orig coverage of the public NPCS workloads by `npcs_orig.static_gate`
+  (no jar, no endpoint): Wikidata `npcs-public-136` = 86 accepted (49 single,
+  37 multiple), 50 refused (all OPTIONAL); NPCS WatDiv `queries/Basic/watdiv`
+  = 138 accepted (L 50, S 53, F 32, C 3), 50 refused (all OPTIONAL), one
+  empty file (`L3`). The E1 counts of section 3.4 concern the generated
+  instances and remain open.
+
 Not verified until the cluster run: any WatDiv 10M or Wikidata measurement;
 CUDD (`dd.cudd` is not installed locally); the pinned d4v2; C cells against a
 live endpoint in the lookup-only layout (only in-memory RDF4J); the original
-jar's output on Fuseki and Oxigraph; the cold-cache hook on real stores; the
-expected N-orig counts of section 3.4.
+jar's output on Fuseki; the cold-cache hook on real stores; the expected
+N-orig counts of section 3.4 on the generated instances.

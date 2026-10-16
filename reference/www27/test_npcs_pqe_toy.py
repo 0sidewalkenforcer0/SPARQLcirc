@@ -43,6 +43,10 @@ if str(REFERENCE) not in sys.path:
 
 import d4_from_artifact
 import event_probabilities
+try:
+    import pyoxigraph
+except ImportError:
+    pyoxigraph = None
 import npcs_orig
 import npcs_postprocess
 import pqe_from_artifact
@@ -264,6 +268,29 @@ class NpcsPqeToyTest(unittest.TestCase):
                                 "--construction=%s" % construction, "SPARQL_Star_Pure",
                                 str(self.data), str(self._query_file(case)))
                     self.assertEqual(sorted(inline.splitlines()), sorted(pure.splitlines()))
+
+    @unittest.skipUnless(ORIG_JAR is not None and pyoxigraph is not None,
+                         "needs $NPCS_ORIG_JAR and pyoxigraph")
+    def test_original_jar_output_runs_on_oxigraph(self):
+        """The original jar writes quoted triples with tabs inside ``<< >>``; Oxigraph must parse
+        them and bind the provenance of every answer, and the merged DAG must equal the possible
+        worlds, as it does on RDF4J."""
+        store = pyoxigraph.Store()
+        store.load(data_text().encode("utf-8"), format=pyoxigraph.RdfFormat.TURTLE)
+        for case, (_selection, _text, _dsl, is_bgp) in CASES.items():
+            if not is_bgp:
+                continue
+            with self.subTest(case=case):
+                text, _metrics = npcs_orig.run_original(ORIG_JAR, "SPARQL_Star", self._query_file(case))
+                self.assertIsNone(npcs_orig.check_rewritten(text))
+                body = store.query(text).serialize(format=pyoxigraph.QueryResultsFormat.JSON)
+                result = npcs_postprocess.process_response_bytes(body, token_regex=r"^urn:t:[0-9]+$")
+                order = npcs_postprocess.variable_order(result, "dfs-first-appearance")
+                values, _metrics = npcs_postprocess.compile_and_wmc(
+                    result, "oracle", {token: self.weights[token] for token in result.dag.tokens()},
+                    order=order,
+                )
+                self._assert_same(ground_truth(case, self.weights), values, "N-orig/Oxigraph " + case)
 
 
 if __name__ == "__main__":
