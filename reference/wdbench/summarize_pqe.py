@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Collect formal Wikidata CUDD/d4 cells into the Figure 6 stage table."""
+"""Collect formal Wikidata CUDD/d4 cells into the Figure 6 stage table.
+
+C rows keep the published columns.  N-shared rows (NPCS merged DAG, see
+run_pqe.py) map endpoint -> provenance acquisition, post-processing plus DAG
+load -> artifact preparation, and compilation plus WMC -> PQE overhead; the
+finer stages are added as extra columns for every row that has them.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +32,10 @@ COLUMNS = (
     "artifact_preparation_ms",
     "pqe_overhead_ms",
     "total_e2e_ms",
+    "endpoint_request_ms",
+    "parse_merge_ms",
+    "compile_ms",
+    "wmc_ms",
 )
 
 
@@ -81,13 +91,37 @@ def summarize(manifest: Mapping[str, Any], cells: Mapping[tuple[str, str, str], 
     for (query_id, physical, backend), cell in sorted(cells.items()):
         if query_id not in categories:
             raise SummaryError("PQE cell is outside the workload: %s" % query_id)
-        if physical not in ("C-flat", "C-factorised", "C-path"):
-            raise SummaryError("unsupported C method: %s" % physical)
+        if physical not in ("C-flat", "C-factorised", "C-path", "N-shared"):
+            raise SummaryError("unsupported method: %s" % physical)
         if backend not in ("cudd", "d4"):
             raise SummaryError("unsupported PQE backend: %s" % backend)
         stages = cell.get("stage_medians_ms")
         if not isinstance(stages, Mapping):
             stages = {}
+        if physical == "N-shared":
+            preparation = (
+                None if stages.get("parse_merge_ms") is None or stages.get("circuit_parsing_ms") is None
+                else stages["parse_merge_ms"] + stages["circuit_parsing_ms"]
+            )
+            rows.append({
+                "query_id": query_id,
+                "category": categories[query_id],
+                "compiler": "CUDD" if backend == "cudd" else "d4",
+                "backend": "cudd-shared" if backend == "cudd" else "d4v2-per-answer",
+                "method": "N",
+                "physical_method": physical,
+                "status": cell.get("status"),
+                "measured_successes": cell.get("measured_successes"),
+                "provenance_acquisition_ms": stages.get("endpoint_ms"),
+                "artifact_preparation_ms": preparation,
+                "pqe_overhead_ms": stages.get("compilation_and_wmc_ms"),
+                "total_e2e_ms": stages.get("full_pipeline_ms"),
+                "endpoint_request_ms": stages.get("endpoint_request_ms"),
+                "parse_merge_ms": stages.get("parse_merge_ms"),
+                "compile_ms": stages.get("compile_ms"),
+                "wmc_ms": stages.get("wmc_ms"),
+            })
+            continue
         rows.append({
             "query_id": query_id,
             "category": categories[query_id],
@@ -101,6 +135,8 @@ def summarize(manifest: Mapping[str, Any], cells: Mapping[tuple[str, str, str], 
             "artifact_preparation_ms": stages.get("circuit_parsing_ms"),
             "pqe_overhead_ms": stages.get("compilation_and_wmc_ms"),
             "total_e2e_ms": stages.get("full_pipeline_ms"),
+            "compile_ms": stages.get("compile_ms"),
+            "wmc_ms": stages.get("wmc_ms"),
         })
     return rows
 

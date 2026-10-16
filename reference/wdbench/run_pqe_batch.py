@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run CUDD or per-answer d4 PQE over successful Wikidata C cells."""
+"""Run CUDD or per-answer d4 PQE over successful Wikidata C cells and NPCS cells.
+
+``--method N-shared`` selects the N-paired cells whose query-shared NPCS
+branch succeeded; their merged DAGs go through the same CUDD/d4 runners and
+the same complete-method deadline as the circuits.
+"""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +27,9 @@ import event_probabilities
 SOURCE_SCHEMA = "wikidata-method-cell-v1"
 RESULT_SCHEMA = "wikidata-circuit-pqe-cell-v1"
 BATCH_SCHEMA = "wikidata-141-pqe-batch-v1"
-METHODS = ("C-flat", "C-factorised", "C-path")
+C_METHODS = ("C-flat", "C-factorised", "C-path")
+NPCS_METHOD = "N-shared"
+METHODS = C_METHODS + (NPCS_METHOD,)
 
 
 class BatchError(RuntimeError):
@@ -54,6 +61,7 @@ def atomic_json(path: Path, value: Any) -> None:
 def construction_cells(
     roots: Sequence[Path],
     query_ids: set[str],
+    methods: Sequence[str] = C_METHODS,
 ) -> dict[tuple[str, str], Path]:
     result: dict[tuple[str, str], Path] = {}
     for root in roots:
@@ -63,10 +71,17 @@ def construction_cells(
                 continue
             query_id = str(cell.get("query_id"))
             method = str(cell.get("physical_method"))
-            if query_id not in query_ids or method not in METHODS:
-                continue
-            if cell.get("status") != "ok":
-                continue
+            if method == "N-paired":
+                branch = (cell.get("methods") or {}).get(NPCS_METHOD)
+                if query_id not in query_ids or not isinstance(branch, Mapping) \
+                        or branch.get("status") != "ok" or NPCS_METHOD not in methods:
+                    continue
+                method = NPCS_METHOD
+            else:
+                if query_id not in query_ids or method not in methods:
+                    continue
+                if cell.get("status") != "ok":
+                    continue
             key = (query_id, method)
             if key in result:
                 raise BatchError("duplicate successful construction cell %s" % (key,))
@@ -84,7 +99,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--construction-cells", required=True, action="append", type=Path)
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--backend", required=True, choices=("cudd", "d4"))
+    parser.add_argument(
+        "--backend",
+        required=True,
+        choices=("cudd", "d4", "oracle"),
+        help="cudd and d4 are the formal backends; oracle is the pure-Python test backend",
+    )
     parser.add_argument("--d4", type=Path)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--shard-index", type=int, choices=(0, 1, 2))
@@ -96,7 +116,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=event_probabilities.DEFAULT_PROBABILITY_SEED,
     )
     parser.add_argument("--continue-after-failure", action="store_true")
+    parser.add_argument(
+        "--method",
+        dest="methods",
+        action="append",
+        choices=METHODS,
+        help="repeat to select methods (default: the C methods, the published selection)",
+    )
     args = parser.parse_args(argv)
+    args.methods = tuple(args.methods or C_METHODS)
     if args.backend == "d4" and args.d4 is None:
         parser.error("--backend d4 requires --d4")
     if args.complete_method_timeout <= 0 or args.memory_sample_interval <= 0:
@@ -114,13 +142,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ]
     query_ids = {str(entry["query_id"]) for entry in selected_entries}
     sources = construction_cells(
-        [path.resolve() for path in args.construction_cells], query_ids
+        [path.resolve() for path in args.construction_cells], query_ids, args.methods
     )
     expected_successful = {
         (str(entry["query_id"]), method)
         for entry in selected_entries
         for method in entry["applicable_methods"]
-        if method in METHODS
+        if method in args.methods
     }
     absent_or_failed = sorted(expected_successful.difference(sources))
 
@@ -145,6 +173,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "selection": "successful C construction cells only",
         "construction_cells_absent_or_failed": [list(key) for key in absent_or_failed],
     }
+    if tuple(args.methods) != C_METHODS:
+        # Recorded only for non-default selections so that published C-only
+        # batch roots keep their configuration identity.
+        config["methods"] = list(args.methods)
+        config["selection"] = (
+            "successful C construction cells and successful N-shared branches of "
+            "N-paired cells" if NPCS_METHOD in args.methods
+            else "successful construction cells of the selected methods"
+        )
     config_path = output / "batch-config.json"
     if config_path.is_file():
         if read_json(config_path) != config:

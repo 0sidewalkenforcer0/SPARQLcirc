@@ -141,6 +141,8 @@ def build_plan(args: argparse.Namespace, workload: Mapping[str, Any]) -> dict[st
             "slurm_mem_per_node_mb": os.environ.get("SLURM_MEM_PER_NODE"),
             "slurm_node": os.environ.get("SLURMD_NODENAME"),
             "c_parallelism": 1,
+            "scheme": args.scheme,
+            "timing_protocol": args.timing_protocol,
             "c_result_handling": "streaming",
             "c_method_labels": {
                 "C-flat": "C-flat (streaming)",
@@ -224,6 +226,8 @@ def command(args: argparse.Namespace, cell: Mapping[str, Any], output: Path) -> 
         "--memory-sample-interval", str(args.memory_sample_interval),
         "--exact-response-row-limit", str(args.exact_response_row_limit),
         "--token-regex", args.token_regex,
+        "--scheme", args.scheme,
+        "--timing-protocol", args.timing_protocol,
     ]
     if cell["physical_method"] != "N-paired":
         base.extend(("--method", str(cell["physical_method"])))
@@ -357,6 +361,10 @@ def main() -> int:
     parser.add_argument("--memory-sample-interval", type=float, default=0.05)
     parser.add_argument("--exact-response-row-limit", type=int, default=1_000_000)
     parser.add_argument("--token-regex", default=r"^urn:wdbench:statement:[1-9][0-9]*$")
+    parser.add_argument("--scheme", choices=("SPARQL_Star", "SPARQL_Star_Pure"),
+                        default="SPARQL_Star")
+    parser.add_argument("--timing-protocol", choices=("legacy-e2e", "endpoint-only"),
+                        default="legacy-e2e")
     args = parser.parse_args()
     args.manifest = args.manifest.resolve()
     args.source_root = args.source_root.resolve()

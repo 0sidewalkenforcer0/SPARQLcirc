@@ -112,7 +112,8 @@ def base_config(args: argparse.Namespace, method: str, query: Path) -> dict[str,
         "engine": "graphdb-10.7.6",
         "engine_pid": args.engine_pid,
         "method": method,
-        "scheme": "SPARQL_Star",
+        "scheme": args.scheme,
+        "timing_protocol": args.timing_protocol,
         "base_endpoint": args.mixed_endpoint,
         "reified_endpoint": args.mixed_endpoint,
         "update_endpoint": args.update_endpoint,
@@ -228,6 +229,27 @@ def run_n_pair(args: argparse.Namespace, core) -> dict[str, Any]:
     query = copy_query(args.query.resolve(), output)
     config = base_config(args, "N", query)
     core._validate_config(config)
+    prepared = None
+    if args.timing_protocol == "endpoint-only":
+        # The endpoint worker sends this text; it is generated before the first request.
+        prepared = core._prepare_query(config, output)
+        if prepared["status"] != "ok":
+            result = {
+                "schema": SCHEMA,
+                "physical_method": "N-paired",
+                "query_id": args.query_id,
+                "query": str(query),
+                "status": "recorded-failure",
+                "terminal": True,
+                "recovery_required": False,
+                "prepared_query": prepared,
+                "methods": {
+                    method: {"status": "prepare-error", "runs": []} for method in N_METHODS
+                },
+            }
+            atomic_json(output / "cell.json", result)
+            return result
+        config["prepared_query"] = str((output / "prepared-query.rq").resolve())
     method_runs: dict[str, list[dict[str, Any]]] = {method: [] for method in N_METHODS}
     active = set(N_METHODS)
     common_runs: list[dict[str, Any]] = []
@@ -352,11 +374,14 @@ def run_n_pair(args: argparse.Namespace, core) -> dict[str, Any]:
             "pp_scheduling": "sequential with alternating branch order; waiting for the sibling branch is outside each logical method time",
             "pqe_in_timed_scope": False,
             "response_mode": "stream-tsv",
+            "scheme": args.scheme,
+            "timing_protocol": args.timing_protocol,
             "graphdb_heap_initial": args.graphdb_heap_initial,
             "graphdb_heap_max": args.graphdb_heap_max,
             "graphdb_concat_max_length": args.graphdb_concat_max_length,
         },
         "methods": methods,
+        "prepared_query": prepared,
         "n_answer_records_equal": answer_parity,
         "common_runs": common_runs,
         "artifact_bytes_before_cell_record": core._directory_bytes(output),
@@ -465,6 +490,8 @@ def run_c(args: argparse.Namespace, core) -> dict[str, Any]:
             "primary_statistic": "median",
             "complete_method_deadline_s_per_execution": args.timeout,
             "pqe_in_timed_scope": False,
+            "scheme": args.scheme,
+            "timing_protocol": args.timing_protocol,
             "c_parallelism": 1,
             "java_max_heap": args.java_max_heap,
             "c_max_union_branches": args.c_max_union_branches,
@@ -544,6 +571,18 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--exact-response-row-limit", type=int, default=1_000_000)
     result.add_argument("--token-regex", default=DEFAULT_TOKEN_REGEX)
     result.add_argument("--method", choices=("C-flat", "C-factorised", "C-path"))
+    result.add_argument(
+        "--scheme",
+        choices=("SPARQL_Star", "SPARQL_Star_Pure"),
+        default="SPARQL_Star",
+        help="SPARQL_Star_Pure selects the lookup-only layout for N and C (default: published)",
+    )
+    result.add_argument(
+        "--timing-protocol",
+        choices=("legacy-e2e", "endpoint-only"),
+        default="legacy-e2e",
+        help="endpoint-only adds endpoint_only_ms per execution (default: published protocol)",
+    )
     return result
 
 
