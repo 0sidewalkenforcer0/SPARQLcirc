@@ -1,5 +1,6 @@
 package npcs.circuit;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -22,7 +23,8 @@ public class CircuitEncodingTest {
                 .constructionPlan(BGP);
         String text = String.join("\n", plan.queries());
 
-        assertTrue(text.contains("SUBSTR(SHA256("));
+        assertTrue(text.contains("SUBSTR(LCASE(SHA256("));
+        assertFalse(text.replace("LCASE(SHA256(", "").contains("SHA256("));
         assertTrue(text.contains("c:answerRoot \"vars:78\""));
         assertTrue(text.contains("<urn:circuit:bind:78> ?x"));
         assertFalse(text.contains("<urn:circuit:unbound:78>"));
@@ -31,6 +33,16 @@ public class CircuitEncodingTest {
         assertFalse(text.contains("c:answer ?"));
         assertFalse(text.contains("c:binding ?"));
         assertFalse(text.contains(" a c:Times"));
+    }
+
+    @Test
+    public void digestsAreLowerCasedOnceAndLiteralsAreKept() {
+        String query = "SELECT * WHERE { BIND(SHA256(CONCAT(\"a\", SHA256(STR(?x)))) AS ?k)"
+                + " FILTER(?s = \"SHA256(x)\") }";
+        String once = CircuitEncoding.lowercaseDigests(query);
+        assertEquals("SELECT * WHERE { BIND(LCASE(SHA256(CONCAT(\"a\", LCASE(SHA256(STR(?x))))))"
+                + " AS ?k) FILTER(?s = \"SHA256(x)\") }", once);
+        assertEquals(once, CircuitEncoding.lowercaseDigests(once));
     }
 
     @Test

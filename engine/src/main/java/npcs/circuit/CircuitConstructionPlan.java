@@ -47,7 +47,7 @@ public final class CircuitConstructionPlan {
 
         private Step(String query, boolean feedback, String label, CircuitRewriter.PathQuery path,
                      Set<String> reads, Set<String> writes, boolean dependenciesDeclared) {
-            this.query = query;
+            this.query = CircuitEncoding.lowercaseDigests(query);
             this.feedback = feedback;
             this.label = label;
             this.path = path;

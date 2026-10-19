@@ -1096,7 +1096,8 @@ public final class CircuitRun {
         // Thm. 4.11's O(n(n+|E_s|)) bounds -- and the all-pairs base is never built.
         java.util.List<String> sources = new java.util.ArrayList<>();
         long sourceValuesStarted = System.nanoTime();
-        try (TupleQueryResult r = con.prepareTupleQuery(pathq.sourceValuesQuery()).evaluate()) {
+        try (TupleQueryResult r = con.prepareTupleQuery(
+                CircuitEncoding.lowercaseDigests(pathq.sourceValuesQuery())).evaluate()) {
             while (r.hasNext()) {
                 org.eclipse.rdf4j.model.Value value = r.next().getValue(pathq.sourceValuesBinding());
                 if (value instanceof IRI && !sources.contains(value.stringValue())) {
@@ -1142,7 +1143,8 @@ public final class CircuitRun {
                 for (String frontierQuery : frontierQueries) {
                     maxQueryBytes = Math.max(maxQueryBytes,
                             frontierQuery.getBytes(StandardCharsets.UTF_8).length);
-                    try (TupleQueryResult r = con.prepareTupleQuery(frontierQuery).evaluate()) {
+                    try (TupleQueryResult r = con.prepareTupleQuery(
+                            CircuitEncoding.lowercaseDigests(frontierQuery)).evaluate()) {
                         while (r.hasNext()) {
                             org.eclipse.rdf4j.model.Value v = r.next().getValue(
                                     pathq.frontierValueBinding());
@@ -1167,7 +1169,8 @@ public final class CircuitRun {
         } else {
             int nGlobal;                               // variable source (all-pairs): fall back to the global bound
             long nodeCountStarted = System.nanoTime();
-            try (TupleQueryResult r = con.prepareTupleQuery(pathq.nodeCountQuery()).evaluate()) {
+            try (TupleQueryResult r = con.prepareTupleQuery(
+                    CircuitEncoding.lowercaseDigests(pathq.nodeCountQuery())).evaluate()) {
                 nGlobal = ((Literal) r.next().getValue(pathq.nodeCountBinding())).intValue();
             }
             stage("path_node_count",
@@ -1226,6 +1229,7 @@ public final class CircuitRun {
                                java.util.Set<String> reachNodes, String construct,
                                int sourceIndex, int constructIndex, String phase, int round) {
         long stepStarted = System.nanoTime();
+        construct = CircuitEncoding.lowercaseDigests(construct);
         System.err.println("# --- path CONSTRUCT ---\n" + construct);   // emit the plan (stderr)
         Model m = new org.eclipse.rdf4j.model.impl.LinkedHashModel();
         long queryStarted = System.nanoTime();
